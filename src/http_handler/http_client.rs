@@ -1,7 +1,7 @@
-use reqwest::Client;
+use reqwest::{Client, Request};
 use serde::{Deserialize, Serialize};
 use std::error::Error as StdError;
-
+use super::http_request::{HTTPRequest, HTTPRequestType};
 
 #[derive(Debug)]
 pub struct HTTPClient {
@@ -17,9 +17,23 @@ impl HTTPClient {
         }
     }
 
+    pub async fn execute_request<T>(&self, request: HTTPRequest<T>) -> Result<T::Response, Box<dyn StdError>>
+    where T: HTTPRequestType
+    {
+        match request {
+            HTTPRequest::Get(get_request) => 
+                self.get::<T::Response>(get_request.endpoint()).await,
+            HTTPRequest::Post(post_request) => 
+                self.post::<T::Response, T::Body>(post_request.endpoint(), post_request.body()).await,
+            HTTPRequest::Put(put_request) => 
+                self.put::<T::Response, T::Body>(put_request.endpoint(), put_request.body()).await,
+            HTTPRequest::Delete(delete_request) => 
+                self.delete::<T::Response>(delete_request.endpoint()).await,
+        }
+    }
+
     async fn get<T>(&self, endpoint: &str) -> Result<T, Box<dyn StdError>>
-    where
-        T: for<'de> Deserialize<'de>,
+    where T: for<'de> Deserialize<'de>,
     {
         let url = format!("{}{}", self.base_url, endpoint);
         let response = self.client.get(&url).send().await?;
@@ -73,12 +87,15 @@ impl HTTPClient {
         }
     }
 
-    async fn delete(&self, endpoint: &str) -> Result<(), Box<dyn StdError>> {
+    async fn delete<T>(&self, endpoint: &str) -> Result<T, Box<dyn StdError>> 
+    where T: for<'de> Deserialize<'de>
+    {
         let url = format!("{}{}", self.base_url, endpoint);
         let response = self.client.delete(&url).send().await?;
 
         if response.status().is_success() {
-            Ok(())
+            let data = response.json::<T>().await?;
+            Ok(data)
         } else {
             Err(Box::new(std::io::Error::new(
                 std::io::ErrorKind::Other,
