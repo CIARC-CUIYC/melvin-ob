@@ -1,0 +1,27 @@
+[package]
+name = "melvin-ob"
+version = "0.1.0"
+authors = ["Felix Renzikowski <felix.renzi@outlook.de", "Nicolai Kallis <nicolai.kallis@gmx.de>"]
+edition = "2021"
+
+description = "On-Board software MELVIN for the 2024 ESA Computer in a Room Challenge"
+license-file = "LICENSE"
+repository = "https://github.com/CIARC-CUIYC/melvin-ob"
+keywords = []
+categories = []
+
+[dependencies]
+
+[lints.clippy]
+correctness = "deny"
+suspicious = "deny"
+cargo = "allow"
+perf = "warn"
+style = "warn"
+complexity = "warn"
+pedantic = "warn"
+
+
+
+
+
