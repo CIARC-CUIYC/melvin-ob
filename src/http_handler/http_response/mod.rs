@@ -6,3 +6,5 @@ pub mod restore_backup;
 pub mod objective_list;
 pub mod modify_objective;
 pub mod delete_objective;
+pub mod configure_simulation;
+pub mod achievements;
