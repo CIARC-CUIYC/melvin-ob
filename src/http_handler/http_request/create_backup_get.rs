@@ -1,6 +1,7 @@
 use super::request_common::HTTPRequestType;
 use super::create_backup::CreateBackupResponse;
 
+#[derive(serde::Serialize)]
 struct CreateBackupRequest {}
 
 impl HTTPRequestType for CreateBackupRequest {

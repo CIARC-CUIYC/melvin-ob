@@ -1,8 +1,7 @@
-use serde_with::serde_derive::Serialize;
 use super::request_common::HTTPRequestType;
 use super::restore_backup::RestoreBackupResponse;
 
-#[derive(Serialize)]
+#[derive(serde::Serialize)]
 struct RestoreBackupRequest {}
 
 impl HTTPRequestType for RestoreBackupRequest {

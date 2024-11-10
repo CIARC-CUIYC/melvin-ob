@@ -1,8 +1,7 @@
-use serde_with::serde_derive::Serialize;
 use super::request_common::HTTPRequestType;
 use super::modify_slot::ModifySlotResponse;
 
-#[derive(Serialize)]
+#[derive(serde::Serialize)]
 struct ModifySlotRequest {
     slot_id: usize,
     enabled: bool
