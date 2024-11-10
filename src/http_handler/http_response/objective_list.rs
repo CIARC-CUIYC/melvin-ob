@@ -1,4 +1,3 @@
-use crate::http_handler::serde;
 use crate::http_handler::http_handler_common::{ZonedObjective, BeaconObjective};
 
 #[derive(serde::Deserialize)]

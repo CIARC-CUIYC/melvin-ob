@@ -1,6 +1,7 @@
 use super::request_common::HTTPRequestType;
 use super::available_slots::AvailableSlotsResponse;
 
+#[derive(serde::Serialize)]
 struct AvailableSlotsRequest {}
 
 impl HTTPRequestType for AvailableSlotsRequest {

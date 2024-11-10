@@ -1,6 +1,4 @@
-use crate::http_handler::serde;
-
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct ZonedObjective{
     id: usize,
     name: String,
@@ -17,7 +15,7 @@ pub struct ZonedObjective{
     secret: bool
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct BeaconObjective{
     id: usize,
     name: String,

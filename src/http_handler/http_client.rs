@@ -1,5 +1,4 @@
 use std::error::Error as StdError;
-
 use super::http_request::request_common::{HTTPRequestType, HTTPRequest};
 
 #[derive(Debug)]
