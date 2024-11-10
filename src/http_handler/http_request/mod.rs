@@ -8,3 +8,5 @@ mod restore_backup_put;
 mod objective_list_get;
 mod modify_objective_put;
 mod delete_objective_delete;
+mod configure_simulation_put;
+mod achievements_get;

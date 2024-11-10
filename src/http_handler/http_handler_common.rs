@@ -30,3 +30,13 @@ pub struct CommunicationSlot{
     end: chrono::DateTime<chrono::Utc>,
     enabled: bool
 }
+
+#[derive(serde::Deserialize)]
+pub struct Achievement{
+    name: String,
+    done : bool,
+    points: f32,
+    description: String,
+    goal_parameter_threshold: bool,
+    goal_parameter: bool
+}
