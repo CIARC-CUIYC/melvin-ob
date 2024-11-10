@@ -13,5 +13,7 @@ pub trait HTTPRequestType {
     type Body: serde::Serialize;
     fn endpoint(&self) -> &str;
     fn body(&self) -> &Self::Body;
+
+    fn header_params(&self) -> reqwest::header::HeaderMap;
 }
 

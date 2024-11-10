@@ -9,4 +9,7 @@ impl HTTPRequestType for ObjectiveListRequest {
     type Body = ();
     fn endpoint(&self) -> &str { "/objective" }
     fn body(&self) -> &Self::Body { &() }
+    fn header_params(&self) -> reqwest::header::HeaderMap {
+        reqwest::header::HeaderMap::default()
+    }
 }
