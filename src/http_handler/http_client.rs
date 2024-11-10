@@ -10,7 +10,7 @@ pub struct HTTPClient {
 impl HTTPClient {
     pub fn new(base_url: &str) -> HTTPClient {
         HTTPClient {
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder().danger_accept_invalid_certs(true).build().unwrap(),
             base_url: String::from(base_url),
         }
     }
