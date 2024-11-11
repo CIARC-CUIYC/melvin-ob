@@ -1,10 +1,16 @@
-use super::request_common::HTTPRequestType;
+use super::request_common::{HTTPRequest, HTTPRequestType};
 use super::modify_slot::ModifySlotResponse;
 
 #[derive(serde::Serialize)]
-struct ModifySlotRequest {
+pub struct ModifySlotRequest {
     slot_id: usize,
     enabled: bool,
+}
+
+impl Into<HTTPRequest<Self>> for ModifySlotRequest {
+    fn into(self) -> HTTPRequest<Self> {
+        HTTPRequest::Put(self)
+    }
 }
 
 impl HTTPRequestType for ModifySlotRequest {

@@ -1,8 +1,14 @@
-use super::request_common::HTTPRequestType;
+use super::request_common::{HTTPRequest, HTTPRequestType};
 use super::restore_backup::RestoreBackupResponse;
 
 #[derive(serde::Serialize)]
-struct RestoreBackupRequest {}
+pub struct RestoreBackupRequest {}
+
+impl Into<HTTPRequest<Self>> for RestoreBackupRequest {
+    fn into(self) -> HTTPRequest<Self> {
+        HTTPRequest::Put(self)
+    }
+}
 
 impl HTTPRequestType for RestoreBackupRequest {
     type Response = RestoreBackupResponse;

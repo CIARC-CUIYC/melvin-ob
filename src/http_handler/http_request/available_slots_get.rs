@@ -1,8 +1,14 @@
-use super::request_common::HTTPRequestType;
+use super::request_common::{HTTPRequest, HTTPRequestType};
 use super::available_slots::AvailableSlotsResponse;
 
 #[derive(serde::Serialize)]
-struct AvailableSlotsRequest {}
+pub struct AvailableSlotsRequest {}
+
+impl Into<HTTPRequest<Self>> for AvailableSlotsRequest {
+    fn into(self) -> HTTPRequest<Self> {
+        HTTPRequest::Get(self)
+    }
+}
 
 impl HTTPRequestType for AvailableSlotsRequest {
     type Response = AvailableSlotsResponse;
