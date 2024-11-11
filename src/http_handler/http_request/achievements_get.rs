@@ -1,8 +1,14 @@
-use super::request_common::HTTPRequestType;
+use super::request_common::{HTTPRequest, HTTPRequestType};
 use super::achievements::AchievementsResponse;
 
 #[derive(serde::Serialize)]
-struct AchievementsRequest{}
+pub struct AchievementsRequest{}
+
+impl Into<HTTPRequest<Self>> for AchievementsRequest {
+    fn into(self) -> HTTPRequest<Self> {
+        HTTPRequest::Get(self)
+    }
+}
 
 impl HTTPRequestType for AchievementsRequest {
     type Response = AchievementsResponse;

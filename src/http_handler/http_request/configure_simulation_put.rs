@@ -1,11 +1,17 @@
-use super::request_common::HTTPRequestType;
+use super::request_common::{HTTPRequest, HTTPRequestType};
 use super::configure_simulation::ConfigureSimulationResponse;
 
 #[cfg(debug_assertions)]
 #[derive(serde::Serialize)]
-struct ConfigureSimulationRequest {
-    is_network_simulation: bool,
-    user_speed_multiplier: u32
+pub struct ConfigureSimulationRequest {
+    pub is_network_simulation: bool,
+    pub user_speed_multiplier: u32
+}
+
+impl Into<HTTPRequest<Self>> for ConfigureSimulationRequest {
+    fn into(self) -> HTTPRequest<Self> {
+        HTTPRequest::Put(self)
+    }
 }
 
 impl HTTPRequestType for ConfigureSimulationRequest {

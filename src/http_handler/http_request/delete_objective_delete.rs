@@ -1,10 +1,16 @@
-use super::request_common::HTTPRequestType;
+use super::request_common::{HTTPRequest, HTTPRequestType};
 use super::delete_objective::DeleteObjectiveResponse;
 
 #[cfg(debug_assertions)]
 #[derive(serde::Serialize)]
-struct DeleteObjectiveRequest {
+pub struct DeleteObjectiveRequest {
     id: usize,
+}
+
+impl Into<HTTPRequest<Self>> for DeleteObjectiveRequest {
+    fn into(self) -> HTTPRequest<Self> {
+        HTTPRequest::Delete(self)
+    }
 }
 
 impl HTTPRequestType for DeleteObjectiveRequest {

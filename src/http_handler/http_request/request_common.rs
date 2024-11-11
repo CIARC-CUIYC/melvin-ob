@@ -1,4 +1,4 @@
-pub enum HTTPRequest<T>
+pub(crate) enum HTTPRequest<T>
 where
     T: HTTPRequestType,
 {
@@ -8,7 +8,8 @@ where
     Delete(T),
 }
 
-pub trait HTTPRequestType {
+pub(crate) trait HTTPRequestType : Into<HTTPRequest<Self>>
+{
     type Response: for<'de> serde::Deserialize<'de>;
     type Body: serde::Serialize;
     fn endpoint(&self) -> &str;

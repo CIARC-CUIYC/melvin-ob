@@ -1,12 +1,14 @@
-pub use super::http_response::*;
+use super::http_response::*;
 
-mod available_slots_get;
-pub mod request_common;
-mod modify_slot_put;
-mod create_backup_get;
-mod restore_backup_put;
-mod objective_list_get;
-mod modify_objective_put;
-mod delete_objective_delete;
-mod configure_simulation_put;
-mod achievements_get;
+pub mod available_slots_get;
+pub(super) mod request_common;
+pub mod modify_slot_put;
+pub mod create_backup_get;
+pub mod restore_backup_put;
+pub mod objective_list_get;
+pub mod modify_objective_put;
+pub mod delete_objective_delete;
+pub mod configure_simulation_put;
+pub mod achievements_get;
+
+//pub(crate) use request_common::{HTTPRequestType, HTTPRequest};
