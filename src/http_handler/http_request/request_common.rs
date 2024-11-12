@@ -1,3 +1,5 @@
+use reqwest::multipart;
+
 pub(crate) enum HTTPRequest<T>
 where
     T: HTTPRequestType,
@@ -14,7 +16,7 @@ pub(crate) trait HTTPRequestType: Into<HTTPRequest<Self>>
     type Body: serde::Serialize;
     fn endpoint(&self) -> &str;
     fn body(&self) -> &Self::Body;
-
+    async fn multipart_body(&self) -> Option<multipart::Form> {None}
     fn header_params(&self) -> reqwest::header::HeaderMap;
 }
 
