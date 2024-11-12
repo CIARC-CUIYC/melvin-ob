@@ -21,6 +21,9 @@ impl HTTPRequestType for ModifyObjectiveRequest {
     fn endpoint(&self) -> &str { "/objective" }
     fn body(&self) -> &Self::Body { self }
     fn header_params(&self) -> reqwest::header::HeaderMap {
-        reqwest::header::HeaderMap::default()
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("Content-Type",
+                       reqwest::header::HeaderValue::from_static("application/json"));
+        headers
     }
 }
