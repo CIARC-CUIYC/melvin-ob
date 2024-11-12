@@ -15,4 +15,5 @@ mod control_put;
 mod reset_get;
 mod beacon_position_put;
 mod announcements_get;
+mod daily_map_post;
 //pub(crate) use request_common::{HTTPRequestType, HTTPRequest};

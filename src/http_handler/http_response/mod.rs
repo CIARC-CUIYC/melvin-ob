@@ -13,4 +13,5 @@ pub mod control_satellite;
 pub mod reset;
 pub mod beacon_position;
 pub mod annoucements;
-// TODO: remaining endpoints: GET /image, POST /image, /dailyMap
+pub mod daily_map;
+// TODO: remaining endpoints: GET /image, POST /dailyMap
