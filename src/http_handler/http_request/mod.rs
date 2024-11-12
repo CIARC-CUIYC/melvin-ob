@@ -16,4 +16,6 @@ mod reset_get;
 mod beacon_position_put;
 mod announcements_get;
 mod daily_map_post;
+mod objective_image_post;
+mod shoot_image_get;
 //pub(crate) use request_common::{HTTPRequestType, HTTPRequest};

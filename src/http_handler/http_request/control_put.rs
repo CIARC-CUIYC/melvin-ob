@@ -2,7 +2,7 @@ use super::request_common::{HTTPRequest, HTTPRequestType};
 use super::control_satellite::ControlSatelliteResponse;
 
 #[cfg(debug_assertions)]
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Debug)]
 pub struct ControlSatelliteRequest {
     pub vel_x: f64,
     pub vel_y: f64,

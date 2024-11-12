@@ -2,7 +2,7 @@ use super::request_common::{bool_to_header_value, HTTPRequest, HTTPRequestType};
 use super::configure_simulation::ConfigureSimulationResponse;
 
 #[cfg(debug_assertions)]
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Debug)]
 pub struct ConfigureSimulationRequest {
     pub is_network_simulation: bool,
     pub user_speed_multiplier: u32,

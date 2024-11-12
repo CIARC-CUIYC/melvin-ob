@@ -1,7 +1,7 @@
 use super::request_common::{HTTPRequest, HTTPRequestType};
 use super::objective_list::ObjectiveListResponse;
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Debug)]
 pub struct ObjectiveListRequest {}
 
 impl Into<HTTPRequest<Self>> for ObjectiveListRequest {

@@ -1,5 +1,6 @@
 use reqwest::multipart;
 
+#[derive(Debug)]
 pub(crate) enum HTTPRequest<T>
 where
     T: HTTPRequestType,

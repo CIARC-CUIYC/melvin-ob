@@ -1,7 +1,7 @@
 use super::request_common::{HTTPRequest, HTTPRequestType};
 use super::beacon_position::BeaconPositionResponse;
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Debug)]
 pub struct BeaconPositionRequest {
     pub beacon_id: i8,
     pub height: i16,

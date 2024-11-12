@@ -1,6 +1,7 @@
 // TODO: is deserialize possible here? Just a string gets returned
 
-#[derive(serde::Deserialize)]
+#[cfg(debug_assertions)]
+#[derive(serde::Deserialize, Debug)]
 pub struct CreateBackupResponse{
     return_message: String
 }

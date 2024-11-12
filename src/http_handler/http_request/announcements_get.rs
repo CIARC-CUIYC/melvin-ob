@@ -1,7 +1,7 @@
 use super::request_common::{HTTPRequest, HTTPRequestType};
 use super::annoucements::AnnouncementsResponse ;
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Debug)]
 pub struct AnnouncementsRequest{}
 
 impl Into<HTTPRequest<Self>> for AnnouncementsRequest {

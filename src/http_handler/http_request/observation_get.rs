@@ -1,7 +1,7 @@
 use super::request_common::{HTTPRequest, HTTPRequestType};
 use super::observation::ObservationResponse;
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Debug)]
 pub struct ObservationRequest{}
 
 impl Into<HTTPRequest<Self>> for ObservationRequest {
