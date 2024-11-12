@@ -5,8 +5,8 @@ use super::modify_objective::ModifyObjectiveResponse;
 #[cfg(debug_assertions)]
 #[derive(serde::Serialize)]
 pub struct ModifyObjectiveRequest {
-    zoned_objectives: Vec<ZonedObjective>,
-    beacon_objectives: Vec<BeaconObjective>,
+    pub zoned_objectives: Vec<ZonedObjective>,
+    pub beacon_objectives: Vec<BeaconObjective>,
 }
 
 impl Into<HTTPRequest<Self>> for ModifyObjectiveRequest {

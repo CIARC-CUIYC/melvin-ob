@@ -8,3 +8,6 @@ pub mod modify_objective;
 pub mod delete_objective;
 pub mod configure_simulation;
 pub mod achievements;
+pub mod observation;
+pub mod control_satellite;
+// TODO: remaining endpoints: GET /image, /reset, /announcements POST /image, /dailyMap PUT  /beacon

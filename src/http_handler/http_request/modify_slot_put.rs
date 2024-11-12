@@ -3,8 +3,8 @@ use super::modify_slot::ModifySlotResponse;
 
 #[derive(serde::Serialize)]
 pub struct ModifySlotRequest {
-    slot_id: usize,
-    enabled: bool,
+    pub slot_id: usize,
+    pub enabled: bool,
 }
 
 impl Into<HTTPRequest<Self>> for ModifySlotRequest {
