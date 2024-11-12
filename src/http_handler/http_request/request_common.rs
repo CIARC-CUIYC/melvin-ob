@@ -17,6 +17,8 @@ pub(crate) trait HTTPRequestType: Into<HTTPRequest<Self>>
     type Body: serde::Serialize;
     fn endpoint(&self) -> &str;
     fn body(&self) -> &Self::Body;
+    
+    // TODO: method below should be returning some kind of stream to not load all of the image in RAM first 
     async fn multipart_body(&self) -> Option<multipart::Form> {None}
     fn header_params(&self) -> reqwest::header::HeaderMap;
 }
