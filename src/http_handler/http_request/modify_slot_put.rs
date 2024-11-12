@@ -2,7 +2,7 @@ use super::request_common::{bool_to_header_value, HTTPRequest, HTTPRequestType};
 use super::modify_slot::ModifySlotResponse;
 
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Debug)]
 pub struct ModifySlotRequest {
     pub slot_id: usize,
     pub enabled: bool,

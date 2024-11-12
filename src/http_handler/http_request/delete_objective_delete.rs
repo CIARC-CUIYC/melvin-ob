@@ -2,7 +2,7 @@ use super::request_common::{HTTPRequest, HTTPRequestType};
 use super::delete_objective::DeleteObjectiveResponse;
 
 #[cfg(debug_assertions)]
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Debug)]
 pub struct DeleteObjectiveRequest {
     id: usize,
 }

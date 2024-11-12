@@ -3,7 +3,7 @@ use super::request_common::{HTTPRequest, HTTPRequestType};
 use super::modify_objective::ModifyObjectiveResponse;
 
 #[cfg(debug_assertions)]
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Debug)]
 pub struct ModifyObjectiveRequest {
     pub zoned_objectives: Vec<ZonedObjective>,
     pub beacon_objectives: Vec<BeaconObjective>,

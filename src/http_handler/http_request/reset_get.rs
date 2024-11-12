@@ -2,7 +2,7 @@ use super::request_common::{HTTPRequest, HTTPRequestType};
 use super::reset::ResetResponse;
 
 #[cfg(debug_assertions)]
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Debug)]
 pub struct ResetRequest {}
 
 impl Into<HTTPRequest<Self>> for ResetRequest {

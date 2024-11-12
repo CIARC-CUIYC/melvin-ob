@@ -1,7 +1,8 @@
 use super::request_common::{HTTPRequest, HTTPRequestType};
 use super::restore_backup::RestoreBackupResponse;
 
-#[derive(serde::Serialize)]
+#[cfg(debug_assertions)]
+#[derive(serde::Serialize, Debug)]
 pub struct RestoreBackupRequest {}
 
 impl Into<HTTPRequest<Self>> for RestoreBackupRequest {

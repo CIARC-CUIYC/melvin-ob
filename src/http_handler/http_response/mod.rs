@@ -14,4 +14,5 @@ pub mod reset;
 pub mod beacon_position;
 pub mod annoucements;
 pub mod daily_map;
-// TODO: remaining endpoints: GET /image, POST /dailyMap
+pub mod objective_image;
+pub mod shoot_image;
