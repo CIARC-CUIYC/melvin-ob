@@ -10,5 +10,6 @@ pub mod modify_objective_put;
 pub mod delete_objective_delete;
 pub mod configure_simulation_put;
 pub mod achievements_get;
-
+mod observation_get;
+mod control_put;
 //pub(crate) use request_common::{HTTPRequestType, HTTPRequest};
