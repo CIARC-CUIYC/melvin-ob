@@ -1,5 +1,6 @@
-use super::request_common::{HTTPRequest, HTTPRequestType};
+use super::request_common::{bool_to_header_value, HTTPRequest, HTTPRequestType};
 use super::modify_slot::ModifySlotResponse;
+
 
 #[derive(serde::Serialize)]
 pub struct ModifySlotRequest {
@@ -20,14 +21,8 @@ impl HTTPRequestType for ModifySlotRequest {
     fn body(&self) -> &Self::Body { &() }
     fn header_params(&self) -> reqwest::header::HeaderMap {
         let mut headers = reqwest::header::HeaderMap::new();
-        headers.append("slot_id", self.slot_id.into());
-        headers.append("enabled", {
-            if self.enabled {
-                reqwest::header::HeaderValue::from_str("true").unwrap()
-            } else {
-                reqwest::header::HeaderValue::from_str("false").unwrap()
-            }
-        });
+        headers.append("slot_id", reqwest::header::HeaderValue::from(self.slot_id));
+        headers.append("enabled", bool_to_header_value(self.enabled));
         headers
     }
 }

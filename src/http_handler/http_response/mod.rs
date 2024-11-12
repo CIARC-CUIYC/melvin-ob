@@ -10,4 +10,7 @@ pub mod configure_simulation;
 pub mod achievements;
 pub mod observation;
 pub mod control_satellite;
-// TODO: remaining endpoints: GET /image, /reset, /announcements POST /image, /dailyMap PUT  /beacon
+pub mod reset;
+pub mod beacon_position;
+pub mod annoucements;
+// TODO: remaining endpoints: GET /image, POST /image, /dailyMap
