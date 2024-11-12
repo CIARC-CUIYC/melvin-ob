@@ -8,7 +8,7 @@ where
     Delete(T),
 }
 
-pub(crate) trait HTTPRequestType : Into<HTTPRequest<Self>>
+pub(crate) trait HTTPRequestType: Into<HTTPRequest<Self>>
 {
     type Response: for<'de> serde::Deserialize<'de>;
     type Body: serde::Serialize;
@@ -16,5 +16,13 @@ pub(crate) trait HTTPRequestType : Into<HTTPRequest<Self>>
     fn body(&self) -> &Self::Body;
 
     fn header_params(&self) -> reqwest::header::HeaderMap;
+}
+
+pub fn bool_to_header_value<'a>(value: bool) -> reqwest::header::HeaderValue {
+    if value {
+        reqwest::header::HeaderValue::from_str("true").unwrap()
+    } else {
+        reqwest::header::HeaderValue::from_str("false").unwrap()
+    }
 }
 

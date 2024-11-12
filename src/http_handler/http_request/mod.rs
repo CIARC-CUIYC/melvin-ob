@@ -12,4 +12,7 @@ pub mod configure_simulation_put;
 pub mod achievements_get;
 mod observation_get;
 mod control_put;
+mod reset_get;
+mod beacon_position_put;
+mod announcements_get;
 //pub(crate) use request_common::{HTTPRequestType, HTTPRequest};
