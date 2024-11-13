@@ -1,23 +1,19 @@
-use super::request_common::{HTTPRequest, HTTPRequestType};
+use super::request_common::{HTTPRequestMethod, HTTPRequestType, NoBodyHTTPRequestType};
 use super::delete_objective::DeleteObjectiveResponse;
 
 #[cfg(debug_assertions)]
-#[derive(serde::Serialize, Debug)]
+#[derive(Debug)]
 pub struct DeleteObjectiveRequest {
     id: usize,
 }
 
-impl Into<HTTPRequest<Self>> for DeleteObjectiveRequest {
-    fn into(self) -> HTTPRequest<Self> {
-        HTTPRequest::Delete(self)
-    }
-}
+impl NoBodyHTTPRequestType for DeleteObjectiveRequest {}
+
 
 impl HTTPRequestType for DeleteObjectiveRequest {
     type Response = DeleteObjectiveResponse;
-    type Body = ();
     fn endpoint(&self) -> &str { "/objective" }
-    fn body(&self) -> &Self::Body { &() }
+    fn request_method(&self) -> HTTPRequestMethod { HTTPRequestMethod::Delete }
     fn header_params(&self) -> reqwest::header::HeaderMap {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.append("id", self.id.into());

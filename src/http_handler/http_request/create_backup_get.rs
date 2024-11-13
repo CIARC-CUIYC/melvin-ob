@@ -1,22 +1,14 @@
-use super::request_common::{HTTPRequest, HTTPRequestType};
+use super::request_common::{HTTPRequestMethod, HTTPRequestType, NoBodyHTTPRequestType};
 use super::create_backup::CreateBackupResponse;
 
 #[cfg(debug_assertions)]
-#[derive(serde::Serialize, Debug)]
+#[derive(Debug)]
 pub struct CreateBackupRequest {}
 
-impl Into<HTTPRequest<Self>> for CreateBackupRequest {
-    fn into(self) -> HTTPRequest<Self> {
-        HTTPRequest::Get(self)
-    }
-}
+impl NoBodyHTTPRequestType for CreateBackupRequest {}
 
 impl HTTPRequestType for CreateBackupRequest {
     type Response = CreateBackupResponse;
-    type Body = ();
     fn endpoint(&self) -> &str { "/backup" }
-    fn body(&self) -> &Self::Body { &() }
-    fn header_params(&self) -> reqwest::header::HeaderMap {
-        reqwest::header::HeaderMap::default()
-    }
+    fn request_method(&self) -> HTTPRequestMethod { HTTPRequestMethod::Get }
 }

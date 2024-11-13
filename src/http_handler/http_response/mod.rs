@@ -1,4 +1,4 @@
-mod response_common;
+pub(super) mod response_common;
 pub mod available_slots;
 pub mod modify_slot;
 pub mod create_backup;
