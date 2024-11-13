@@ -1,3 +1,6 @@
+use super::http_response::response_common::ResponseError;
+use super::http_request::request_common::RequestError;
+
 #[derive(serde::Deserialize, serde::Serialize, Debug)]
 pub struct ZonedObjective {
     id: usize,
@@ -104,4 +107,9 @@ trait Timed {
     fn is_in_time_window(&self) -> bool {
         chrono::Utc::now() >= self.start() && chrono::Utc::now() <= self.end()
     }
+}
+
+pub enum HTTPError{
+    HTTPRequestError(RequestError),
+    HTTPResponseError(ResponseError),
 }

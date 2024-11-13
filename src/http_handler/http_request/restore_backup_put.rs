@@ -1,22 +1,14 @@
-use super::request_common::{HTTPRequest, HTTPRequestType};
+use super::request_common::{HTTPRequestMethod, HTTPRequestType, NoBodyHTTPRequestType};
 use super::restore_backup::RestoreBackupResponse;
 
 #[cfg(debug_assertions)]
-#[derive(serde::Serialize, Debug)]
+#[derive(Debug)]
 pub struct RestoreBackupRequest {}
 
-impl Into<HTTPRequest<Self>> for RestoreBackupRequest {
-    fn into(self) -> HTTPRequest<Self> {
-        HTTPRequest::Put(self)
-    }
-}
+impl NoBodyHTTPRequestType for RestoreBackupRequest {}
 
 impl HTTPRequestType for RestoreBackupRequest {
     type Response = RestoreBackupResponse;
-    type Body = ();
     fn endpoint(&self) -> &str { "/backup" }
-    fn body(&self) -> &Self::Body { &() }
-    fn header_params(&self) -> reqwest::header::HeaderMap {
-        reqwest::header::HeaderMap::default()
-    }
+    fn request_method(&self) -> HTTPRequestMethod { HTTPRequestMethod::Put }
 }

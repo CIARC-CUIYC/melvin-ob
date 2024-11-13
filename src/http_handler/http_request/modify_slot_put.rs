@@ -1,24 +1,20 @@
-use super::request_common::{bool_to_header_value, HTTPRequest, HTTPRequestType};
+use super::request_common::{bool_to_header_value, HTTPRequestMethod,
+                            HTTPRequestType, NoBodyHTTPRequestType};
 use super::modify_slot::ModifySlotResponse;
 
 
-#[derive(serde::Serialize, Debug)]
+#[derive(Debug)]
 pub struct ModifySlotRequest {
     pub slot_id: usize,
     pub enabled: bool,
 }
 
-impl Into<HTTPRequest<Self>> for ModifySlotRequest {
-    fn into(self) -> HTTPRequest<Self> {
-        HTTPRequest::Put(self)
-    }
-}
+impl NoBodyHTTPRequestType for ModifySlotRequest {}
 
 impl HTTPRequestType for ModifySlotRequest {
     type Response = ModifySlotResponse;
-    type Body = ();
     fn endpoint(&self) -> &str { "/slots" }
-    fn body(&self) -> &Self::Body { &() }
+    fn request_method(&self) -> HTTPRequestMethod { HTTPRequestMethod::Put }
     fn header_params(&self) -> reqwest::header::HeaderMap {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.append("slot_id", reqwest::header::HeaderValue::from(self.slot_id));

@@ -1,21 +1,13 @@
-use super::request_common::{HTTPRequest, HTTPRequestType};
-use super::annoucements::AnnouncementsResponse ;
+use super::request_common::{HTTPRequestMethod, HTTPRequestType, NoBodyHTTPRequestType};
+use super::annoucements::AnnouncementsResponse;
 
-#[derive(serde::Serialize, Debug)]
-pub struct AnnouncementsRequest{}
+#[derive(Debug)]
+pub struct AnnouncementsRequest {}
 
-impl Into<HTTPRequest<Self>> for AnnouncementsRequest {
-    fn into(self) -> HTTPRequest<Self> {
-        HTTPRequest::Get(self)
-    }
-}
+impl NoBodyHTTPRequestType for AnnouncementsRequest {}
 
 impl HTTPRequestType for AnnouncementsRequest {
     type Response = AnnouncementsResponse;
-    type Body = ();
     fn endpoint(&self) -> &str { "/annoucements" }
-    fn body(&self) -> &Self::Body { &() }
-    fn header_params(&self) -> reqwest::header::HeaderMap {
-        reqwest::header::HeaderMap::default()
-    }
+    fn request_method(&self) -> HTTPRequestMethod { HTTPRequestMethod::Get }
 }
