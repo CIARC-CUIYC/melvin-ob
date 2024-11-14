@@ -1,5 +1,4 @@
-use crate::http_handler::http_response::response_common::{HTTPResponseType,
-                                                          JSONBodyHTTPResponseType, ResponseError};
+use crate::http_handler::http_response::response_common::{HTTPResponseType, JSONBodyHTTPResponseType, ResponseError, SerdeJSONBodyHTTPResponseType};
 
 #[derive(serde::Deserialize, Debug)]
 pub struct ObservationResponse {
@@ -23,17 +22,7 @@ pub struct ObservationResponse {
     timestamp: chrono::DateTime<chrono::Utc>,
 }
 
-impl JSONBodyHTTPResponseType for ObservationResponse {}
-
-impl HTTPResponseType for ObservationResponse {
-    type ParsedResponseType = Self;
-
-    async fn read_response(response: reqwest::Response)
-                           -> Result<Self::ParsedResponseType, ResponseError> {
-        let response = Self::unwrap_return_code(response).await?;
-        Ok(Self::parse_json_body(response).await?)
-    }
-}
+impl SerdeJSONBodyHTTPResponseType for ObservationResponse {}
 
 #[derive(serde::Deserialize, Debug)]
 pub struct AreaCoveredByLens {

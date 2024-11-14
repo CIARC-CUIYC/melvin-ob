@@ -1,3 +1,5 @@
+use reqwest::Response;
+
 pub(crate) trait JSONBodyHTTPResponseType: HTTPResponseType {
     async fn parse_json_body(response: reqwest::Response)
                              -> Result<Self::ParsedResponseType, ResponseError>
@@ -5,6 +7,28 @@ pub(crate) trait JSONBodyHTTPResponseType: HTTPResponseType {
         Self::ParsedResponseType: for<'de> serde::Deserialize<'de>,
     { Ok(response.json::<Self::ParsedResponseType>().await?) }
 }
+
+pub(crate) trait SerdeJSONBodyHTTPResponseType {}
+
+impl<T> JSONBodyHTTPResponseType for T
+where
+    T: SerdeJSONBodyHTTPResponseType,
+    for<'de> T: serde::Deserialize<'de>,
+{}
+
+impl<T> HTTPResponseType for T
+where
+    T: SerdeJSONBodyHTTPResponseType,
+    for<'de> T: serde::Deserialize<'de>,
+{
+    type ParsedResponseType = T;
+
+    async fn read_response(response: Response) -> Result<Self::ParsedResponseType, ResponseError> {
+        let response = Self::unwrap_return_code(response).await?;
+        Ok(Self::parse_json_body(response).await?)
+    }
+}
+
 
 pub(crate) trait ByteStreamResponseType: HTTPResponseType {}
 
