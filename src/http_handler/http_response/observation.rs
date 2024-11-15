@@ -24,6 +24,21 @@ pub struct ObservationResponse {
 
 impl SerdeJSONBodyHTTPResponseType for ObservationResponse {}
 
+impl ObservationResponse {
+    pub fn state(&self) -> &str { self.state.as_str() }
+    pub fn angle(&self) -> &str { self.angle.as_str() }
+    pub fn simulation_speed(&self) -> u32 { self.simulation_speed }
+    pub fn pos_x(&self) -> f64 { self.width_x }
+    pub fn pos_y(&self) -> f64 { self.height_y }
+    pub fn vel_x(&self) -> f64 { self.vx }
+    pub fn vel_y(&self) -> f64 { self.vy }
+    pub fn battery(&self) -> f32 { self.battery }
+    pub fn max_battery(&self) -> f32 { self.max_battery }
+    pub fn fuel(&self) -> f32 { self.fuel }
+    pub fn timestamp(&self) -> chrono::DateTime<chrono::Utc> { self.timestamp }
+}
+
+
 #[derive(serde::Deserialize, Debug)]
 pub struct AreaCoveredByLens {
     narrow: f32,
