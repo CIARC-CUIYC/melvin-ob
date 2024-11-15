@@ -37,10 +37,8 @@ pub(crate) trait JSONBodyHTTPRequestType: HTTPRequestType {
                        reqwest::header::HeaderValue::from_static("application/json"));
         headers
     }
-    async fn send_request<T>(&self, client: &HTTPClient)
+    async fn send_request(&self, client: &HTTPClient)
                              -> Result<<Self::Response as HTTPResponseType>::ParsedResponseType, HTTPError>
-    where
-        T: HTTPRequestType,
     {
         let response =
             self.get_request_base(client)
@@ -55,10 +53,8 @@ pub(crate) trait JSONBodyHTTPRequestType: HTTPRequestType {
 }
 
 pub(crate) trait NoBodyHTTPRequestType: HTTPRequestType {
-    async fn send_request<T>(&self, client: &HTTPClient)
+    async fn send_request(&self, client: &HTTPClient)
                              -> Result<<Self::Response as HTTPResponseType>::ParsedResponseType, HTTPError>
-    where
-        T: HTTPRequestType,
     {
         let response =
             self.get_request_base(client)
@@ -80,10 +76,8 @@ pub(crate) trait MultipartBodyHTTPRequestType: HTTPRequestType {
                        reqwest::header::HeaderValue::from_static("multipart/form-data"));
         headers
     }
-    async fn send_request<T>(&self, client: &HTTPClient)
+    async fn send_request(&self, client: &HTTPClient)
                              -> Result<<Self::Response as HTTPResponseType>::ParsedResponseType, HTTPError>
-    where
-        T: HTTPRequestType,
     {
         let response =
             self.get_request_base(client)
