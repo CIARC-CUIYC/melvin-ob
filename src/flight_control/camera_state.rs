@@ -1,4 +1,8 @@
-#[derive(PartialEq, Clone, Copy, Debug)]
+use std::collections::HashMap;
+use std::sync::LazyLock;
+use strum_macros::EnumIter;
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, EnumIter)]
 pub enum CameraAngle {
     Narrow,
     Normal,
@@ -25,3 +29,18 @@ impl Into<String> for CameraAngle {
         }
     }
 }
+
+static CAMERA_SQUARE_RAD_LOOKUP: LazyLock<HashMap<CameraAngle, u16>> =
+    LazyLock::new(|| {
+        let mut lookup = HashMap::new();
+        let transition_times = vec![
+            (CameraAngle::Narrow, 300),
+            (CameraAngle::Normal, 400),
+            (CameraAngle::Wide, 500),
+        ];
+
+        for (angle, rad) in transition_times {
+            lookup.insert(angle, rad);
+        }
+        lookup
+    });
