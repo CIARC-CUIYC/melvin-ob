@@ -3,3 +3,4 @@ pub mod flight_state;
 mod camera_state;
 mod orbit_control;
 mod common;
+mod camera_controller;
