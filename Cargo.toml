@@ -23,6 +23,7 @@ num-traits = "0.2.19"
 strum = "0.26.3"
 strum_macros = "0.26.4"
 bit-vec = "0.8"
+futures = "0.3.31"
 
 [lints.clippy]
 correctness = "deny"
