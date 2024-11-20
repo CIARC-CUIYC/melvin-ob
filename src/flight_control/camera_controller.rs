@@ -1,4 +1,10 @@
+use crate::http_handler::http_client::HTTPClient;
+use crate::http_handler::http_request::request_common::NoBodyHTTPRequestType;
+use crate::http_handler::http_request::shoot_image_get::ShootImageRequest;
 use bit_vec::BitVec;
+use futures::StreamExt;
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
 
 pub struct Bitmap {
     width: usize,
@@ -9,11 +15,31 @@ pub struct Bitmap {
 impl Bitmap {
     pub fn new(width: usize, height: usize) -> Self {
         let size = width * height;
-        Bitmap{
+        Bitmap {
             width,
             height,
             data: BitVec::from_elem(size, false),
         }
+    }
+
+    //
+    pub async fn shoot_image(
+        &mut self,
+        http_client: &HTTPClient,
+        file_path: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut file = File::create(file_path).await?;
+        let mut response_stream = ShootImageRequest {}.send_request(http_client).await?;
+        while let Some(Ok(chunk)) = response_stream.next().await {
+            file.write_all(&chunk).await?;
+        }
+
+        file.flush().await?;
+
+        //TODO: Coordinate parsing?
+        // self._region(x, y);
+
+        Ok(())
     }
 
     pub fn flip_region(&mut self, x: usize, y: usize) {
@@ -31,7 +57,7 @@ impl Bitmap {
             // TODO: approaching edge
             return Err("EDGE".to_string());
         }
-        Ok(self.get_pixel(x, y,))
+        Ok(self.check_pixel(x, y))
     }
 
     fn check_pixel(&self, x: usize, y: usize) -> bool {
