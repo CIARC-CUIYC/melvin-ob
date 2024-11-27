@@ -1,8 +1,8 @@
 use super::request_common::{bool_to_header_value, HTTPRequestMethod, HTTPRequestType, NoBodyHTTPRequestType};
-use super::configure_simulation::ConfigureSimulationResponse;
+use super::configure_simulation;
 
-#[cfg(debug_assertions)]
 #[derive(Debug)]
+#[cfg(debug_assertions)]
 pub struct ConfigureSimulationRequest {
     pub is_network_simulation: bool,
     pub user_speed_multiplier: u32,
@@ -11,7 +11,7 @@ pub struct ConfigureSimulationRequest {
 impl NoBodyHTTPRequestType for ConfigureSimulationRequest {}
 
 impl HTTPRequestType for ConfigureSimulationRequest {
-    type Response = ConfigureSimulationResponse;
+    type Response = configure_simulation::ConfigureSimulationResponse;
     fn endpoint(&self) -> &str { "/simulation" }
     fn request_method(&self) -> HTTPRequestMethod { HTTPRequestMethod::Put }
     fn header_params(&self) -> reqwest::header::HeaderMap {
