@@ -40,8 +40,15 @@ async fn main() {
                 / possible_orbit_coverage_map.size() as f64
         );
         while !possible_orbit_coverage_map.data.none() {
-            let next_image_time = calculate_next_image_time(&possible_orbit_coverage_map, TimeDelta::seconds(210));
-            // if next image time is more than 6 minutes ahead -> switch to charge
+            controller.update_observation().await;
+            let next_image_time: DateTime<Utc>;
+            if controller.get_state() != FlightState::Acquisition {
+                next_image_time = calculate_next_image_time(&possible_orbit_coverage_map, TimeDelta::seconds(185));
+            } else {
+                next_image_time = calculate_next_image_time(&possible_orbit_coverage_map, TimeDelta::seconds(5));
+            }    
+            
+                // if next image time is more than 6 minutes ahead -> switch to charge
             if (next_image_time - Utc::now()).ge(&TimeDelta::seconds(370)) {
                 controller.set_state(FlightState::Charge).await;
             }
@@ -86,7 +93,7 @@ async fn main() {
     }
 }
 
-fn calculate_next_image_time(map: &Bitmap, delay: TimeDelta) -> DateTime<Utc> {
+fn calculate_next_image_time(map: &Bitmap, base_delay: TimeDelta) -> DateTime<Utc> {
     todo!()
 }
 
