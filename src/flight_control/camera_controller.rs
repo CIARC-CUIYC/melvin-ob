@@ -6,6 +6,7 @@ use crate::http_handler::http_request::request_common::NoBodyHTTPRequestType;
 use crate::http_handler::http_request::shoot_image_get::ShootImageRequest;
 use bit_vec::BitVec;
 use futures::StreamExt;
+use image::imageops::Lanczos3;
 use image::ImageReader;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
@@ -103,24 +104,25 @@ impl CameraController {
         &mut self,
         httpclient: &HTTPClient,
         position: Vec2D<usize>,
+        angle: CameraAngle,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let collected_png = self.fetch_image_data(httpclient).await?;
-        let decoded_image = self.decode_png_data(&collected_png)?;
+        let decoded_image = self.decode_png_data(&collected_png, angle)?;
 
-        let width = decoded_image.width();
-        let height = decoded_image.height();
+        let angle_const = angle.get_square_radius() as usize;
+        for row in position.y.saturating_div(angle_const)..position.y.saturating_add(angle_const) {
+            for col in
+                position.x.saturating_div(angle_const)..position.x.saturating_add(angle_const)
+            {
+                let pixel = decoded_image.get_pixel(u32::try_from(col)?, u32::try_from(row)?);
 
-        for y in 0..width {
-            for x in 0..height {
-                let pixel = decoded_image.get_pixel(x, y);
-
-                let global_x = position.x + (x as usize);
-                let global_y = position.y + (y as usize);
+                let global_x = position.x + (col);
+                let global_y = position.y + (row);
 
                 let global_position = Vec2D::new_usize(global_x, global_y);
 
                 self.buffer.save_pixel(global_position, pixel.0);
-                // TODO: implement region capture correclty
+                // TODO: implement region capture correctly
                 // self.bitmap.region_captured()
             }
         }
@@ -147,12 +149,25 @@ impl CameraController {
     fn decode_png_data(
         &mut self,
         collected_png: &[u8],
+        angle: CameraAngle,
     ) -> Result<image::RgbImage, Box<dyn std::error::Error>> {
+        const RESIZED_HEIGHT: u32 = 1000;
+        const RESIZED_WIDTH: u32 = 1000;
+
         let decoded_image = ImageReader::new(std::io::Cursor::new(collected_png))
             .with_guessed_format()?
             .decode()?
             .to_rgb8();
 
-        Ok(decoded_image)
+        let resized_unit_length = angle.get_square_unit_length();
+
+        let resized_image = image::imageops::resize(
+            &decoded_image,
+            u32::from(resized_unit_length),
+            u32::from(resized_unit_length),
+            Lanczos3,
+        );
+
+        Ok(resized_image)
     }
 }
