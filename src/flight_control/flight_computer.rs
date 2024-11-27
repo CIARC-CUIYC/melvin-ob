@@ -48,13 +48,13 @@ impl<'a> FlightComputer<'a> {
         loop {
             match (ObservationRequest {}.send_request(self.request_client).await) {
                 Ok(observation) => {
-                    self.current_pos = Vec2D::from((observation.pos_x(), observation.pos_y()));
+                    self.current_pos = Vec2D::from((observation.pos_x() as f64, observation.pos_y() as f64));
                     self.current_vel = Vec2D::from((observation.vel_x(), observation.vel_y()));
                     self.current_state = FlightState::from(observation.state());
                     self.last_observation_timestamp = observation.timestamp();
                     return;
                 }
-                Err(err) => { /* TODO: log error here */ }
+                Err(err) => { println!("{}", err); }
             }
         }
     }
