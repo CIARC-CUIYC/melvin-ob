@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use crate::flight_control::common::Vec2D;
 
 pub struct PixelData {
     rgb: [u8; 3],
@@ -6,19 +6,19 @@ pub struct PixelData {
 }
 
 pub struct Buffer {
-    storage: HashMap<(usize, usize), PixelData>,
+    data: Vec<[u8; 3]>,
 }
 
 impl Buffer {
     pub fn new() -> Self {
+        let map_size = Vec2D::<usize>::map_size();
         Self {
-            storage: HashMap::new(),
+            data: vec![[0, 0, 0]; map_size.x() * map_size.y()],
         }
     }
 
-    pub fn save_pixel(&mut self, x: usize, y: usize, rgb: [u8; 3]) {
-        let coordinates = (x, y);
-
-        self.storage.insert(coordinates, PixelData { rgb });
+    pub fn save_pixel(&mut self, wrapped_pos: Vec2D<f32>, rgb: [u8; 3]) {
+        let index = wrapped_pos.y() * Vec2D::<f32>::map_size().x() + wrapped_pos.x();
+        self.data[index as usize] = rgb;
     }
 }
