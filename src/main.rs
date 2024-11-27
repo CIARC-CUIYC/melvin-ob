@@ -7,10 +7,8 @@ use crate::flight_control::common::Vec2D;
 use crate::flight_control::flight_computer::FlightComputer;
 use crate::flight_control::flight_state::FlightState;
 use crate::http_handler::http_request::request_common::NoBodyHTTPRequestType;
-use crate::http_handler::http_request::reset_get;
 use crate::http_handler::http_request::reset_get::ResetRequest;
 use chrono::{DateTime, TimeDelta, Utc};
-use std::process::exit;
 
 #[tokio::main]
 async fn main() {
@@ -59,8 +57,10 @@ async fn main() {
             }
             // TODO: shoot image here and set region to photographed
             possible_orbit_coverage_map.region_captured(
-                controller.get_current_pos().x() as isize,
-                controller.get_current_pos().y() as isize,
+                Vec2D {
+                    x: controller.get_current_pos().x() as f32,
+                    y: controller.get_current_pos().y() as f32,
+                },
                 CameraAngle::Wide,
             );
         }
@@ -90,11 +90,7 @@ fn calculate_orbit_coverage_map(cont: &FlightComputer, map: &mut Bitmap) {
             );
             break;
         }
-        map.region_captured(
-            next_pos.x() as isize,
-            next_pos.y() as isize,
-            CameraAngle::Wide,
-        );
+        map.region_captured(Vec2D { x: next_pos.x() as f32, y: next_pos.y() as f32 }, CameraAngle::Wide);
         dt += 1;
     }
     println!("Done Calculating Orbit Coverage!");
