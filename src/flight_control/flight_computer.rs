@@ -1,6 +1,5 @@
 use std::cmp::min;
 use std::time;
-use chrono::Duration;
 use super::{
     camera_state::CameraAngle,
     common::Vec2D,
@@ -77,12 +76,12 @@ impl<'a> FlightComputer<'a> {
             is_network_simulation: false,
             user_speed_multiplier: selected_factor as u32,
         }.send_request(self.request_client).await.unwrap();
-        sleep(time::Duration::from_secs((wait_time/selected_factor) as u64)).await;
+        sleep(time::Duration::from_secs(wait_time/selected_factor)).await;
         ConfigureSimulationRequest {
             is_network_simulation: false,
             user_speed_multiplier: 1,
         }.send_request(self.request_client).await.unwrap();
-        sleep(time::Duration::from_secs((selected_remainder+t_normal) as u64)).await;
+        sleep(time::Duration::from_secs(selected_remainder+t_normal)).await;
     }
 
     pub async fn set_state(&mut self, new_state: FlightState) {
@@ -106,7 +105,7 @@ impl<'a> FlightComputer<'a> {
                 .await)
             {
                 Ok(observation) => {
-                    self.current_pos = Vec2D::from((observation.pos_x() as f64, observation.pos_y() as f64));
+                    self.current_pos = Vec2D::from((f64::from(observation.pos_x()), f64::from(observation.pos_y())));
                     self.current_vel = Vec2D::from((observation.vel_x(), observation.vel_y()));
                     self.current_state = FlightState::from(observation.state());
                     self.last_observation_timestamp = observation.timestamp();
@@ -124,7 +123,7 @@ impl<'a> FlightComputer<'a> {
             vel_x: self.current_vel.x(),
             vel_y: self.current_vel.y(),
             camera_angle: self.current_camera_state.into(),
-            state: (new_state).into(),
+            state: new_state.into(),
         };
         loop {
             match req.send_request(self.request_client).await {
@@ -139,7 +138,7 @@ impl<'a> FlightComputer<'a> {
     pub async fn rotate_vel(&mut self, angle_degrees: f32) {
         let current_vel = self.current_vel;
         self.current_vel.rotate_by(angle_degrees);
-        let time_to_sleep = current_vel.to(&self.current_vel).abs() / Self::ACCELERATION as f64;
+        let time_to_sleep = current_vel.to(&self.current_vel).abs() / f64::from(Self::ACCELERATION);
         loop {
             match (ControlSatelliteRequest {
                 vel_x: self.current_vel.x(),

@@ -5,8 +5,8 @@ use super::control_satellite::ControlSatelliteResponse;
 pub struct ControlSatelliteRequest {
     pub vel_x: f64,
     pub vel_y: f64,
-    pub camera_angle: String,
-    pub state: String,
+    pub camera_angle: &'static str,
+    pub state: &'static str,
 }
 
 impl JSONBodyHTTPRequestType for ControlSatelliteRequest {

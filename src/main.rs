@@ -6,7 +6,6 @@ use crate::flight_control::camera_controller::Bitmap;
 use crate::flight_control::flight_computer::FlightComputer;
 use crate::flight_control::flight_state::FlightState;
 use crate::flight_control::camera_state::CameraAngle;
-use crate::http_handler::http_request::configure_simulation_put::ConfigureSimulationRequest;
 use crate::http_handler::http_request::request_common::NoBodyHTTPRequestType;
 use crate::http_handler::http_request::reset_get::ResetRequest;
 
@@ -16,7 +15,6 @@ async fn main() {
     const MAP_SIZE_X: usize = 21600;
     const MAP_SIZE_Y: usize = 10800;
     const FUEL_RESET_THRESHOLD: f32 = 20.0;
-    const FAST_FORWARD_TIME_DELTA_THRESHOLD: i32 = 20;
 
     let already_covered_map = Bitmap::new(MAP_SIZE_X, MAP_SIZE_Y);
     let http_handler = http_handler::http_client::HTTPClient::new("http://localhost:33000");

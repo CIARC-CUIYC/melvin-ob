@@ -1,4 +1,4 @@
-use std::ops::{Add, Mul, Sub};
+use std::ops::{Add, Mul};
 use num_traits::{NumCast, real::Real, Num, NumOps, NumAssignOps};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
@@ -20,7 +20,7 @@ where
     }
 
     pub fn in_radius_of(&self, other: &Self, rad: T) -> bool {
-        if self.euclid_distance(other) <= rad { true } else { false }
+        self.euclid_distance(other) <= rad
     }
 
     pub fn wrap_around_map(&mut self) {

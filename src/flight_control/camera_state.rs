@@ -10,26 +10,25 @@ pub enum CameraAngle {
 }
 
 impl CameraAngle {
-    pub fn get_square_radius(&self) -> u16 { CAMERA_SQUARE_RAD_LOOKUP[self] }
+    pub fn get_square_radius(self) -> u16 { CAMERA_SQUARE_RAD_LOOKUP[&self] }
 }
 
 impl From<&str> for CameraAngle {
     fn from(value: &str) -> Self {
         match value.to_lowercase().as_str() {
             "narrow" => CameraAngle::Narrow,
-            "normal" => CameraAngle::Normal,
             "wide" => CameraAngle::Wide,
             _ => CameraAngle::Normal // TODO: conversion error should be logged
         }
     }
 }
 
-impl Into<String> for CameraAngle {
-    fn into(self) -> String {
-        match self {
-            CameraAngle::Narrow => String::from("narrow"),
-            CameraAngle::Normal => String::from("normal"),
-            CameraAngle::Wide => String::from("wide")
+impl From<CameraAngle> for &'static str {
+    fn from(value: CameraAngle) -> Self {
+        match value {
+            CameraAngle::Narrow => "narrow",
+            CameraAngle::Normal => "normal",
+            CameraAngle::Wide => "wide"
         }
     }
 }

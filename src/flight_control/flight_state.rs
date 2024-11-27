@@ -20,21 +20,20 @@ impl From<&str> for FlightState {
             "acquisition" => FlightState::Acquisition,
             "charge" => FlightState::Charge,
             "comms" => FlightState::Comms,
-            "safe" => FlightState::Safe,
             _ => FlightState::Safe, // TODO: conversion error should be logged
         }
     }
 }
 
-impl Into<String> for FlightState {
-    fn into<'a>(self) -> String {
-        match self {
-            FlightState::Deployment => String::from("deployment"),
-            FlightState::Transition => String::from("transition"),
-            FlightState::Acquisition => String::from("acquisition"),
-            FlightState::Charge => String::from("charge"),
-            FlightState::Comms => String::from("comms"),
-            FlightState::Safe => String::from("safe"),
+impl From<FlightState> for &'static str{
+    fn from(value: FlightState) -> Self {
+        match value{
+            FlightState::Deployment => "deployment",
+            FlightState::Transition => "transition",
+            FlightState::Acquisition => "acquisition",
+            FlightState::Charge => "charge",
+            FlightState::Comms => "comms",
+            FlightState::Safe => "safe",
         }
     }
 }
