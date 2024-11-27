@@ -11,8 +11,8 @@ use crate::http_handler::{
         request_common::{JSONBodyHTTPRequestType, NoBodyHTTPRequestType},
     },
 };
-use chrono::TimeDelta;
 use tokio::time::sleep;
+use std::time::Duration;
 
 #[derive(Debug)]
 pub struct FlightComputer<'a> {
@@ -21,11 +21,14 @@ pub struct FlightComputer<'a> {
     current_state: FlightState,
     current_camera_state: CameraAngle,
     max_battery: f32, // this is an artifact caused by dumb_main
+    fuel_left: f32,
     last_observation_timestamp: chrono::DateTime<chrono::Utc>,
     request_client: &'a http_client::HTTPClient,
 }
 
 impl<'a> FlightComputer<'a> {
+    const ACCELERATION: f32 = 0.04;
+
     pub async fn new(request_client: &'a http_client::HTTPClient) -> FlightComputer<'a> {
         let mut return_controller = FlightComputer {
             current_pos: Vec2D::new(0.0, 0.0),
@@ -33,15 +36,17 @@ impl<'a> FlightComputer<'a> {
             current_state: FlightState::Safe,
             current_camera_state: CameraAngle::Normal,
             max_battery: 0.0,
+            fuel_left: 0.0,
             last_observation_timestamp: chrono::Utc::now(),
             request_client,
         };
         return_controller.update_observation().await;
         return_controller
     }
-    
-    pub fn get_max_battery(&self) -> f32 {self.max_battery}
+
+    pub fn get_max_battery(&self) -> f32 { self.max_battery }
     pub fn get_state(&self) -> FlightState { self.current_state }
+    pub fn get_fuel_left(&self) -> f32 { self.fuel_left }
 
     pub async fn set_state(&mut self, new_state: FlightState) {
         self.update_observation().await;
@@ -69,9 +74,10 @@ impl<'a> FlightComputer<'a> {
                     self.current_state = FlightState::from(observation.state());
                     self.last_observation_timestamp = observation.timestamp();
                     self.max_battery = observation.max_battery();
+                    self.fuel_left = observation.fuel();
                     return;
                 }
-                Err(err) => { println!("{}", err); }
+                Err(err) => { /* TODO: log error here */ }
             }
         }
     }
@@ -93,7 +99,27 @@ impl<'a> FlightComputer<'a> {
         }
     }
 
-    pub fn pos_in_time_delta(&self, time_delta: TimeDelta) -> Vec2D<f64> {
+    pub async fn rotate_vel(&mut self, angle_degrees: f32) {
+        let current_vel = self.current_vel;
+        self.current_vel.rotate_by(angle_degrees);
+        let time_to_sleep = (current_vel.to(&self.current_vel).abs() ).abs() / Self::ACCELERATION as f64;
+        loop {
+            match (ControlSatelliteRequest {
+                vel_x: self.current_vel.x(),
+                vel_y: self.current_vel.y(),
+                camera_angle: self.current_camera_state.into(),
+                state: self.current_state.into(),
+            }.send_request(self.request_client).await) {
+                Ok(_) => {
+                    sleep(Duration::from_secs((time_to_sleep + 1.0) as u64)).await;
+                    self.update_observation().await;
+                }
+                Err(err) => { /* TODO: log error here */ }
+            }
+        }
+    }
+
+    pub fn pos_in_time_delta(&self, time_delta: chrono::TimeDelta) -> Vec2D<f64> {
         let mut pos = self.current_pos + self.current_vel * time_delta.num_seconds();
         pos.wrap_around_map();
         pos
@@ -112,3 +138,4 @@ impl<'a> FlightComputer<'a> {
     }
     */
 }
+    
