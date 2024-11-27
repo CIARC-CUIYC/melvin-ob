@@ -1,9 +1,4 @@
-use std::collections::HashMap;
-use chrono::format::parse;
-use reqwest::Response;
-use serde::Deserializer;
 use strum_macros::Display;
-use crate::http_handler::http_response::observation::ObservationResponse;
 
 pub(crate) trait JSONBodyHTTPResponseType: HTTPResponseType {
     async fn parse_json_body(
@@ -32,9 +27,9 @@ where
 {
     type ParsedResponseType = T;
 
-    async fn read_response(response: Response) -> Result<Self::ParsedResponseType, ResponseError> {
+    async fn read_response(response: reqwest::Response) -> Result<Self::ParsedResponseType, ResponseError> {
         let response = Self::unwrap_return_code(response).await?;
-        Ok(Self::parse_json_body(response).await?)
+        Self::parse_json_body(response).await
     }
 }
 
@@ -62,7 +57,7 @@ pub(crate) trait HTTPResponseType {
 }
 
 #[derive(Debug, serde::Deserialize)]
-struct BadRequestReturn {
+pub struct BadRequestReturn {
     detail: Vec<BadRequestDetail>,
 }
 
