@@ -32,14 +32,14 @@ impl<'a> FlightComputer<'a> {
 
     fn get_state(&self) -> &FlightState { &self.current_state }
 
-    async fn set_state(&mut self, new_state: FlightState) {
+    pub async fn set_state(&mut self, new_state: FlightState) {
         self.update_observation().await;
         if new_state == self.current_state ||
             new_state == FlightState::Transition ||
             new_state == FlightState::Safe
         { return; }
         self.current_state = FlightState::Transition;
-        self.perform_state_transition(&new_state).await;
+        self.perform_state_transition(new_state).await;
         sleep(TRANSITION_DELAY_LOOKUP[&(self.current_state, new_state)]).await;
         self.update_observation().await;
     }
@@ -59,12 +59,12 @@ impl<'a> FlightComputer<'a> {
         }
     }
 
-    async fn perform_state_transition(&mut self, new_state: &FlightState) {
+    async fn perform_state_transition(&mut self, new_state: FlightState) {
         let req = ControlSatelliteRequest {
             vel_x: self.current_vel.x(),
             vel_y: self.current_vel.y(),
             camera_angle: self.current_camera_state.into(),
-            state: (*new_state).into(),
+            state: (new_state).into(),
         };
         loop {
             match req.send_request(self.request_client).await {
