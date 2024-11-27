@@ -8,6 +8,8 @@ use futures::StreamExt;
 use image::ImageReader;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
+use crate::flight_control::camera_state::CameraAngle;
+use crate::flight_control::common::Vec2D;
 
 pub struct Bitmap {
     width: usize,
@@ -28,12 +30,13 @@ impl Bitmap {
     }
 
     // TODO: magic numbers have to be adjusted for the lens used
-    pub fn flip_region(&mut self, x: usize, y: usize) {
-        // TODO: approaching edge
-        for row in y..y + 600 {
-            // TODO: check how the API returns position of the satellite
-            for col in x..x + 600 {
-                self.flip_pixel(col, row);
+    pub fn region_captured(&mut self, x: usize, y: usize, angle: CameraAngle) {
+        let angle_const = angle.get_square_radius() as usize;
+        for row in y-angle_const..y + angle_const {
+            for col in x-300..x + angle_const {
+                let mut coord2d = Vec2D::new(row as f64, col as f64);
+                coord2d.wrap_around_map();
+                self.set_pixel(coord2d.x() as usize, coord2d.y() as usize, true);
             }
         }
     }
@@ -51,9 +54,9 @@ impl Bitmap {
         self.data.get(index).unwrap_or(false)
     }
 
-    fn flip_pixel(&mut self, x: usize, y: usize) {
+    fn set_pixel(&mut self, x: usize, y: usize, state: bool) {
         let index = self.get_bitmap_index(x, y);
-        self.data.set(index, true);
+        self.data.set(index, state);
     }
 
     // Converts 2D (x, y) coordinates to a 1D index of memory
@@ -124,7 +127,7 @@ impl CameraController {
         }
 
         // TODO: change this method after rework
-        bitmap.flip_region(current_x, current_y);
+        //bitmap.flip_region(current_x, current_y);
 
         Ok(())
     }
