@@ -38,7 +38,9 @@ where
     pub fn euclid_distance(&self, other: &Self) -> T {
         ((self.x - other.x).powi(2) + (self.y - other.y).powi(2)).sqrt()
     }
+}
 
+impl<T: Num + NumCast + Copy> Vec2D<T>{
     pub fn x(&self) -> T { self.x }
     pub fn y(&self) -> T { self.y }
 }
