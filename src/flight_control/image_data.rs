@@ -17,12 +17,8 @@ impl Buffer {
         }
     }
 
-    pub fn save_pixel(&mut self, pos: Vec2D<usize>, rgb: [u8; 3]) {
-        let map_size = Vec2D::<usize>::map_size();
-        if pos.x() >= map_size.x() || pos.y() >= map_size.y {
-            // TODO: implement border switch
-        }
-        let index = pos.y * map_size.x + pos.x();
-        self.data[index] = rgb;
+    pub fn save_pixel(&mut self, wrapped_pos: Vec2D<f32>, rgb: [u8; 3]) {
+        let index = wrapped_pos.y * Vec2D::<f32>::map_size().x + wrapped_pos.x();
+        self.data[index as usize] = rgb;
     }
 }

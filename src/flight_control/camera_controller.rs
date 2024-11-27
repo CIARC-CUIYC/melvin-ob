@@ -37,8 +37,10 @@ impl Bitmap {
         self.width * self.height
     }
 
-    pub fn region_captured(&mut self, x: isize, y: isize, angle: CameraAngle) {
-        let angle_const = angle.get_square_radius() as isize;
+    pub fn region_captured(&mut self, pos: Vec2D<f32>, angle: CameraAngle) {
+        let angle_const = angle.get_square_radius() as usize;
+        let x = pos.x as usize;
+        let y = pos.y as usize;
         for row in y - angle_const..y + angle_const {
             for col in x - angle_const..x + angle_const {
                 let mut coord2d = Vec2D::new(row as f64, col as f64);
@@ -110,22 +112,18 @@ impl CameraController {
         let decoded_image = self.decode_png_data(&collected_png, angle)?;
 
         let angle_const = angle.get_square_radius() as usize;
-        for row in position.y.saturating_div(angle_const)..position.y.saturating_add(angle_const) {
-            for col in
-                position.x.saturating_div(angle_const)..position.x.saturating_add(angle_const)
+        for (i, row) in (position.x - angle_const..position.x + angle_const).enumerate() 
+        {
+            for (j, col) in (position.x - angle_const..position.x + angle_const).enumerate()
             {
-                let pixel = decoded_image.get_pixel(u32::try_from(col)?, u32::try_from(row)?);
+                let mut coord2d = Vec2D::new(row as f32, col as f32);
+                coord2d.wrap_around_map();
+                let pixel = decoded_image.get_pixel(i as u32, j as u32);
 
-                let global_x = position.x + (col);
-                let global_y = position.y + (row);
-
-                let global_position = Vec2D::new_usize(global_x, global_y);
-
-                self.buffer.save_pixel(global_position, pixel.0);
-                // TODO: implement region capture correctly
-                // self.bitmap.region_captured()
+                self.buffer.save_pixel(coord2d, pixel.0);
             }
         }
+        self.bitmap.region_captured(Vec2D::new(position.x as f32, position.y as f32), angle);
 
         Ok(())
     }

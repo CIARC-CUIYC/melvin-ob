@@ -45,10 +45,9 @@ where
     }
 }
 
+// TODO: wrap_around_map should be implemented in this block to work with integer types
+// TODO: fix vec2D implementation to fix vector types everywhere
 impl<T: Num + NumCast + Copy> Vec2D<T> {
-    pub fn new_usize(x: T, y: T) -> Self {
-        Self { x, y }
-    }
     pub fn x(&self) -> T {
         self.x
     }
