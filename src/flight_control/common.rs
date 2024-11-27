@@ -1,5 +1,4 @@
 use std::ops::{Add, Mul};
-use std::f64::consts::PI;
 use num_traits::{NumCast, real::Real, Num};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
@@ -8,7 +7,10 @@ pub struct Vec2D<T: Num + NumCast> {
     y: T,
 }
 
-impl<T: Real + NumCast + std::ops::AddAssign<T>> Vec2D<T> {
+impl<T: Real + NumCast + std::ops::AddAssign<T>> Vec2D<T>
+where
+    T: Real + NumCast + std::ops::AddAssign<T>,
+{
     pub fn map_size() -> Vec2D<T> {
         Vec2D {
             x: T::from(21600.0).unwrap(),
@@ -19,6 +21,10 @@ impl<T: Real + NumCast + std::ops::AddAssign<T>> Vec2D<T> {
     pub fn new(x: T, y: T) -> Self { Self { x, y } }
 
     pub fn abs(&self) -> T { (self.x.powi(2) + self.y.powi(2)).sqrt() }
+
+    pub fn in_radius_of(&self, other: &Self, rad: T) -> bool {
+        if self.euclid_distance(other) <= rad { true } else { false }
+    }
 
     pub fn wrap_around_map(&mut self) {
         let mut new_x = self.x % Self::map_size().x();
@@ -32,7 +38,9 @@ impl<T: Real + NumCast + std::ops::AddAssign<T>> Vec2D<T> {
     pub fn euclid_distance(&self, other: &Self) -> T {
         ((self.x - other.x).powi(2) + (self.y - other.y).powi(2)).sqrt()
     }
+}
 
+impl<T: Num + NumCast + Copy> Vec2D<T>{
     pub fn x(&self) -> T { self.x }
     pub fn y(&self) -> T { self.y }
 }

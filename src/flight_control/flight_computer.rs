@@ -25,11 +25,22 @@ pub struct FlightComputer<'a> {
 }
 
 impl<'a> FlightComputer<'a> {
-    fn get_state(&self) -> &FlightState {
-        &self.current_state
+    pub async fn new(request_client: &'a http_client::HTTPClient) -> FlightComputer<'a> {
+        let mut return_controller = FlightComputer {
+            current_pos: Vec2D::new(0.0, 0.0),
+            current_vel: Vec2D::new(0.0, 0.0),
+            current_state: FlightState::Safe,
+            current_camera_state: CameraAngle::Normal,
+            last_observation_timestamp: chrono::Utc::now(),
+            request_client,
+        };
+        return_controller.update_observation().await;
+        return_controller
     }
 
-    async fn set_state(&mut self, new_state: FlightState) {
+    fn get_state(&self) -> &FlightState { &self.current_state }
+
+    pub async fn set_state(&mut self, new_state: FlightState) {
         self.update_observation().await;
         if new_state == self.current_state
             || new_state == FlightState::Transition
@@ -38,7 +49,7 @@ impl<'a> FlightComputer<'a> {
             return;
         }
         self.current_state = FlightState::Transition;
-        self.perform_state_transition(&new_state).await;
+        self.perform_state_transition(new_state).await;
         sleep(TRANSITION_DELAY_LOOKUP[&(self.current_state, new_state)]).await;
         self.update_observation().await;
     }
@@ -50,22 +61,23 @@ impl<'a> FlightComputer<'a> {
                 .await)
             {
                 Ok(observation) => {
-                    self.current_pos = Vec2D::from((observation.pos_x(), observation.pos_y()));
+                    self.current_pos = Vec2D::from((observation.pos_x() as f64, observation.pos_y() as f64));
                     self.current_vel = Vec2D::from((observation.vel_x(), observation.vel_y()));
                     self.current_state = FlightState::from(observation.state());
                     self.last_observation_timestamp = observation.timestamp();
+                    return;
                 }
-                Err(err) => { /* TODO: log error here */ }
+                Err(err) => { println!("{}", err); }
             }
         }
     }
 
-    async fn perform_state_transition(&mut self, new_state: &FlightState) {
+    async fn perform_state_transition(&mut self, new_state: FlightState) {
         let req = ControlSatelliteRequest {
             vel_x: self.current_vel.x(),
             vel_y: self.current_vel.y(),
             camera_angle: self.current_camera_state.into(),
-            state: (*new_state).into(),
+            state: (new_state).into(),
         };
         loop {
             match req.send_request(self.request_client).await {
@@ -77,8 +89,10 @@ impl<'a> FlightComputer<'a> {
         }
     }
 
-    fn pos_in_time_delta(&self, time_delta: TimeDelta) -> Vec2D<f64> {
-        self.current_pos + self.current_vel * time_delta.num_seconds()
+    pub fn pos_in_time_delta(&self, time_delta: TimeDelta) -> Vec2D<f64> {
+        let mut pos = self.current_pos + self.current_vel * time_delta.num_seconds();
+        pos.wrap_around_map();
+        pos
     }
 
     pub fn get_current_pos(&self) -> Vec2D<f64> {
