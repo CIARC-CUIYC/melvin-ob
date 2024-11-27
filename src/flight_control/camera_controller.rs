@@ -1,4 +1,5 @@
-use crate::flight_control::flight_computer::FlightComputer;
+use crate::flight_control::camera_state::CameraAngle;
+use crate::flight_control::common::Vec2D;
 use crate::flight_control::image_data::Buffer;
 use crate::http_handler::http_client::HTTPClient;
 use crate::http_handler::http_request::request_common::NoBodyHTTPRequestType;
@@ -8,8 +9,6 @@ use futures::StreamExt;
 use image::ImageReader;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
-use crate::flight_control::camera_state::CameraAngle;
-use crate::flight_control::common::Vec2D;
 
 pub struct Bitmap {
     width: usize,
@@ -17,25 +16,30 @@ pub struct Bitmap {
     pub data: BitVec,
 }
 
-pub struct CameraController {}
+pub struct CameraController {
+    bitmap: Bitmap,
+    buffer: Buffer,
+}
 
 impl Bitmap {
-    pub fn new(width: usize, height: usize) -> Self {
-        let size = width * height;
-        Bitmap {
-            width,
-            height,
-            data: BitVec::from_elem(size, false),
+    pub fn new() -> Self {
+        let bitmap_size = Vec2D::<usize>::map_size();
+        let bitmap_area = bitmap_size.x * bitmap_size.y;
+        Self {
+            width: bitmap_size.x,
+            height: bitmap_size.y,
+            data: BitVec::from_elem(bitmap_area, false),
         }
     }
-    
-    pub fn size(&self) -> usize {self.width*self.height}
 
-    // TODO: magic numbers have to be adjusted for the lens used
+    pub fn size(&self) -> usize {
+        self.width * self.height
+    }
+
     pub fn region_captured(&mut self, x: isize, y: isize, angle: CameraAngle) {
         let angle_const = angle.get_square_radius() as isize;
-        for row in y-angle_const..y + angle_const {
-            for col in x-angle_const..x + angle_const {
+        for row in y - angle_const..y + angle_const {
+            for col in x - angle_const..x + angle_const {
                 let mut coord2d = Vec2D::new(row as f64, col as f64);
                 coord2d.wrap_around_map();
                 self.set_pixel(coord2d.x() as usize, coord2d.y() as usize, true);
@@ -68,6 +72,14 @@ impl Bitmap {
 }
 
 impl CameraController {
+    pub fn new() -> Self {
+        let png_bitmap = Bitmap::new();
+        let png_buffer = Buffer::new();
+        Self {
+            bitmap: png_bitmap,
+            buffer: png_buffer,
+        }
+    }
     pub async fn shoot_image_to_disk(
         &mut self,
         http_client: &HTTPClient,
@@ -90,11 +102,36 @@ impl CameraController {
     pub async fn shoot_image_to_buffer(
         &mut self,
         httpclient: &HTTPClient,
-        flight_computer: &mut FlightComputer<'_>,
-        bitmap: &mut Bitmap,
-        buffer: &mut Buffer,
+        position: Vec2D<usize>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        flight_computer.update_observation().await;
+        let collected_png = self.fetch_image_data(httpclient).await?;
+        let decoded_image = self.decode_png_data(&collected_png)?;
+
+        let width = decoded_image.width();
+        let height = decoded_image.height();
+
+        for y in 0..width {
+            for x in 0..height {
+                let pixel = decoded_image.get_pixel(x, y);
+
+                let global_x = position.x + (x as usize);
+                let global_y = position.y + (y as usize);
+
+                let global_position = Vec2D::new_usize(global_x, global_y);
+
+                self.buffer.save_pixel(global_position, pixel.0);
+                // TODO: implement region capture correclty
+                // self.bitmap.region_captured()
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn fetch_image_data(
+        &mut self,
+        httpclient: &HTTPClient,
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let response_stream = ShootImageRequest {}.send_request(httpclient).await?;
 
         let mut collected_png: Vec<u8> = Vec::new();
@@ -104,33 +141,18 @@ impl CameraController {
             collected_png.extend_from_slice(&chunk_result[..]);
         }
 
-        let decode_image = ImageReader::new(std::io::Cursor::new(collected_png))
+        Ok(collected_png)
+    }
+
+    fn decode_png_data(
+        &mut self,
+        collected_png: &[u8],
+    ) -> Result<image::RgbImage, Box<dyn std::error::Error>> {
+        let decoded_image = ImageReader::new(std::io::Cursor::new(collected_png))
             .with_guessed_format()?
             .decode()?
             .to_rgb8();
 
-        let current_pos = flight_computer.get_current_pos();
-        let current_x = current_pos.x() as usize;
-        let current_y = current_pos.y() as usize;
-
-        let width = decode_image.width();
-        let height = decode_image.height();
-
-        for y in 0..width {
-            for x in 0..height {
-                let pixel = decode_image.get_pixel(x, y);
-                // TODO: implement this to map global var somehow
-                // copy/past from chatgpt
-                let global_x = current_x + (x as usize);
-                let global_y = current_y + (y as usize);
-
-                buffer.save_pixel(global_x, global_y, pixel.0)
-            }
-        }
-
-        // TODO: change this method after rework
-        //bitmap.flip_region(current_x, current_y);
-
-        Ok(())
+        Ok(decoded_image)
     }
 }
