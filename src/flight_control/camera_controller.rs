@@ -12,6 +12,8 @@ pub struct Bitmap {
     pub data: BitVec,
 }
 
+pub struct CameraController {}
+
 impl Bitmap {
     pub fn new(width: usize, height: usize) -> Self {
         let size = width * height;
@@ -22,26 +24,7 @@ impl Bitmap {
         }
     }
 
-    //
-    pub async fn shoot_image(
-        &mut self,
-        http_client: &HTTPClient,
-        file_path: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut file = File::create(file_path).await?;
-        let mut response_stream = ShootImageRequest {}.send_request(http_client).await?;
-        while let Some(Ok(chunk)) = response_stream.next().await {
-            file.write_all(&chunk).await?;
-        }
-
-        file.flush().await?;
-
-        //TODO: Coordinate parsing?
-        // self._region(x, y);
-
-        Ok(())
-    }
-
+    // TODO: magic numbers have to be adjusted for the lens used
     pub fn flip_region(&mut self, x: usize, y: usize) {
         // TODO: approaching edge
         for row in y..y + 600 {
@@ -73,5 +56,26 @@ impl Bitmap {
     // Converts 2D (x, y) coordinates to a 1D index of memory
     fn get_bitmap_index(&self, x: usize, y: usize) -> usize {
         y * self.width + x
+    }
+}
+
+impl CameraController {
+    pub async fn shoot_image_to_disk(
+        &mut self,
+        http_client: &HTTPClient,
+        file_path: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut file = File::create(file_path).await?;
+        let mut response_stream = ShootImageRequest {}.send_request(http_client).await?;
+        while let Some(Ok(chunk)) = response_stream.next().await {
+            file.write_all(&chunk).await?;
+        }
+
+        file.flush().await?;
+
+        //TODO: Coordinate parsing?
+        // self._region(x, y);
+
+        Ok(())
     }
 }
