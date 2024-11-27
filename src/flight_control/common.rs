@@ -1,19 +1,23 @@
-use std::ops::{Add, Mul};
-use num_traits::{NumCast, real::Real, Num, AsPrimitive};
+use std::ops::{Add, Mul, Sub};
+use num_traits::{NumCast, real::Real, Num, NumOps, NumAssignOps};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
-pub struct Vec2D<T: Num + NumCast> {
+pub struct Vec2D<T> {
     x: T,
     y: T,
 }
 
-impl<T: Real + NumCast + std::ops::AddAssign<T>> Vec2D<T>
+impl<T> Vec2D<T>
 where
-    T: Real + NumCast + std::ops::AddAssign<T>,
+    T: Real + NumCast + NumOps + NumAssignOps,
 {
     pub fn new(x: T, y: T) -> Self { Self { x, y } }
 
     pub fn abs(&self) -> T { (self.x.powi(2) + self.y.powi(2)).sqrt() }
+    
+    pub fn to(&self, other: &Vec2D<T>) -> Vec2D<T> {
+        Vec2D::new(other.x - self.x, other.y - self.y)
+    }
 
     pub fn in_radius_of(&self, other: &Self, rad: T) -> bool {
         if self.euclid_distance(other) <= rad { true } else { false }
@@ -26,6 +30,13 @@ where
         if new_y < T::from(0).unwrap() { new_y += Self::map_size().y(); }
         self.x = new_x;
         self.y = new_y;
+    }
+
+    pub fn rotate_by(&mut self, angle_degrees: f32) {
+        let angle_radians = T::from(angle_degrees.to_radians()).unwrap();
+        let new_x = self.x * angle_radians.cos() - self.y * angle_radians.sin();
+        self.y = self.x * angle_radians.sin() + self.y * angle_radians.cos();
+        self.x = new_x;
     }
 
     pub fn euclid_distance(&self, other: &Self) -> T {
