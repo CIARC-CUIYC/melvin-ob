@@ -6,7 +6,11 @@ use strum_macros::EnumIter;
 pub enum CameraAngle {
     Narrow,
     Normal,
-    Wide
+    Wide,
+}
+
+impl CameraAngle {
+    pub fn get_square_radius(&self) -> u16 { CAMERA_SQUARE_RAD_LOOKUP[self] }
 }
 
 impl From<&str> for CameraAngle {
@@ -22,7 +26,7 @@ impl From<&str> for CameraAngle {
 
 impl Into<String> for CameraAngle {
     fn into(self) -> String {
-        match self{
+        match self {
             CameraAngle::Narrow => String::from("narrow"),
             CameraAngle::Normal => String::from("normal"),
             CameraAngle::Wide => String::from("wide")
