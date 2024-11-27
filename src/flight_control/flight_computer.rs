@@ -7,7 +7,7 @@ use crate::http_handler::{http_client, http_request::{control_put::*, observatio
                                                                        JSONBodyHTTPRequestType}}};
 
 #[derive(Debug)]
-struct FlightComputer<'a> {
+pub struct FlightComputer<'a> {
     current_pos: Vec2D<f64>,
     current_vel: Vec2D<f64>,
     current_state: FlightState,
@@ -17,6 +17,19 @@ struct FlightComputer<'a> {
 }
 
 impl<'a> FlightComputer<'a> {
+    pub async fn new(request_client: &'a http_client::HTTPClient) -> FlightComputer<'a> {
+        let mut return_controller = FlightComputer {
+            current_pos: Vec2D::new(0.0, 0.0),
+            current_vel: Vec2D::new(0.0, 0.0),
+            current_state: FlightState::Safe,
+            current_camera_state: CameraAngle::Normal,
+            last_observation_timestamp: chrono::Utc::now(),
+            request_client,
+        };
+        return_controller.update_observation().await;
+        return_controller
+    }
+
     fn get_state(&self) -> &FlightState { &self.current_state }
 
     async fn set_state(&mut self, new_state: FlightState) {
@@ -39,6 +52,7 @@ impl<'a> FlightComputer<'a> {
                     self.current_vel = Vec2D::from((observation.vel_x(), observation.vel_y()));
                     self.current_state = FlightState::from(observation.state());
                     self.last_observation_timestamp = observation.timestamp();
+                    return;
                 }
                 Err(err) => { /* TODO: log error here */ }
             }
@@ -62,10 +76,12 @@ impl<'a> FlightComputer<'a> {
         }
     }
 
-    fn pos_in_time_delta(&self, time_delta: TimeDelta) -> Vec2D<f64> {
-        self.current_pos + self.current_vel * time_delta.num_seconds()
+    pub fn pos_in_time_delta(&self, time_delta: TimeDelta) -> Vec2D<f64> {
+        let mut pos = self.current_pos + self.current_vel * time_delta.num_seconds();
+        pos.wrap_around_map();
+        pos
     }
-    
+
     /* TODO: not implemented
     fn picture_options_p<T>(&self, point: Vec2D<T>, time_delta: TimeDelta, margin: i16) -> PictureOption
     where
@@ -74,5 +90,4 @@ impl<'a> FlightComputer<'a> {
         let total_disp = self.current_vel * time_delta.num_seconds();
     }
     */
-     
 }

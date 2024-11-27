@@ -9,7 +9,7 @@ use tokio::io::AsyncWriteExt;
 pub struct Bitmap {
     width: usize,
     height: usize,
-    data: BitVec,
+    pub data: BitVec,
 }
 
 impl Bitmap {
