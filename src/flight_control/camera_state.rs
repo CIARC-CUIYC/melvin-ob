@@ -10,7 +10,12 @@ pub enum CameraAngle {
 }
 
 impl CameraAngle {
-    pub fn get_square_radius(&self) -> u16 { CAMERA_SQUARE_RAD_LOOKUP[self] }
+    pub fn get_square_radius(&self) -> u16 {
+        CAMERA_SQUARE_RAD_LOOKUP[self]
+    }
+    pub fn get_square_unit_length(&self) -> u16 {
+        CAMERA_SCALE_LOOKUP[self]
+    }
 }
 
 impl From<&str> for CameraAngle {
@@ -19,7 +24,7 @@ impl From<&str> for CameraAngle {
             "narrow" => CameraAngle::Narrow,
             "normal" => CameraAngle::Normal,
             "wide" => CameraAngle::Wide,
-            _ => CameraAngle::Normal // TODO: conversion error should be logged
+            _ => CameraAngle::Normal, // TODO: conversion error should be logged
         }
     }
 }
@@ -29,22 +34,35 @@ impl Into<String> for CameraAngle {
         match self {
             CameraAngle::Narrow => String::from("narrow"),
             CameraAngle::Normal => String::from("normal"),
-            CameraAngle::Wide => String::from("wide")
+            CameraAngle::Wide => String::from("wide"),
         }
     }
 }
 
-static CAMERA_SQUARE_RAD_LOOKUP: LazyLock<HashMap<CameraAngle, u16>> =
-    LazyLock::new(|| {
-        let mut lookup = HashMap::new();
-        let transition_times = vec![
-            (CameraAngle::Narrow, 300),
-            (CameraAngle::Normal, 400),
-            (CameraAngle::Wide, 500),
-        ];
+static CAMERA_SQUARE_RAD_LOOKUP: LazyLock<HashMap<CameraAngle, u16>> = LazyLock::new(|| {
+    let mut lookup = HashMap::new();
+    let transition_times = vec![
+        (CameraAngle::Narrow, 300),
+        (CameraAngle::Normal, 400),
+        (CameraAngle::Wide, 500),
+    ];
 
-        for (angle, rad) in transition_times {
-            lookup.insert(angle, rad);
-        }
-        lookup
-    });
+    for (angle, rad) in transition_times {
+        lookup.insert(angle, rad);
+    }
+    lookup
+});
+
+static CAMERA_SCALE_LOOKUP: LazyLock<HashMap<CameraAngle, u16>> = LazyLock::new(|| {
+    let mut lookup = HashMap::new();
+    let transition_widths = vec![
+        (CameraAngle::Narrow, 600),
+        (CameraAngle::Normal, 800),
+        (CameraAngle::Wide, 1000),
+    ];
+
+    for (angle, square_unit_length) in transition_widths {
+        lookup.insert(angle, square_unit_length);
+    }
+    lookup
+});
