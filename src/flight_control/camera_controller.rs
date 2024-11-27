@@ -28,12 +28,14 @@ impl Bitmap {
             data: BitVec::from_elem(size, false),
         }
     }
+    
+    pub fn size(&self) -> usize {self.width*self.height}
 
     // TODO: magic numbers have to be adjusted for the lens used
-    pub fn region_captured(&mut self, x: usize, y: usize, angle: CameraAngle) {
-        let angle_const = angle.get_square_radius() as usize;
+    pub fn region_captured(&mut self, x: isize, y: isize, angle: CameraAngle) {
+        let angle_const = angle.get_square_radius() as isize;
         for row in y-angle_const..y + angle_const {
-            for col in x-300..x + angle_const {
+            for col in x-angle_const..x + angle_const {
                 let mut coord2d = Vec2D::new(row as f64, col as f64);
                 coord2d.wrap_around_map();
                 self.set_pixel(coord2d.x() as usize, coord2d.y() as usize, true);

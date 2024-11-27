@@ -20,6 +20,7 @@ pub struct FlightComputer<'a> {
     current_vel: Vec2D<f64>,
     current_state: FlightState,
     current_camera_state: CameraAngle,
+    max_battery: f32, // this is an artifact caused by dumb_main
     last_observation_timestamp: chrono::DateTime<chrono::Utc>,
     request_client: &'a http_client::HTTPClient,
 }
@@ -31,14 +32,16 @@ impl<'a> FlightComputer<'a> {
             current_vel: Vec2D::new(0.0, 0.0),
             current_state: FlightState::Safe,
             current_camera_state: CameraAngle::Normal,
+            max_battery: 0.0,
             last_observation_timestamp: chrono::Utc::now(),
             request_client,
         };
         return_controller.update_observation().await;
         return_controller
     }
-
-    fn get_state(&self) -> &FlightState { &self.current_state }
+    
+    pub fn get_max_battery(&self) -> f32 {self.max_battery}
+    pub fn get_state(&self) -> FlightState { self.current_state }
 
     pub async fn set_state(&mut self, new_state: FlightState) {
         self.update_observation().await;
@@ -65,6 +68,7 @@ impl<'a> FlightComputer<'a> {
                     self.current_vel = Vec2D::from((observation.vel_x(), observation.vel_y()));
                     self.current_state = FlightState::from(observation.state());
                     self.last_observation_timestamp = observation.timestamp();
+                    self.max_battery = observation.max_battery();
                     return;
                 }
                 Err(err) => { println!("{}", err); }
