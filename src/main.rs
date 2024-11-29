@@ -140,7 +140,7 @@ fn calculate_next_image_time(
 
     loop {
         if !map.is_square_empty(current_pos, CameraAngle::Wide)
-            && calculation_start_time + current_calculation_time_delta <= Utc::now()
+            && (calculation_start_time + base_delay) <= Utc::now() + current_calculation_time_delta
         {
             let next_image_time = calculation_start_time + current_calculation_time_delta;
             println!("Next Image Time: {next_image_time}");
