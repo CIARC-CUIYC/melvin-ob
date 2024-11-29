@@ -115,9 +115,10 @@ impl<'a> FlightComputer<'a> {
         {
             return;
         }
+        let init_state = self.current_state;
         self.current_state = FlightState::Transition;
         self.perform_state_transition(new_state).await;
-        sleep(TRANSITION_DELAY_LOOKUP[&(self.current_state, new_state)]).await;
+        sleep(TRANSITION_DELAY_LOOKUP[&(init_state, new_state)]).await;
         self.update_observation().await;
     }
 
