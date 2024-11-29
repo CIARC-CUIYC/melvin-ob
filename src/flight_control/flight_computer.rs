@@ -79,7 +79,7 @@ impl<'a> FlightComputer<'a> {
 
     async fn fast_forward(&self, duration: Duration) -> u64 {
         if duration <= Self::FAST_FORWARD_SECONDS_THRESHOLD {
-            sleep(duration).await;
+            sleep(duration - Duration::from_secs(1)).await;
             return 0;
         }
 
@@ -87,7 +87,7 @@ impl<'a> FlightComputer<'a> {
         let wait_time = duration.as_secs() - t_normal;
         let mut selected_factor = 1;
         let mut selected_remainder = 0;
-        let selected_saved_time = 0;
+        let mut selected_saved_time = 0;
 
         for factor in 1..=min(wait_time, Self::MAX_TIMESPEED_MULTIPLIER as u64) {
             let remainder = wait_time % factor;
@@ -95,9 +95,10 @@ impl<'a> FlightComputer<'a> {
             if selected_saved_time < saved_time {
                 selected_factor = factor;
                 selected_remainder = remainder;
+                selected_saved_time = saved_time;
             }
         }
-        println!("Fast-Forwared-Factor: {}", selected_factor);
+        println!("Fast-Forward-Factor: {}", selected_factor);
         println!(
             "First Wait: {}",
             (wait_time - selected_remainder) / selected_factor
@@ -120,8 +121,8 @@ impl<'a> FlightComputer<'a> {
         .send_request(self.request_client)
         .await
         .unwrap();
-        println!("Second Wait: {}", selected_remainder + t_normal);
-        sleep(Duration::from_secs(selected_remainder + t_normal)).await;
+        println!("Second Wait: {}", selected_remainder);
+        sleep(Duration::from_secs(selected_remainder)).await;
         selected_saved_time
     }
 
