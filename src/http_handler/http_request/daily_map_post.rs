@@ -1,9 +1,9 @@
+use super::daily_map::DailyMapResponse;
+use super::request_common::{
+    HTTPRequestMethod, HTTPRequestType, MultipartBodyHTTPRequestType, RequestError,
+};
 use std::io;
 use std::path::Path;
-use super::daily_map::DailyMapResponse;
-use super::request_common::{HTTPRequestMethod, HTTPRequestType,
-                            MultipartBodyHTTPRequestType, RequestError};
-
 
 #[derive(Debug)]
 pub struct DailyMapRequest {
@@ -19,20 +19,28 @@ impl MultipartBodyHTTPRequestType for DailyMapRequest {
 
 impl HTTPRequestType for DailyMapRequest {
     type Response = DailyMapResponse;
-    fn endpoint(&self) -> &str { "/dailyMap" }
-    fn request_method(&self) -> HTTPRequestMethod { HTTPRequestMethod::Post }
+    fn endpoint(&self) -> &str {
+        "/dailyMap"
+    }
+    fn request_method(&self) -> HTTPRequestMethod {
+        HTTPRequestMethod::Post
+    }
 }
 
 impl DailyMapRequest {
     pub fn new<P: AsRef<Path>>(image_path: P) -> Result<Self, io::Error> {
         let path = image_path.as_ref();
         if !path.exists() {
-            return Err(io::Error::new(io::ErrorKind::NotFound,
-                                      "File path does not exist"));
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "File path does not exist",
+            ));
         }
         if !path.is_file() {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput,
-                                      "Path is not a valid file"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Path is not a valid file",
+            ));
         }
         Ok(Self {
             image_path: path.to_string_lossy().to_string(),

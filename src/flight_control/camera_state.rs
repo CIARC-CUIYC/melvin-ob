@@ -33,7 +33,7 @@ impl From<CameraAngle> for &'static str {
         match value {
             CameraAngle::Narrow => "narrow",
             CameraAngle::Normal => "normal",
-            CameraAngle::Wide => "wide"
+            CameraAngle::Wide => "wide",
         }
     }
 }

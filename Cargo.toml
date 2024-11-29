@@ -14,19 +14,17 @@ categories = []
 reqwest = { version = "0.12.9", features = ["json", "multipart", "stream"] }
 tokio = { version = "1.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 futures-core = "0.3.31"
 bytes = "1.8.0"
-once_cell = "1.20.2"
 num-traits = "0.2.19"
 strum = "0.26.3"
 strum_macros = "0.26.4"
-bit-vec = { version = "0.8", features = ["serde"] }
+bitvec = { version = "1.0.1", features = ["serde"] }
 futures = "0.3.31"
-png = "0.17"
 image = "0.25.5"
 bincode = "1.3.3"
+rayon = "1.10.0"
 
 [lints.clippy]
 correctness = "deny"
@@ -44,7 +42,7 @@ split-debuginfo = '...'  # Platform-specific.
 strip = "none"
 debug-assertions = true # TODO: this is enabled for compatibility for now
 overflow-checks = false
-lto = false
+lto = true
 panic = 'unwind'
 incremental = false
 codegen-units = 16

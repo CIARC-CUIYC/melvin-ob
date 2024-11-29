@@ -9,6 +9,10 @@ impl NoBodyHTTPRequestType for RestoreBackupRequest {}
 
 impl HTTPRequestType for RestoreBackupRequest {
     type Response = restore_backup::RestoreBackupResponse;
-    fn endpoint(&self) -> &str { "/backup" }
-    fn request_method(&self) -> HTTPRequestMethod { HTTPRequestMethod::Put }
+    fn endpoint(&self) -> &str {
+        "/backup"
+    }
+    fn request_method(&self) -> HTTPRequestMethod {
+        HTTPRequestMethod::Put
+    }
 }

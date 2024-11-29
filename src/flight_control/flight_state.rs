@@ -25,9 +25,9 @@ impl From<&str> for FlightState {
     }
 }
 
-impl From<FlightState> for &'static str{
+impl From<FlightState> for &'static str {
     fn from(value: FlightState) -> Self {
-        match value{
+        match value {
             FlightState::Deployment => "deployment",
             FlightState::Transition => "transition",
             FlightState::Acquisition => "acquisition",
@@ -43,25 +43,85 @@ pub static TRANSITION_DELAY_LOOKUP: LazyLock<HashMap<(FlightState, FlightState),
         let mut lookup = HashMap::new();
         let transition_times = vec![
             // Deployment transitions
-            (FlightState::Deployment, FlightState::Acquisition, Duration::from_secs(180)),
-            (FlightState::Deployment, FlightState::Charge, Duration::from_secs(180)),
-            (FlightState::Deployment, FlightState::Comms, Duration::from_secs(180)),
+            (
+                FlightState::Deployment,
+                FlightState::Acquisition,
+                Duration::from_secs(180),
+            ),
+            (
+                FlightState::Deployment,
+                FlightState::Charge,
+                Duration::from_secs(180),
+            ),
+            (
+                FlightState::Deployment,
+                FlightState::Comms,
+                Duration::from_secs(180),
+            ),
             // Acquisition transitions
-            (FlightState::Acquisition, FlightState::Deployment, Duration::from_secs(180)),
-            (FlightState::Acquisition, FlightState::Charge, Duration::from_secs(180)),
-            (FlightState::Acquisition, FlightState::Comms, Duration::from_secs(180)),
+            (
+                FlightState::Acquisition,
+                FlightState::Deployment,
+                Duration::from_secs(180),
+            ),
+            (
+                FlightState::Acquisition,
+                FlightState::Charge,
+                Duration::from_secs(180),
+            ),
+            (
+                FlightState::Acquisition,
+                FlightState::Comms,
+                Duration::from_secs(180),
+            ),
             // Charge transitions
-            (FlightState::Charge, FlightState::Deployment, Duration::from_secs(180)),
-            (FlightState::Charge, FlightState::Acquisition, Duration::from_secs(180)),
-            (FlightState::Charge, FlightState::Comms, Duration::from_secs(180)),
+            (
+                FlightState::Charge,
+                FlightState::Deployment,
+                Duration::from_secs(180),
+            ),
+            (
+                FlightState::Charge,
+                FlightState::Acquisition,
+                Duration::from_secs(180),
+            ),
+            (
+                FlightState::Charge,
+                FlightState::Comms,
+                Duration::from_secs(180),
+            ),
             // Comms transitions
-            (FlightState::Comms, FlightState::Deployment, Duration::from_secs(180)),
-            (FlightState::Comms, FlightState::Acquisition, Duration::from_secs(180)),
-            (FlightState::Comms, FlightState::Charge, Duration::from_secs(180)),
+            (
+                FlightState::Comms,
+                FlightState::Deployment,
+                Duration::from_secs(180),
+            ),
+            (
+                FlightState::Comms,
+                FlightState::Acquisition,
+                Duration::from_secs(180),
+            ),
+            (
+                FlightState::Comms,
+                FlightState::Charge,
+                Duration::from_secs(180),
+            ),
             // Safe transitions
-            (FlightState::Safe, FlightState::Deployment, Duration::from_secs(1200)),
-            (FlightState::Safe, FlightState::Acquisition, Duration::from_secs(1200)),
-            (FlightState::Safe, FlightState::Charge, Duration::from_secs(1200)),
+            (
+                FlightState::Safe,
+                FlightState::Deployment,
+                Duration::from_secs(1200),
+            ),
+            (
+                FlightState::Safe,
+                FlightState::Acquisition,
+                Duration::from_secs(1200),
+            ),
+            (
+                FlightState::Safe,
+                FlightState::Charge,
+                Duration::from_secs(1200),
+            ),
         ];
 
         for (from, to, duration) in transition_times {
@@ -69,4 +129,3 @@ pub static TRANSITION_DELAY_LOOKUP: LazyLock<HashMap<(FlightState, FlightState),
         }
         lookup
     });
-
