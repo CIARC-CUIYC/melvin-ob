@@ -1,4 +1,4 @@
-use num_traits::{real::Real, Num, NumAssignOps, NumCast};
+use num_traits::{real::Real, Num, NumAssignOps, NumCast, Signed, ToPrimitive};
 use std::ops::{Add, Mul};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
@@ -53,7 +53,7 @@ impl<T: Num + NumCast + Copy> Vec2D<T> {
         let other_y = other.y.to_f64().unwrap();
         ((self_x - self_y).powi(2) + (other_x - other_y).powi(2)).sqrt()
     }
-    
+
     pub fn in_radius_of(&self, other: &Self, rad: T) -> bool {
         self.euclid_distance_f64(other) <= rad.to_f64().unwrap()
     }
@@ -68,7 +68,7 @@ impl<T: Num + NumCast + Copy> Vec2D<T> {
     pub fn map_size() -> Vec2D<T> {
         Vec2D {
             x: T::from(21600.0).unwrap(),
-            y: T::from(10600.0).unwrap(),
+            y: T::from(10800.0).unwrap(),
         }
     }
 
@@ -81,7 +81,9 @@ impl<T: Num + NumCast + Copy> Vec2D<T> {
     }
 
     /// Helper function to wrap a single coordinate
-    fn wrap_coordinate(value: T, max_value: T) -> T { (value % max_value + max_value) % max_value }
+    pub fn wrap_coordinate(value: T, max_value: T) -> T {
+        (value + max_value) % max_value
+    }
 }
 
 impl<T, TAdd> Add<Vec2D<TAdd>> for Vec2D<T>

@@ -4,15 +4,19 @@ use super::{
     flight_state::{FlightState, TRANSITION_DELAY_LOOKUP},
 };
 use crate::http_handler::http_request::configure_simulation_put::ConfigureSimulationRequest;
-use crate::http_handler::{http_client, http_request::{
-    control_put::*,
-    observation_get::*,
-    request_common::{JSONBodyHTTPRequestType, NoBodyHTTPRequestType},
-}, HTTPError};
+use crate::http_handler::http_response::control_satellite::ControlSatelliteResponse;
+use crate::http_handler::{
+    http_client,
+    http_request::{
+        control_put::*,
+        observation_get::*,
+        request_common::{JSONBodyHTTPRequestType, NoBodyHTTPRequestType},
+    },
+    HTTPError,
+};
 use std::cmp::min;
 use std::time;
 use tokio::time::sleep;
-use crate::http_handler::http_response::control_satellite::ControlSatelliteResponse;
 
 #[derive(Debug)]
 pub struct FlightComputer<'a> {
@@ -113,15 +117,17 @@ impl<'a> FlightComputer<'a> {
         if new_angle == self.current_camera_state {
             return;
         }
-        let req = ControlSatelliteRequest{
+        let req = ControlSatelliteRequest {
             vel_x: self.current_vel.x(),
             vel_y: self.current_vel.y(),
             camera_angle: new_angle.into(),
             state: self.current_state.into(),
         };
-        match req.send_request(self.request_client).await{
-            Ok(_) => {self.current_camera_state = new_angle;},
-            Err(_) => {/* TODO: log error here */}
+        match req.send_request(self.request_client).await {
+            Ok(_) => {
+                self.current_camera_state = new_angle;
+            }
+            Err(_) => { /* TODO: log error here */ }
         }
         self.update_observation().await;
     }

@@ -1,5 +1,7 @@
+use rayon::iter::ParallelIterator;
 mod flight_control;
 mod http_handler;
+
 use crate::flight_control::camera_controller::{Bitmap, CameraController};
 use crate::flight_control::camera_state::CameraAngle;
 use crate::flight_control::common::Vec2D;
@@ -8,6 +10,7 @@ use crate::flight_control::flight_state::FlightState;
 use crate::http_handler::http_request::request_common::NoBodyHTTPRequestType;
 use crate::http_handler::http_request::reset_get::ResetRequest;
 use chrono::{DateTime, TimeDelta, Utc};
+use rayon::prelude::*;
 
 #[tokio::main]
 async fn main() {
@@ -16,12 +19,10 @@ async fn main() {
     const FUEL_RESET_THRESHOLD: f32 = 20.0;
     const BIN_FILEPATH: &str = "camera_controller.bin";
 
-    let mut camera_controller = CameraController::from_file(BIN_FILEPATH)
-        .await
-        .unwrap_or({
-            println!("Failed to read camera controller from file, creating new!");
-            CameraController::new()
-        });
+    let mut camera_controller = CameraController::from_file(BIN_FILEPATH).await.unwrap_or({
+        println!("Failed to read camera controller from file, creating new!");
+        CameraController::new()
+    });
 
     let http_handler = http_handler::http_client::HTTPClient::new("http://localhost:33000");
     ResetRequest {}.send_request(&http_handler).await.unwrap();
@@ -42,15 +43,13 @@ async fn main() {
             &mut possible_orbit_coverage_map,
             max_orbit_prediction_secs,
         );
-        possible_orbit_coverage_map
-            .data
-            .difference(camera_controller.map_ref()); // this checks if there are any possible, unphotographed regions on the current orbit
+        possible_orbit_coverage_map.data &= !(*camera_controller.map_ref()).clone(); // this checks if there are any possible, unphotographed regions on the current orbit
         println!(
             "Total Orbit Possible Coverage Gain: {:.2}",
             possible_orbit_coverage_map.data.count_ones() as f64
                 / possible_orbit_coverage_map.size() as f64
         );
-        while !possible_orbit_coverage_map.data.none() {
+        while possible_orbit_coverage_map.data.any() {
             controller.update_observation().await;
             let next_image_time;
             let delay: TimeDelta;
@@ -134,12 +133,13 @@ fn calculate_next_image_time(
     map: &Bitmap,
     base_delay: TimeDelta,
 ) -> DateTime<Utc> {
-    let delay_pos = cont.pos_in_time_delta(base_delay);
+    let init_pos = cont.pos_in_time_delta(base_delay);
     let calculation_start_time = Utc::now();
     let mut current_calculation_time_delta = base_delay;
+    let mut current_pos = init_pos;
 
     loop {
-        if !map.is_square_empty(delay_pos, CameraAngle::Wide)
+        if !map.is_square_empty(current_pos, CameraAngle::Wide)
             && calculation_start_time + current_calculation_time_delta <= Utc::now()
         {
             let next_image_time = calculation_start_time + current_calculation_time_delta;
@@ -150,8 +150,9 @@ fn calculate_next_image_time(
             break;
         }
         current_calculation_time_delta += TimeDelta::seconds(1);
+        current_pos = cont.pos_in_time_delta(current_calculation_time_delta);
     }
-
+    println!("No possible image time found!");
     Utc::now() - TimeDelta::days(10)
 }
 

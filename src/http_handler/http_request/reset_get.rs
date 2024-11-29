@@ -9,6 +9,10 @@ impl NoBodyHTTPRequestType for ResetRequest {}
 
 impl HTTPRequestType for ResetRequest {
     type Response = reset::ResetResponse;
-    fn endpoint(&self) -> &str { "/reset" }
-    fn request_method(&self) -> HTTPRequestMethod { HTTPRequestMethod::Get }
+    fn endpoint(&self) -> &str {
+        "/reset"
+    }
+    fn request_method(&self) -> HTTPRequestMethod {
+        HTTPRequestMethod::Get
+    }
 }

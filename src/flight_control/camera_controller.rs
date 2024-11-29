@@ -1,21 +1,19 @@
-use crate::flight_control::camera_state::CameraAngle;
-use crate::flight_control::common::Vec2D;
-use crate::flight_control::image_data::Buffer;
+use crate::flight_control::{camera_state::CameraAngle, common::Vec2D, image_data::Buffer};
 use crate::http_handler::http_client::HTTPClient;
 use crate::http_handler::http_request::request_common::NoBodyHTTPRequestType;
 use crate::http_handler::http_request::shoot_image_get::ShootImageRequest;
-use bit_vec::BitVec;
+use bitvec::prelude::Lsb0;
+use bitvec::{bitbox, prelude::BitBox};
 use futures::StreamExt;
-use image::imageops::Lanczos3;
-use image::ImageReader;
+use image::{imageops::Lanczos3, ImageReader};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct Bitmap {
-    width: usize,
-    height: usize,
-    pub data: BitVec,
+    width: u32,
+    height: u32,
+    pub data: BitBox,
 }
 
 pub struct CameraController {
@@ -24,54 +22,81 @@ pub struct CameraController {
 }
 
 impl Bitmap {
-    pub fn new(width: usize, height: usize) -> Self {
+    pub fn new(width: u32, height: u32) -> Self {
+        let len = width * height;
         Self {
             width,
             height,
-            data: BitVec::from_elem(width * height, false),
+            data: bitbox![usize, Lsb0; 0; len as usize],
         }
     }
 
     pub fn from_mapsize() -> Self {
-        let bitmap_size = Vec2D::<usize>::map_size();
+        let bitmap_size = Vec2D::<u32>::map_size();
         Self::new(bitmap_size.x(), bitmap_size.y())
     }
 
-    pub fn size(&self) -> usize {
-        self.width * self.height
-    }
+    pub fn size(&self) -> usize { (self.width * self.height) as usize }
 
     pub fn region_captured(&mut self, pos: Vec2D<f32>, angle: CameraAngle) {
-        let angle_const = angle.get_square_radius() as isize;
         let x = pos.x() as isize;
         let y = pos.y() as isize;
-        for row in y - angle_const..y + angle_const {
-            for col in x - angle_const..x + angle_const {
-                let mut coord2d = Vec2D::new(row as f64, col as f64);
-                coord2d.wrap_around_map();
-                self.set_pixel(coord2d.x() as usize, coord2d.y() as usize, true);
+        let slices_vec = self.get_region_slice_indices_from_center(x, y, angle);
+        for slice_index in slices_vec {
+            self.data
+                .get_mut(slice_index.0..slice_index.1)
+                .unwrap()
+                .fill(true);
+        }
+    }
+
+    pub fn get_region_slice_indices_from_center(
+        &self,
+        x: isize,
+        y: isize,
+        angle: CameraAngle,
+    ) -> Vec<(usize, usize)> {
+        let angle_const = angle.get_square_radius() as isize;
+        let mut slices = Vec::new();
+        let max_height = self.height as isize;
+        let max_width = self.width as isize;
+
+        for y_it in y - angle_const..y + angle_const {
+            let wrapped_y = Vec2D::wrap_coordinate(y_it, max_height);
+            let x_start = Vec2D::wrap_coordinate(x - angle_const, max_width);
+            let x_end = Vec2D::wrap_coordinate(x + angle_const, max_width);
+
+            let start_index = self.get_bitmap_index(x_start as usize, wrapped_y as usize);
+            let end_index = self.get_bitmap_index(x_end as usize, wrapped_y as usize);
+
+            if (x_end - x_start).abs() <= (angle_const * 2) {
+                // The row is contiguous, no wrapping needed
+                slices.push((start_index, end_index));
+            } else {
+                // The row wraps around the width of the map
+                let first_part_end_index = self.get_bitmap_index(0, (wrapped_y + 1) as usize);
+                let second_part_start_index = self.get_bitmap_index(0, wrapped_y as usize);
+                slices.push((start_index, first_part_end_index));
+                slices.push((second_part_start_index, end_index));
             }
         }
+        slices
     }
 
     pub fn is_square_empty(&self, pos: Vec2D<f64>, angle: CameraAngle) -> bool {
         let angle_const = angle.get_square_radius() as isize;
         let x = pos.x() as isize;
         let y = pos.y() as isize;
-        for col in x - angle_const..x + angle_const {
-            for row in y - angle_const..y + angle_const {
-                let mut index = Vec2D::new(col as f64, row as f64);
-                index.wrap_around_map();
-                if self.data[self.get_bitmap_index(index.x() as usize, index.y() as usize)] {
-                    return false;
-                }
+        for slice_index in self.get_region_slice_indices_from_center(x, y, angle) {
+            if self.data.get(slice_index.0..slice_index.1).unwrap().any() {
+                return false;
             }
         }
         true
     }
 
     fn is_photographed(&self, x: usize, y: usize) -> Result<bool, String> {
-        if x >= self.width || y >= self.height {
+        if x >= self.width as usize || y >= self.height as usize {
             // TODO: approaching edge
             return Err("EDGE".to_string());
         }
@@ -80,7 +105,7 @@ impl Bitmap {
 
     fn check_pixel(&self, x: usize, y: usize) -> bool {
         let index = self.get_bitmap_index(x, y);
-        self.data.get(index).unwrap_or(false)
+        self.data.get(index).is_some_and(|x| x == true)
     }
 
     fn set_pixel(&mut self, x: usize, y: usize, state: bool) {
@@ -89,9 +114,7 @@ impl Bitmap {
     }
 
     // Converts 2D (x, y) coordinates to a 1D index of memory
-    fn get_bitmap_index(&self, x: usize, y: usize) -> usize {
-        y * self.width + x
-    }
+    fn get_bitmap_index(&self, x: usize, y: usize) -> usize { y * self.width as usize + x }
 }
 
 impl CameraController {
@@ -117,7 +140,7 @@ impl CameraController {
         })
     }
 
-    pub fn map_ref(&self) -> &BitVec { &self.bitmap.data }
+    pub fn map_ref(&self) -> &BitBox { &self.bitmap.data }
 
     pub async fn shoot_image_to_disk(
         &mut self,
@@ -148,10 +171,8 @@ impl CameraController {
         let decoded_image = self.decode_png_data(&collected_png, angle)?;
 
         let angle_const = angle.get_square_radius() as isize;
-        for (i, row) in (position.x() - angle_const..position.x() + angle_const).enumerate()
-        {
-            for (j, col) in (position.x() - angle_const..position.x() + angle_const).enumerate()
-            {
+        for (i, row) in (position.x() - angle_const..position.x() + angle_const).enumerate() {
+            for (j, col) in (position.x() - angle_const..position.x() + angle_const).enumerate() {
                 let mut coord2d = Vec2D::new(row as f32, col as f32);
                 coord2d.wrap_around_map();
                 let pixel = decoded_image.get_pixel(i as u32, j as u32);
@@ -159,7 +180,8 @@ impl CameraController {
                 self.buffer.save_pixel(coord2d, pixel.0);
             }
         }
-        self.bitmap.region_captured(Vec2D::new(position.x() as f32, position.y() as f32), angle);
+        self.bitmap
+            .region_captured(Vec2D::new(position.x() as f32, position.y() as f32), angle);
 
         Ok(())
     }
