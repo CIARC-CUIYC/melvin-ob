@@ -170,7 +170,7 @@ impl<'a> FlightComputer<'a> {
             Ok(_) => {
                 self.current_camera_state = new_angle;
             }
-            Err(_) => { /* TODO: log error here */ }
+            Err(_) => { println!("Unnotized HTTP Error in setAngle()");/* TODO: log error here */ }
         }
         self.update_observation().await;
     }
@@ -192,7 +192,7 @@ impl<'a> FlightComputer<'a> {
                     self.fuel_left = obs.fuel();
                     return;
                 }
-                Err(err) => { /* TODO: log error here */ }
+                Err(err) => { println!("Unnotized HTTP Error in updateObservation()"); /* TODO: log error here */ }
             }
         }
     }
@@ -209,7 +209,7 @@ impl<'a> FlightComputer<'a> {
                 Ok(_) => {
                     return;
                 }
-                Err(err) => { /* TODO: log error here */ }
+                Err(err) => { println!("Unnotized HTTP Error in perform_state_transition()") /* TODO: log error here */ }
             }
         }
     }
@@ -233,7 +233,7 @@ impl<'a> FlightComputer<'a> {
                         .await;
                     self.update_observation().await;
                 }
-                Err(err) => { /* TODO: log error here */ }
+                Err(err) => { println!("Unnotized HTTP Error in rotate_vel") /* TODO: log error here */ }
             }
         }
     }
