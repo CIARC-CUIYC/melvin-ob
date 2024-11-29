@@ -9,8 +9,9 @@ use futures::StreamExt;
 use image::imageops::Lanczos3;
 use image::ImageReader;
 use tokio::fs::File;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Bitmap {
     width: usize,
     height: usize,
@@ -27,23 +28,23 @@ impl Bitmap {
         Self {
             width,
             height,
-            data: BitVec::from_elem(width*height, false),
+            data: BitVec::from_elem(width * height, false),
         }
     }
-    
+
     pub fn from_mapsize() -> Self {
         let bitmap_size = Vec2D::<usize>::map_size();
         Self::new(bitmap_size.x(), bitmap_size.y())
-    }   
-    
+    }
+
     pub fn size(&self) -> usize {
         self.width * self.height
     }
 
     pub fn region_captured(&mut self, pos: Vec2D<f32>, angle: CameraAngle) {
-        let angle_const = angle.get_square_radius() as usize;
-        let x = pos.x() as usize;
-        let y = pos.y() as usize;
+        let angle_const = angle.get_square_radius() as isize;
+        let x = pos.x() as isize;
+        let y = pos.y() as isize;
         for row in y - angle_const..y + angle_const {
             for col in x - angle_const..x + angle_const {
                 let mut coord2d = Vec2D::new(row as f64, col as f64);
@@ -51,6 +52,22 @@ impl Bitmap {
                 self.set_pixel(coord2d.x() as usize, coord2d.y() as usize, true);
             }
         }
+    }
+
+    pub fn is_square_empty(&self, pos: Vec2D<f64>, angle: CameraAngle) -> bool {
+        let angle_const = angle.get_square_radius() as isize;
+        let x = pos.x() as isize;
+        let y = pos.y() as isize;
+        for col in x - angle_const..x + angle_const {
+            for row in y - angle_const..y + angle_const {
+                let mut index = Vec2D::new(col as f64, row as f64);
+                index.wrap_around_map();
+                if self.data[self.get_bitmap_index(index.x() as usize, index.y() as usize)] {
+                    return false;
+                }
+            }
+        }
+        true
     }
 
     fn is_photographed(&self, x: usize, y: usize) -> Result<bool, String> {
@@ -87,6 +104,19 @@ impl CameraController {
         }
     }
 
+    pub async fn from_file(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut file = File::open(path).await?;
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer).await?;
+
+        let (bitmap, buffer_data): (Bitmap, Buffer) = bincode::deserialize(&buffer)?;
+
+        Ok(CameraController {
+            bitmap,
+            buffer: buffer_data,
+        })
+    }
+
     pub fn map_ref(&self) -> &BitVec { &self.bitmap.data }
 
     pub async fn shoot_image_to_disk(
@@ -111,13 +141,13 @@ impl CameraController {
     pub async fn shoot_image_to_buffer(
         &mut self,
         httpclient: &HTTPClient,
-        position: Vec2D<usize>,
+        position: Vec2D<isize>,
         angle: CameraAngle,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let collected_png = self.fetch_image_data(httpclient).await?;
         let decoded_image = self.decode_png_data(&collected_png, angle)?;
 
-        let angle_const = angle.get_square_radius() as usize;
+        let angle_const = angle.get_square_radius() as isize;
         for (i, row) in (position.x() - angle_const..position.x() + angle_const).enumerate()
         {
             for (j, col) in (position.x() - angle_const..position.x() + angle_const).enumerate()
@@ -131,6 +161,15 @@ impl CameraController {
         }
         self.bitmap.region_captured(Vec2D::new(position.x() as f32, position.y() as f32), angle);
 
+        Ok(())
+    }
+
+    pub async fn export_bin(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let data_to_serialize = (&self.bitmap, &self.buffer);
+        let encoded = bincode::serialize(&data_to_serialize)?;
+        let mut bin_file = File::create(path).await?;
+        bin_file.write_all(&encoded).await?;
+        bin_file.flush().await?;
         Ok(())
     }
 
