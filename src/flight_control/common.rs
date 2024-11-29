@@ -10,11 +10,7 @@ pub struct Vec2D<T> {
 impl<T> Vec2D<T>
 where
     T: Real + NumCast + NumOps + NumAssignOps,
-{
-    pub fn new(x: T, y: T) -> Self {
-        Self { x, y }
-    }
-    
+{    
     pub fn abs(&self) -> T { (self.x.powi(2) + self.y.powi(2)).sqrt() }
     
     pub fn to(&self, other: &Vec2D<T>) -> Vec2D<T> {
@@ -53,6 +49,10 @@ where
 // TODO: wrap_around_map should be implemented in this block to work with integer types
 // TODO: fix vec2D implementation to fix vector types everywhere
 impl<T: Num + NumCast + Copy> Vec2D<T> {
+    pub fn new(x: T, y: T) -> Self {
+        Self { x, y }
+    }
+    
     pub fn x(&self) -> T {
         self.x
     }

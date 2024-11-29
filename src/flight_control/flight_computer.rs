@@ -1,20 +1,18 @@
-use std::cmp::min;
-use std::time;
 use super::{
     camera_state::CameraAngle,
     common::Vec2D,
     flight_state::{FlightState, TRANSITION_DELAY_LOOKUP},
 };
-use crate::http_handler::{
-    http_client,
-    http_request::{
-        control_put::*,
-        observation_get::*,
-        request_common::{JSONBodyHTTPRequestType, NoBodyHTTPRequestType},
-    },
-};
-use tokio::time::sleep;
 use crate::http_handler::http_request::configure_simulation_put::ConfigureSimulationRequest;
+use crate::http_handler::{http_client, http_request::{
+    control_put::*,
+    observation_get::*,
+    request_common::{JSONBodyHTTPRequestType, NoBodyHTTPRequestType},
+}, HTTPError};
+use std::cmp::min;
+use std::time;
+use tokio::time::sleep;
+use crate::http_handler::http_response::control_satellite::ControlSatelliteResponse;
 
 #[derive(Debug)]
 pub struct FlightComputer<'a> {
@@ -32,7 +30,7 @@ impl<'a> FlightComputer<'a> {
     const ACCELERATION: f32 = 0.04;
     const FAST_FORWARD_SECONDS_THRESHOLD: time::Duration = time::Duration::from_secs(15);
     const MAX_TIMESPEED_MULTIPLIER: i32 = 20;
-    
+
     pub async fn new(request_client: &'a http_client::HTTPClient) -> FlightComputer<'a> {
         let mut return_controller = FlightComputer {
             current_pos: Vec2D::new(0.0, 0.0),
@@ -48,9 +46,15 @@ impl<'a> FlightComputer<'a> {
         return_controller
     }
 
-    pub fn get_max_battery(&self) -> f32 { self.max_battery }
-    pub fn get_state(&self) -> FlightState { self.current_state }
-    pub fn get_fuel_left(&self) -> f32 { self.fuel_left }
+    pub fn get_max_battery(&self) -> f32 {
+        self.max_battery
+    }
+    pub fn get_state(&self) -> FlightState {
+        self.current_state
+    }
+    pub fn get_fuel_left(&self) -> f32 {
+        self.fuel_left
+    }
 
     pub async fn fast_forward(&self, duration: time::Duration) {
         if duration <= Self::FAST_FORWARD_SECONDS_THRESHOLD {
@@ -61,10 +65,10 @@ impl<'a> FlightComputer<'a> {
         let t_normal = 2; // At least 2 second at normal speed
         let wait_time = duration.as_secs() - t_normal;
         let mut selected_factor = 1;
-        let mut selected_remainder= 0;
+        let mut selected_remainder = 0;
         let selected_saved_time = 0;
-        
-        for factor in 1..= min(wait_time, Self::MAX_TIMESPEED_MULTIPLIER as u64) {
+
+        for factor in 1..=min(wait_time, Self::MAX_TIMESPEED_MULTIPLIER as u64) {
             let remainder = wait_time % factor;
             let saved_time = wait_time - factor * (wait_time / factor);
             if selected_saved_time < saved_time {
@@ -75,13 +79,19 @@ impl<'a> FlightComputer<'a> {
         ConfigureSimulationRequest {
             is_network_simulation: false,
             user_speed_multiplier: selected_factor as u32,
-        }.send_request(self.request_client).await.unwrap();
-        sleep(time::Duration::from_secs(wait_time/selected_factor)).await;
+        }
+        .send_request(self.request_client)
+        .await
+        .unwrap();
+        sleep(time::Duration::from_secs(wait_time / selected_factor)).await;
         ConfigureSimulationRequest {
             is_network_simulation: false,
             user_speed_multiplier: 1,
-        }.send_request(self.request_client).await.unwrap();
-        sleep(time::Duration::from_secs(selected_remainder+t_normal)).await;
+        }
+        .send_request(self.request_client)
+        .await
+        .unwrap();
+        sleep(time::Duration::from_secs(selected_remainder + t_normal)).await;
     }
 
     pub async fn set_state(&mut self, new_state: FlightState) {
@@ -98,6 +108,24 @@ impl<'a> FlightComputer<'a> {
         self.update_observation().await;
     }
 
+    pub async fn set_angle(&mut self, new_angle: CameraAngle) {
+        self.update_observation().await;
+        if new_angle == self.current_camera_state {
+            return;
+        }
+        let req = ControlSatelliteRequest{
+            vel_x: self.current_vel.x(),
+            vel_y: self.current_vel.y(),
+            camera_angle: new_angle.into(),
+            state: self.current_state.into(),
+        };
+        match req.send_request(self.request_client).await{
+            Ok(_) => {self.current_camera_state = new_angle;},
+            Err(_) => {/* TODO: log error here */}
+        }
+        self.update_observation().await;
+    }
+
     pub async fn update_observation(&mut self) {
         loop {
             match (ObservationRequest {}
@@ -105,7 +133,10 @@ impl<'a> FlightComputer<'a> {
                 .await)
             {
                 Ok(observation) => {
-                    self.current_pos = Vec2D::from((f64::from(observation.pos_x()), f64::from(observation.pos_y())));
+                    self.current_pos = Vec2D::from((
+                        f64::from(observation.pos_x()),
+                        f64::from(observation.pos_y()),
+                    ));
                     self.current_vel = Vec2D::from((observation.vel_x(), observation.vel_y()));
                     self.current_state = FlightState::from(observation.state());
                     self.last_observation_timestamp = observation.timestamp();
@@ -145,9 +176,13 @@ impl<'a> FlightComputer<'a> {
                 vel_y: self.current_vel.y(),
                 camera_angle: self.current_camera_state.into(),
                 state: self.current_state.into(),
-            }.send_request(self.request_client).await) {
+            }
+            .send_request(self.request_client)
+            .await)
+            {
                 Ok(_) => {
-                    self.fast_forward(time::Duration::from_secs((time_to_sleep + 1.0) as u64)).await;
+                    self.fast_forward(time::Duration::from_secs((time_to_sleep + 1.0) as u64))
+                        .await;
                     self.update_observation().await;
                 }
                 Err(err) => { /* TODO: log error here */ }
@@ -174,4 +209,3 @@ impl<'a> FlightComputer<'a> {
     }
     */
 }
-    
