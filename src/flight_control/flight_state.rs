@@ -12,6 +12,19 @@ pub enum FlightState {
     Safe,
 }
 
+impl FlightState {
+    pub fn get_charge_rate(&self) -> f32{
+        match self {
+            FlightState::Deployment => {-0.025}
+            FlightState::Transition => {0.0}
+            FlightState::Acquisition => {-0.2}
+            FlightState::Charge => {0.2}
+            FlightState::Comms => {-0.016}
+            FlightState::Safe => {0.05}
+        }
+    }
+}
+
 impl From<&str> for FlightState {
     fn from(value: &str) -> Self {
         match value.to_lowercase().as_str() {
