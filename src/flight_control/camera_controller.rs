@@ -83,16 +83,19 @@ impl Bitmap {
         slices
     }
 
-    pub fn is_square_empty(&self, pos: Vec2D<f64>, angle: CameraAngle) -> bool {
-        let angle_const = angle.get_square_radius() as isize;
+    pub fn enough_ones_in_square(&self, pos: Vec2D<f64>, angle: CameraAngle, min: usize) -> bool {
+        let mut px = 0;
         let x = pos.x() as isize;
         let y = pos.y() as isize;
         for slice_index in self.get_region_slice_indices_from_center(x, y, angle) {
             if self.data.get(slice_index.0..slice_index.1).unwrap().any() {
-                return false;
+                px += 1;
+                if px >= min {
+                    return true;
+                }
             }
         }
-        true
+        false
     }
 
     fn is_photographed(&self, x: usize, y: usize) -> Result<bool, String> {

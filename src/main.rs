@@ -1,4 +1,5 @@
 use rayon::iter::ParallelIterator;
+use std::time::Duration;
 mod flight_control;
 mod http_handler;
 
@@ -9,8 +10,28 @@ use crate::flight_control::flight_computer::FlightComputer;
 use crate::flight_control::flight_state::FlightState;
 use crate::http_handler::http_request::request_common::NoBodyHTTPRequestType;
 use crate::http_handler::http_request::reset_get::ResetRequest;
-use chrono::{DateTime, TimeDelta, Utc};
+use chrono::{DateTime, TimeDelta, Timelike, Utc};
 use rayon::prelude::*;
+
+struct PinnedTimeDelay {
+    start_time: DateTime<Utc>,
+    delay: TimeDelta,
+}
+
+impl PinnedTimeDelay {
+    fn new(delta: TimeDelta) -> Self {
+        Self {
+            start_time: Utc::now(),
+            delay: delta,
+        }
+    }
+    fn remove_delay(&mut self, delta: TimeDelta) { self.delay -= delta; }
+    fn add_delay(&mut self, delta: TimeDelta) { self.delay += delta; }
+    fn set_delay(&mut self, delta: TimeDelta) { self.delay = delta; }
+    fn get_end(&self) -> DateTime<Utc> { self.start_time + self.delay }
+    fn get_start(&self) -> DateTime<Utc> { self.start_time }
+    fn time_left(&self) -> TimeDelta { self.get_end() - Utc::now() }
+}
 
 #[tokio::main]
 async fn main() {
@@ -18,6 +39,8 @@ async fn main() {
     //const MAP_SIZE_Y: usize = 10800;
     const FUEL_RESET_THRESHOLD: f32 = 20.0;
     const BIN_FILEPATH: &str = "camera_controller.bin";
+    const MIN_PX_LEFT_FACTOR: f32 = 0.0005;
+    const MIN_BATTERY_THRESHOLD: f32 = 20.0;
 
     let mut camera_controller = CameraController::from_file(BIN_FILEPATH).await.unwrap_or({
         println!("Failed to read camera controller from file, creating new!");
@@ -32,56 +55,61 @@ async fn main() {
 
     'outer: while !camera_controller.map_ref().all() {
         controller.update_observation().await;
-        println!(
-            "Global Coverage percentage: {:.2}",
-            camera_controller.map_ref().count_ones() as f64
-                / camera_controller.map_ref().len() as f64
-        );
-        let mut possible_orbit_coverage_map = Bitmap::from_mapsize();
-        calculate_orbit_coverage_map(
-            &controller,
-            &mut possible_orbit_coverage_map,
-            max_orbit_prediction_secs,
-        );
-        possible_orbit_coverage_map.data &= !(*camera_controller.map_ref()).clone(); // this checks if there are any possible, unphotographed regions on the current orbit
+        let covered_perc = camera_controller.map_ref().count_ones() as f32
+            / camera_controller.map_ref().len() as f32;
+        println!("Global Coverage percentage: {:.2}", covered_perc);
+        let mut orbit_coverage = Bitmap::from_mapsize();
+        calculate_orbit_coverage_map(&controller, &mut orbit_coverage, max_orbit_prediction_secs);
+        orbit_coverage.data &= !(*camera_controller.map_ref()).clone(); // this checks if there are any possible, unphotographed regions on the current orbit
+
         println!(
             "Total Orbit Possible Coverage Gain: {:.2}",
-            possible_orbit_coverage_map.data.count_ones() as f64
-                / possible_orbit_coverage_map.size() as f64
+            orbit_coverage.data.count_ones() as f64 / orbit_coverage.size() as f64
         );
-        while possible_orbit_coverage_map.data.any() {
+        while orbit_coverage.data.any() {
             controller.update_observation().await;
-            let next_image_time;
-            let delay: TimeDelta;
+            
+            // if battery to low go into charge
+            if controller.get_battery() < MIN_BATTERY_THRESHOLD {
+                controller.charge_until(100.0).await;
+            }
+            
+            // calculate delay until next image and px threshold
+            let mut delay: TimeDelta = TimeDelta::seconds(185);
+            let min_pixel =
+                (covered_perc * orbit_coverage.size() as f32 * MIN_PX_LEFT_FACTOR) as usize;
             if controller.get_state() == FlightState::Acquisition {
                 delay = TimeDelta::seconds(5);
-            } else {
-                delay = TimeDelta::seconds(185);
             }
-            next_image_time =
-                calculate_next_image_time(&controller, &possible_orbit_coverage_map, delay);
-            if next_image_time + delay < Utc::now() {
+            let mut image_dt =
+                calculate_next_image_time(&controller, &orbit_coverage, delay, min_pixel);
+            if image_dt.get_end() < Utc::now() {
                 break;
             }
 
             // if next image time is more than 6 minutes ahead -> switch to charge
-            if (next_image_time - Utc::now()).ge(&TimeDelta::seconds(370)) {
+            if image_dt.time_left().ge(&TimeDelta::seconds(370)) {
+                // TODO: magic numbers
                 controller.set_state(FlightState::Charge).await;
             }
-            let sleep_duration = (next_image_time - Utc::now() - TimeDelta::seconds(185))
-                .to_std()
-                .unwrap();
-            controller.fast_forward(sleep_duration).await;
+
+            let sleep_duration = image_dt.time_left() - TimeDelta::seconds(185);
+            // skip duration until state transition to acquisition needs to be performed
+            make_ff_call(&mut controller, &mut image_dt, sleep_duration).await;
 
             // while next image time is more than 3 minutes + tolerance -> wait
-            while (next_image_time - Utc::now()).ge(&TimeDelta::seconds(185)) {
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            while image_dt.time_left().ge(&TimeDelta::seconds(185)) {
+                tokio::time::sleep(Duration::from_millis(400)).await;
             }
 
             // switch to acquisition and wait for exact image taking timestamp
             controller.set_state(FlightState::Acquisition).await;
-            while (next_image_time - Utc::now()).ge(&TimeDelta::milliseconds(100)) {
-                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+            // skip duration until state transition to acquisition is finished
+            make_ff_call(&mut controller, &mut image_dt, TimeDelta::seconds(170)).await;
+
+            while image_dt.time_left().ge(&TimeDelta::milliseconds(100)) {
+                tokio::time::sleep(Duration::from_millis(10)).await;
             }
             controller.update_observation().await;
 
@@ -107,7 +135,7 @@ async fn main() {
                 .unwrap();
             camera_controller.export_bin(BIN_FILEPATH).await.unwrap();
 
-            possible_orbit_coverage_map.region_captured(
+            orbit_coverage.region_captured(
                 Vec2D::new(
                     controller.get_current_pos().x() as f32,
                     controller.get_current_pos().y() as f32,
@@ -128,23 +156,46 @@ async fn main() {
     }
 }
 
+async fn make_ff_call(
+    cont: &mut FlightComputer<'_>,
+    p_time: &mut PinnedTimeDelay,
+    sleep: TimeDelta,
+) {
+    let sleep_duration_std = sleep.to_std().unwrap_or(Duration::from_secs(0));
+    println!("Fast forwarding for {} seconds!", sleep.num_seconds());
+    cont.fast_forward(sleep_duration_std).await;
+    p_time.remove_delay(sleep.into());
+    println!(
+        "Return from Fast Forwarding! Next Image in {:02}:{:02}:{:02}",
+        p_time.time_left().num_hours(),
+        p_time.time_left().num_minutes(),
+        p_time.time_left().num_seconds()
+    );
+}
+
 fn calculate_next_image_time(
     cont: &FlightComputer,
     map: &Bitmap,
     base_delay: TimeDelta,
-) -> DateTime<Utc> {
+    min_px: usize,
+) -> PinnedTimeDelay {
     let init_pos = cont.pos_in_time_delta(base_delay);
-    let calculation_start_time = Utc::now();
+    let mut time_del = PinnedTimeDelay::new(base_delay);
     let mut current_calculation_time_delta = base_delay;
     let mut current_pos = init_pos;
 
     loop {
-        if !map.is_square_empty(current_pos, CameraAngle::Wide)
-            && (calculation_start_time + base_delay) <= Utc::now() + current_calculation_time_delta
+        if map.enough_ones_in_square(current_pos, CameraAngle::Wide, min_px)
+            && time_del.get_end() <= time_del.get_start() + current_calculation_time_delta
         {
-            let next_image_time = calculation_start_time + current_calculation_time_delta;
-            println!("Next Image Time: {next_image_time}");
-            return next_image_time;
+            time_del.set_delay(current_calculation_time_delta);
+            println!(
+                "Next Image in {:02}:{:02}:{:02}",
+                time_del.time_left().num_hours(),
+                time_del.time_left().num_minutes(),
+                time_del.time_left().num_seconds()
+            );
+            return time_del;
         }
         if current_calculation_time_delta > TimeDelta::seconds(20000) {
             break;
@@ -153,7 +204,7 @@ fn calculate_next_image_time(
         current_pos = cont.pos_in_time_delta(current_calculation_time_delta);
     }
     println!("No possible image time found!");
-    Utc::now() - TimeDelta::days(10)
+    PinnedTimeDelay::new(TimeDelta::seconds(-100))
 }
 
 fn calculate_orbit_coverage_map(cont: &FlightComputer, map: &mut Bitmap, max_dt: i64) {

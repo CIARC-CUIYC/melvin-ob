@@ -4,7 +4,6 @@ use super::{
     flight_state::{FlightState, TRANSITION_DELAY_LOOKUP},
 };
 use crate::http_handler::http_request::configure_simulation_put::ConfigureSimulationRequest;
-use crate::http_handler::http_response::control_satellite::ControlSatelliteResponse;
 use crate::http_handler::{
     http_client,
     http_request::{
@@ -12,10 +11,10 @@ use crate::http_handler::{
         observation_get::*,
         request_common::{JSONBodyHTTPRequestType, NoBodyHTTPRequestType},
     },
-    HTTPError,
 };
 use std::cmp::min;
 use std::time;
+use std::time::Duration;
 use tokio::time::sleep;
 
 #[derive(Debug)]
@@ -24,7 +23,8 @@ pub struct FlightComputer<'a> {
     current_vel: Vec2D<f64>,
     current_state: FlightState,
     current_camera_state: CameraAngle,
-    max_battery: f32, // this is an artifact caused by dumb_main
+    current_battery: f32, // this is an artifact caused by dumb main
+    max_battery: f32,     // this is an artifact caused by dumb_main
     fuel_left: f32,
     last_observation_timestamp: chrono::DateTime<chrono::Utc>,
     request_client: &'a http_client::HTTPClient,
@@ -41,6 +41,7 @@ impl<'a> FlightComputer<'a> {
             current_vel: Vec2D::new(0.0, 0.0),
             current_state: FlightState::Safe,
             current_camera_state: CameraAngle::Normal,
+            current_battery: 0.0,
             max_battery: 0.0,
             fuel_left: 0.0,
             last_observation_timestamp: chrono::Utc::now(),
@@ -50,15 +51,10 @@ impl<'a> FlightComputer<'a> {
         return_controller
     }
 
-    pub fn get_max_battery(&self) -> f32 {
-        self.max_battery
-    }
-    pub fn get_state(&self) -> FlightState {
-        self.current_state
-    }
-    pub fn get_fuel_left(&self) -> f32 {
-        self.fuel_left
-    }
+    pub fn get_max_battery(&self) -> f32 { self.max_battery }
+    pub fn get_state(&self) -> FlightState { self.current_state }
+    pub fn get_fuel_left(&self) -> f32 { self.fuel_left }
+    pub fn get_battery(&self) -> f32 { self.current_battery }
 
     pub async fn fast_forward(&self, duration: time::Duration) {
         if duration <= Self::FAST_FORWARD_SECONDS_THRESHOLD {
@@ -96,6 +92,19 @@ impl<'a> FlightComputer<'a> {
         .await
         .unwrap();
         sleep(time::Duration::from_secs(selected_remainder + t_normal)).await;
+    }
+
+    pub async fn charge_until(&mut self, target_battery: f32) {
+        let charge_rate = FlightState::Charge.get_charge_rate();
+        let transition_time = TRANSITION_DELAY_LOOKUP[&(self.current_state, FlightState::Charge)];
+        let charge_time = (target_battery - self.current_battery) * charge_rate;
+        let sleep_time = transition_time + Duration::from_secs(charge_time as u64 + 5);
+        let initial_state = self.current_state;
+        self.set_state(FlightState::Charge).await;
+        self.fast_forward(sleep_time).await;
+        self.set_state(initial_state).await;
+        self.fast_forward(transition_time + Duration::from_secs(5)).await;
+        self.update_observation().await;
     }
 
     pub async fn set_state(&mut self, new_state: FlightState) {
@@ -138,16 +147,15 @@ impl<'a> FlightComputer<'a> {
                 .send_request(self.request_client)
                 .await)
             {
-                Ok(observation) => {
-                    self.current_pos = Vec2D::from((
-                        f64::from(observation.pos_x()),
-                        f64::from(observation.pos_y()),
-                    ));
-                    self.current_vel = Vec2D::from((observation.vel_x(), observation.vel_y()));
-                    self.current_state = FlightState::from(observation.state());
-                    self.last_observation_timestamp = observation.timestamp();
-                    self.max_battery = observation.max_battery();
-                    self.fuel_left = observation.fuel();
+                Ok(obs) => {
+                    self.current_pos =
+                        Vec2D::from((f64::from(obs.pos_x()), f64::from(obs.pos_y())));
+                    self.current_vel = Vec2D::from((obs.vel_x(), obs.vel_y()));
+                    self.current_state = FlightState::from(obs.state());
+                    self.last_observation_timestamp = obs.timestamp();
+                    self.current_battery = obs.battery();
+                    self.max_battery = obs.max_battery();
+                    self.fuel_left = obs.fuel();
                     return;
                 }
                 Err(err) => { /* TODO: log error here */ }
@@ -202,9 +210,7 @@ impl<'a> FlightComputer<'a> {
         pos
     }
 
-    pub fn get_current_pos(&self) -> Vec2D<f64> {
-        self.current_pos
-    }
+    pub fn get_current_pos(&self) -> Vec2D<f64> { self.current_pos }
 
     /* TODO: not implemented
     fn picture_options_p<T>(&self, point: Vec2D<T>, time_delta: TimeDelta, margin: i16) -> PictureOption
