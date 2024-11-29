@@ -67,19 +67,21 @@ async fn main() {
             orbit_coverage.data.count_ones() as f64 / orbit_coverage.size() as f64
         );
         while orbit_coverage.data.any() {
+            let mut adaptable_tolerance = 5;
             controller.update_observation().await;
-            
+
             // if battery to low go into charge
             if controller.get_battery() < MIN_BATTERY_THRESHOLD {
                 controller.charge_until(100.0).await;
             }
-            
+
             // calculate delay until next image and px threshold
-            let mut delay: TimeDelta = TimeDelta::seconds(185);
+            let mut delay: TimeDelta = TimeDelta::seconds(185 + adaptable_tolerance); // TODO: fix adaptable tolerance
+            adaptable_tolerance -= 1;
             let min_pixel =
                 (covered_perc * orbit_coverage.size() as f32 * MIN_PX_LEFT_FACTOR) as usize;
             if controller.get_state() == FlightState::Acquisition {
-                delay = TimeDelta::seconds(5);
+                delay = TimeDelta::seconds(20);
             }
             let mut image_dt =
                 calculate_next_image_time(&controller, &orbit_coverage, delay, min_pixel);
@@ -93,12 +95,13 @@ async fn main() {
                 controller.set_state(FlightState::Charge).await;
             }
 
-            let sleep_duration = image_dt.time_left() - TimeDelta::seconds(185);
+            let sleep_duration = image_dt.time_left() - TimeDelta::seconds(185 + adaptable_tolerance); // tolerance for
+            adaptable_tolerance -= 1;
             // skip duration until state transition to acquisition needs to be performed
             make_ff_call(&mut controller, &mut image_dt, sleep_duration).await;
 
             // while next image time is more than 3 minutes + tolerance -> wait
-            while image_dt.time_left().ge(&TimeDelta::seconds(185)) {
+            while image_dt.time_left().ge(&TimeDelta::seconds(185 + adaptable_tolerance)) {
                 tokio::time::sleep(Duration::from_millis(400)).await;
             }
 
@@ -106,7 +109,7 @@ async fn main() {
             controller.set_state(FlightState::Acquisition).await;
 
             // skip duration until state transition to acquisition is finished
-            make_ff_call(&mut controller, &mut image_dt, TimeDelta::seconds(170)).await;
+            make_ff_call(&mut controller, &mut image_dt, TimeDelta::seconds(175 - adaptable_tolerance)).await;
 
             while image_dt.time_left().ge(&TimeDelta::milliseconds(100)) {
                 tokio::time::sleep(Duration::from_millis(10)).await;
@@ -162,14 +165,19 @@ async fn make_ff_call(
     sleep: TimeDelta,
 ) {
     let sleep_duration_std = sleep.to_std().unwrap_or(Duration::from_secs(0));
+    if sleep_duration_std.as_secs() == 0  {
+        println!("Fast Forward Call rejected! Duration was git0!");
+        return;
+    }
     println!("Fast forwarding for {} seconds!", sleep.num_seconds());
     cont.fast_forward(sleep_duration_std).await;
     p_time.remove_delay(sleep.into());
+    let time_left = p_time.time_left();
     println!(
         "Return from Fast Forwarding! Next Image in {:02}:{:02}:{:02}",
-        p_time.time_left().num_hours(),
-        p_time.time_left().num_minutes(),
-        p_time.time_left().num_seconds()
+        time_left.num_hours(),
+        time_left.num_minutes() - time_left.num_hours() * 60,
+        time_left.num_seconds() - time_left.num_milliseconds() * 60
     );
 }
 
@@ -189,11 +197,12 @@ fn calculate_next_image_time(
             && time_del.get_end() <= time_del.get_start() + current_calculation_time_delta
         {
             time_del.set_delay(current_calculation_time_delta);
+            let time_left = time_del.time_left();
             println!(
                 "Next Image in {:02}:{:02}:{:02}",
-                time_del.time_left().num_hours(),
-                time_del.time_left().num_minutes(),
-                time_del.time_left().num_seconds()
+                time_left.num_hours(),
+                time_left.num_minutes() - time_left.num_hours() * 60,
+                time_left.num_seconds() - time_left.num_milliseconds() * 60
             );
             return time_del;
         }
