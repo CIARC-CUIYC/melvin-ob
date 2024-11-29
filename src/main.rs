@@ -5,33 +5,12 @@ mod http_handler;
 
 use crate::flight_control::camera_controller::{Bitmap, CameraController};
 use crate::flight_control::camera_state::CameraAngle;
-use crate::flight_control::common::Vec2D;
+use crate::flight_control::common::{PinnedTimeDelay, Vec2D};
 use crate::flight_control::flight_computer::FlightComputer;
 use crate::flight_control::flight_state::FlightState;
 use crate::http_handler::http_request::request_common::NoBodyHTTPRequestType;
 use crate::http_handler::http_request::reset_get::ResetRequest;
-use chrono::{DateTime, TimeDelta, Timelike, Utc};
-use rayon::prelude::*;
-
-struct PinnedTimeDelay {
-    start_time: DateTime<Utc>,
-    delay: TimeDelta,
-}
-
-impl PinnedTimeDelay {
-    fn new(delta: TimeDelta) -> Self {
-        Self {
-            start_time: Utc::now(),
-            delay: delta,
-        }
-    }
-    fn remove_delay(&mut self, delta: TimeDelta) { self.delay -= delta; }
-    fn add_delay(&mut self, delta: TimeDelta) { self.delay += delta; }
-    fn set_delay(&mut self, delta: TimeDelta) { self.delay = delta; }
-    fn get_end(&self) -> DateTime<Utc> { self.start_time + self.delay }
-    fn get_start(&self) -> DateTime<Utc> { self.start_time }
-    fn time_left(&self) -> TimeDelta { self.get_end() - Utc::now() }
-}
+use chrono::{TimeDelta, Utc};
 
 #[tokio::main]
 async fn main() {
@@ -83,35 +62,32 @@ async fn main() {
             if controller.get_state() == FlightState::Acquisition {
                 delay = TimeDelta::seconds(20);
             }
-            let mut image_dt =
-                calculate_next_image_time(&controller, &orbit_coverage, delay, min_pixel);
-            if image_dt.get_end() < Utc::now() {
+            controller.set_next_image(next_image_dt(&controller, &orbit_coverage, delay, min_pixel));
+            if controller.get_next_image().get_end() < Utc::now() {
                 break;
             }
 
             // if next image time is more than 6 minutes ahead -> switch to charge
-            if image_dt.time_left().ge(&TimeDelta::seconds(370)) {
+            if controller.get_next_image().time_left().ge(&TimeDelta::seconds(370)) {
                 // TODO: magic numbers
                 controller.set_state(FlightState::Charge).await;
             }
 
-            let sleep_duration = image_dt.time_left() - TimeDelta::seconds(185 + adaptable_tolerance); // tolerance for
+            let sleep_duration = controller.get_next_image().time_left() - TimeDelta::seconds(185 - adaptable_tolerance); // tolerance for
+            let sleep_duration_std = sleep_duration.to_std().unwrap_or(Duration::from_secs(0));
             adaptable_tolerance -= 1;
             // skip duration until state transition to acquisition needs to be performed
-            make_ff_call(&mut controller, &mut image_dt, sleep_duration).await;
+            controller.make_ff_call(sleep_duration_std).await;
 
             // while next image time is more than 3 minutes + tolerance -> wait
-            while image_dt.time_left().ge(&TimeDelta::seconds(185 + adaptable_tolerance)) {
+            while controller.get_next_image().time_left().ge(&TimeDelta::seconds(185 + adaptable_tolerance)) {
                 tokio::time::sleep(Duration::from_millis(400)).await;
             }
 
             // switch to acquisition and wait for exact image taking timestamp
             controller.set_state(FlightState::Acquisition).await;
-
             // skip duration until state transition to acquisition is finished
-            make_ff_call(&mut controller, &mut image_dt, TimeDelta::seconds(175 - adaptable_tolerance)).await;
-
-            while image_dt.time_left().ge(&TimeDelta::milliseconds(100)) {
+            while controller.get_next_image().time_left().ge(&TimeDelta::milliseconds(100)) {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
             controller.update_observation().await;
@@ -159,29 +135,7 @@ async fn main() {
     }
 }
 
-async fn make_ff_call(
-    cont: &mut FlightComputer<'_>,
-    p_time: &mut PinnedTimeDelay,
-    sleep: TimeDelta,
-) {
-    let sleep_duration_std = sleep.to_std().unwrap_or(Duration::from_secs(0));
-    if sleep_duration_std.as_secs() == 0  {
-        println!("Fast Forward Call rejected! Duration was git0!");
-        return;
-    }
-    println!("Fast forwarding for {} seconds!", sleep.num_seconds());
-    cont.fast_forward(sleep_duration_std).await;
-    p_time.remove_delay(sleep.into());
-    let time_left = p_time.time_left();
-    println!(
-        "Return from Fast Forwarding! Next Image in {:02}:{:02}:{:02}",
-        time_left.num_hours(),
-        time_left.num_minutes() - time_left.num_hours() * 60,
-        time_left.num_seconds() - time_left.num_milliseconds() * 60
-    );
-}
-
-fn calculate_next_image_time(
+fn next_image_dt(
     cont: &FlightComputer,
     map: &Bitmap,
     base_delay: TimeDelta,
@@ -202,7 +156,7 @@ fn calculate_next_image_time(
                 "Next Image in {:02}:{:02}:{:02}",
                 time_left.num_hours(),
                 time_left.num_minutes() - time_left.num_hours() * 60,
-                time_left.num_seconds() - time_left.num_milliseconds() * 60
+                time_left.num_seconds() - time_left.num_minutes() * 60
             );
             return time_del;
         }
