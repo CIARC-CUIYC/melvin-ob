@@ -1,6 +1,6 @@
 use super::{
     camera_state::CameraAngle,
-    common::Vec2D,
+    common::{PinnedTimeDelay, Vec2D},
     flight_state::{FlightState, TRANSITION_DELAY_LOOKUP},
 };
 use crate::http_handler::http_request::configure_simulation_put::ConfigureSimulationRequest;
@@ -12,9 +12,8 @@ use crate::http_handler::{
         request_common::{JSONBodyHTTPRequestType, NoBodyHTTPRequestType},
     },
 };
-use std::cmp::min;
-use std::time;
-use std::time::Duration;
+use chrono::TimeDelta;
+use std::{cmp::min, time, time::Duration};
 use tokio::time::sleep;
 
 #[derive(Debug)]
@@ -28,12 +27,14 @@ pub struct FlightComputer<'a> {
     fuel_left: f32,
     last_observation_timestamp: chrono::DateTime<chrono::Utc>,
     request_client: &'a http_client::HTTPClient,
+    next_image: PinnedTimeDelay,
 }
 
 impl<'a> FlightComputer<'a> {
     const ACCELERATION: f32 = 0.04;
-    const FAST_FORWARD_SECONDS_THRESHOLD: time::Duration = time::Duration::from_secs(15);
+    const FAST_FORWARD_SECONDS_THRESHOLD: Duration = Duration::from_secs(15);
     const MAX_TIMESPEED_MULTIPLIER: i32 = 20;
+    const TIME_DELAY_NO_IMAGE: i64 = -100000;
 
     pub async fn new(request_client: &'a http_client::HTTPClient) -> FlightComputer<'a> {
         let mut return_controller = FlightComputer {
@@ -45,6 +46,7 @@ impl<'a> FlightComputer<'a> {
             max_battery: 0.0,
             fuel_left: 0.0,
             last_observation_timestamp: chrono::Utc::now(),
+            next_image: PinnedTimeDelay::new(TimeDelta::seconds(Self::TIME_DELAY_NO_IMAGE)),
             request_client,
         };
         return_controller.update_observation().await;
@@ -55,11 +57,30 @@ impl<'a> FlightComputer<'a> {
     pub fn get_state(&self) -> FlightState { self.current_state }
     pub fn get_fuel_left(&self) -> f32 { self.fuel_left }
     pub fn get_battery(&self) -> f32 { self.current_battery }
+    pub fn set_next_image(&mut self, dt: PinnedTimeDelay) { self.next_image = dt; }
+    pub fn get_next_image(&self) -> PinnedTimeDelay { self.next_image }
 
-    pub async fn fast_forward(&self, duration: time::Duration) {
+    pub async fn make_ff_call(&mut self, sleep: Duration) {
+        if sleep.as_secs() == 0 {
+            println!("Wait call rejected! Duration was 0!");
+            return;
+        }
+        println!("Waiting for {} seconds!", sleep.as_secs());
+        self.next_image
+            .remove_delay(TimeDelta::seconds(self.fast_forward(sleep).await as i64));
+        let time_left = self.next_image.time_left();
+        println!(
+            "Return from Waiting! Next Image in {:02}:{:02}:{:02}",
+            time_left.num_hours(),
+            time_left.num_minutes() - time_left.num_hours() * 60,
+            time_left.num_seconds() - time_left.num_minutes() * 60
+        );
+    }
+
+    async fn fast_forward(&self, duration: Duration) -> u64 {
         if duration <= Self::FAST_FORWARD_SECONDS_THRESHOLD {
             sleep(duration).await;
-            return;
+            return 0;
         }
 
         let t_normal = 2; // At least 2 second at normal speed
@@ -70,12 +91,17 @@ impl<'a> FlightComputer<'a> {
 
         for factor in 1..=min(wait_time, Self::MAX_TIMESPEED_MULTIPLIER as u64) {
             let remainder = wait_time % factor;
-            let saved_time = wait_time - factor * (wait_time / factor);
+            let saved_time = (wait_time - remainder) - ((wait_time - remainder) / factor);
             if selected_saved_time < saved_time {
                 selected_factor = factor;
                 selected_remainder = remainder;
             }
         }
+        println!("Fast-Forwared-Factor: {}", selected_factor);
+        println!(
+            "First Wait: {}",
+            (wait_time - selected_remainder) / selected_factor
+        );
         ConfigureSimulationRequest {
             is_network_simulation: false,
             user_speed_multiplier: selected_factor as u32,
@@ -83,7 +109,10 @@ impl<'a> FlightComputer<'a> {
         .send_request(self.request_client)
         .await
         .unwrap();
-        sleep(time::Duration::from_secs(wait_time / selected_factor)).await;
+        sleep(Duration::from_secs(
+            (wait_time - selected_remainder) / selected_factor,
+        ))
+        .await;
         ConfigureSimulationRequest {
             is_network_simulation: false,
             user_speed_multiplier: 1,
@@ -91,7 +120,9 @@ impl<'a> FlightComputer<'a> {
         .send_request(self.request_client)
         .await
         .unwrap();
-        sleep(time::Duration::from_secs(selected_remainder + t_normal)).await;
+        println!("Second Wait: {}", selected_remainder + t_normal);
+        sleep(Duration::from_secs(selected_remainder + t_normal)).await;
+        selected_saved_time
     }
 
     pub async fn charge_until(&mut self, target_battery: f32) {
@@ -101,9 +132,9 @@ impl<'a> FlightComputer<'a> {
         let sleep_time = transition_time + Duration::from_secs(charge_time as u64 + 5);
         let initial_state = self.current_state;
         self.set_state(FlightState::Charge).await;
-        self.fast_forward(sleep_time).await;
+        self.make_ff_call(sleep_time).await;
         self.set_state(initial_state).await;
-        self.fast_forward(transition_time + Duration::from_secs(5)).await;
+        self.make_ff_call(transition_time + Duration::from_secs(5)).await;
         self.update_observation().await;
     }
 
@@ -118,7 +149,8 @@ impl<'a> FlightComputer<'a> {
         let init_state = self.current_state;
         self.current_state = FlightState::Transition;
         self.perform_state_transition(new_state).await;
-        sleep(TRANSITION_DELAY_LOOKUP[&(init_state, new_state)]).await;
+        self.make_ff_call(TRANSITION_DELAY_LOOKUP[&(init_state, new_state)]).await;
+
         self.update_observation().await;
     }
 
