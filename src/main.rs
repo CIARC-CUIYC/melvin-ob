@@ -14,8 +14,6 @@ use chrono::{TimeDelta, Utc};
 
 #[tokio::main]
 async fn main() {
-    //const MAP_SIZE_X: usize = 21600;
-    //const MAP_SIZE_Y: usize = 10800;
     const FUEL_RESET_THRESHOLD: f32 = 20.0;
     const BIN_FILEPATH: &str = "camera_controller.bin";
     const MIN_PX_LEFT_FACTOR: f32 = 0.0005;
@@ -28,17 +26,17 @@ async fn main() {
 
     let http_handler = http_handler::http_client::HTTPClient::new("http://localhost:33000");
     ResetRequest {}.send_request(&http_handler).await.unwrap();
-    let mut controller = FlightComputer::new(&http_handler).await;
+    let mut fcont = FlightComputer::new(&http_handler).await;
 
     let mut max_orbit_prediction_secs = 20000;
 
     'outer: while !camera_controller.map_ref().all() {
-        controller.update_observation().await;
+        fcont.update_observation().await;
         let covered_perc = camera_controller.map_ref().count_ones() as f32
             / camera_controller.map_ref().len() as f32;
         println!("Global Coverage percentage: {:.2}", covered_perc);
         let mut orbit_coverage = Bitmap::from_mapsize();
-        calculate_orbit_coverage_map(&controller, &mut orbit_coverage, max_orbit_prediction_secs);
+        calculate_orbit_coverage_map(&fcont, &mut orbit_coverage, max_orbit_prediction_secs);
         orbit_coverage.data &= !(*camera_controller.map_ref()).clone(); // this checks if there are any possible, unphotographed regions on the current orbit
 
         println!(
@@ -47,11 +45,11 @@ async fn main() {
         );
         while orbit_coverage.data.any() {
             let mut adaptable_tolerance = 5;
-            controller.update_observation().await;
+            fcont.update_observation().await;
 
             // if battery to low go into charge
-            if controller.get_battery() < MIN_BATTERY_THRESHOLD {
-                controller.charge_until(100.0).await;
+            if fcont.get_battery() < MIN_BATTERY_THRESHOLD {
+                fcont.charge_until(100.0).await;
             }
 
             // calculate delay until next image and px threshold
@@ -59,54 +57,59 @@ async fn main() {
             adaptable_tolerance -= 1;
             let min_pixel =
                 (covered_perc * orbit_coverage.size() as f32 * MIN_PX_LEFT_FACTOR) as usize;
-            if controller.get_state() == FlightState::Acquisition {
+            if fcont.get_state() == FlightState::Acquisition {
                 delay = TimeDelta::seconds(20);
             }
-            controller.set_next_image(next_image_dt(&controller, &orbit_coverage, delay, min_pixel));
-            if controller.get_next_image().get_end() < Utc::now() {
-                break;
-            }
+            fcont.set_next_image(next_image_dt(&fcont, &orbit_coverage, delay, min_pixel));
+            if fcont.get_next_image().get_end() < Utc::now() { break; }
 
             // if next image time is more than 6 minutes ahead -> switch to charge
-            if controller.get_next_image().time_left().ge(&TimeDelta::seconds(370)) {
+            if fcont.get_next_image().time_left().ge(&TimeDelta::seconds(370)) {
                 // TODO: magic numbers
-                controller.set_state(FlightState::Charge).await;
+                fcont.set_state(FlightState::Charge).await;
             }
+            if fcont.get_state() == FlightState::Acquisition {
+                let image_dt = fcont.get_next_image().time_left();
+                let image_dt_std = image_dt.to_std().unwrap_or(Duration::from_secs(0));
+                fcont.make_ff_call(image_dt_std).await;
+            } else {
+                let sleep_duration = fcont.get_next_image().time_left()
+                    - TimeDelta::seconds(185 - adaptable_tolerance); // tolerance for
 
-            let sleep_duration = controller.get_next_image().time_left() - TimeDelta::seconds(185 - adaptable_tolerance); // tolerance for
-            let sleep_duration_std = sleep_duration.to_std().unwrap_or(Duration::from_secs(0));
-            adaptable_tolerance -= 1;
-            // skip duration until state transition to acquisition needs to be performed
-            controller.make_ff_call(sleep_duration_std).await;
+                let sleep_duration_std = sleep_duration.to_std().unwrap_or(Duration::from_secs(0));
+                adaptable_tolerance -= 1;
+                // skip duration until state transition to acquisition needs to be performed
+                fcont.make_ff_call(sleep_duration_std).await;
+                
+                // while next image time is more than 3 minutes + tolerance -> wait
+                while fcont.get_next_image().time_left().ge(&TimeDelta::seconds(185 + adaptable_tolerance)) {
+                    tokio::time::sleep(Duration::from_millis(400)).await;
+                }
 
-            // while next image time is more than 3 minutes + tolerance -> wait
-            while controller.get_next_image().time_left().ge(&TimeDelta::seconds(185 + adaptable_tolerance)) {
-                tokio::time::sleep(Duration::from_millis(400)).await;
+                // switch to acquisition and wait for exact image taking timestamp
+                fcont.set_state(FlightState::Acquisition).await;
             }
-
-            // switch to acquisition and wait for exact image taking timestamp
-            controller.set_state(FlightState::Acquisition).await;
             // skip duration until state transition to acquisition is finished
-            while controller.get_next_image().time_left().ge(&TimeDelta::milliseconds(100)) {
+            while fcont.get_next_image().time_left().ge(&TimeDelta::milliseconds(100)) {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
-            controller.update_observation().await;
+            fcont.update_observation().await;
 
             // if during all of this a safe event occured (max_battery < 100 %) -> reset
-            if controller.get_max_battery() < 95.0 {
+            if fcont.get_max_battery() < 95.0 {
                 println!("SAFE event detected, resetting everything!");
                 ResetRequest {}.send_request(&http_handler).await.unwrap();
                 continue 'outer;
             }
 
             println!("Shooting image!");
-            controller.set_angle(CameraAngle::Wide).await;
+            fcont.set_angle(CameraAngle::Wide).await;
             camera_controller
                 .shoot_image_to_buffer(
                     &http_handler,
                     Vec2D::new(
-                        controller.get_current_pos().x() as isize,
-                        controller.get_current_pos().y() as isize,
+                        fcont.get_current_pos().x() as isize,
+                        fcont.get_current_pos().y() as isize,
                     ),
                     CameraAngle::Wide,
                 )
@@ -116,22 +119,22 @@ async fn main() {
 
             orbit_coverage.region_captured(
                 Vec2D::new(
-                    controller.get_current_pos().x() as f32,
-                    controller.get_current_pos().y() as f32,
+                    fcont.get_current_pos().x() as f32,
+                    fcont.get_current_pos().y() as f32,
                 ),
                 CameraAngle::Wide,
             );
         }
 
         // if there is not enough fuel left -> reset
-        if controller.get_fuel_left() < FUEL_RESET_THRESHOLD {
+        if fcont.get_fuel_left() < FUEL_RESET_THRESHOLD {
             ResetRequest {}.send_request(&http_handler).await.unwrap();
             max_orbit_prediction_secs += 10000;
             println!("No Fuel left: Resetting!");
             continue 'outer;
         }
         println!("Performing orbit change and starting over!");
-        controller.rotate_vel(20.0).await;
+        fcont.rotate_vel(20.0).await;
     }
 }
 

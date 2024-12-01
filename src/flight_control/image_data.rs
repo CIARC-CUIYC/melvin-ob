@@ -5,7 +5,7 @@ pub struct PixelData {
     // NOTE: possible Metadata field could be useful here
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct Buffer {
     data: Vec<[u8; 3]>,
 }
