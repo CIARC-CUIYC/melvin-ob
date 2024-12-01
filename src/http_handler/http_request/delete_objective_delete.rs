@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use super::delete_objective;
 use super::request_common::{HTTPRequestMethod, HTTPRequestType, NoBodyHTTPRequestType};
 
@@ -17,9 +18,9 @@ impl HTTPRequestType for DeleteObjectiveRequest {
     fn request_method(&self) -> HTTPRequestMethod {
         HTTPRequestMethod::Delete
     }
-    fn header_params(&self) -> reqwest::header::HeaderMap {
-        let mut headers = reqwest::header::HeaderMap::new();
-        headers.append("id", self.id.into());
-        headers
+    fn query_params(&self) -> HashMap<&str, String> {
+        let mut query = HashMap::new();
+        query.insert("id", self.id.to_string());
+        query
     }
 }
