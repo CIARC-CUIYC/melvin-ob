@@ -1,6 +1,7 @@
 use super::response_common::{HTTPResponseType, ResponseError};
 use crate::http_handler::http_client::HTTPClient;
 use crate::http_handler::HTTPError;
+use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::io::ErrorKind;
 use strum_macros::Display;
@@ -50,6 +51,7 @@ pub(crate) trait JSONBodyHTTPRequestType: HTTPRequestType {
         let response = self
             .get_request_base(client)
             .headers(self.header_params_with_content_type())
+            .query(&self.query_params())
             .json(&self.body())
             .send()
             .await;
@@ -68,6 +70,7 @@ pub(crate) trait NoBodyHTTPRequestType: HTTPRequestType {
         let response = self
             .get_request_base(client)
             .headers(self.header_params())
+            .query(&self.query_params())
             .send()
             .await;
         let response = response.map_err(|x| ResponseError::from(x));
@@ -94,6 +97,7 @@ pub(crate) trait MultipartBodyHTTPRequestType: HTTPRequestType {
         let response = self
             .get_request_base(client)
             .headers(self.header_params_with_content_type())
+            .query(&self.query_params())
             .multipart(
                 self.body()
                     .await
@@ -112,9 +116,8 @@ pub(crate) trait HTTPRequestType {
     type Response: HTTPResponseType;
     fn endpoint(&self) -> &str;
     fn request_method(&self) -> HTTPRequestMethod;
-    fn header_params(&self) -> reqwest::header::HeaderMap {
-        reqwest::header::HeaderMap::default()
-    }
+    fn header_params(&self) -> reqwest::header::HeaderMap { reqwest::header::HeaderMap::default() }
+    fn query_params(&self) -> HashMap<&str, String> { HashMap::new() }
     fn get_request_base(&self, client: &HTTPClient) -> reqwest::RequestBuilder {
         let compound_url = format!("{}{}", client.url(), self.endpoint());
         match self.request_method() {
@@ -126,10 +129,10 @@ pub(crate) trait HTTPRequestType {
     }
 }
 
-pub fn bool_to_header_value<'a>(value: bool) -> reqwest::header::HeaderValue {
+pub fn bool_to_string(value: bool) -> &'static str {
     if value {
-        reqwest::header::HeaderValue::from_str("true").unwrap()
+        "true"
     } else {
-        reqwest::header::HeaderValue::from_str("false").unwrap()
+        "false"
     }
 }

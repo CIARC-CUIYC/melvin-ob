@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use super::objective_image::ObjectiveImageResponse;
 use super::request_common::{
     HTTPRequestMethod, HTTPRequestType, MultipartBodyHTTPRequestType, RequestError,
@@ -26,13 +27,10 @@ impl HTTPRequestType for ObjectiveImageRequest {
     fn request_method(&self) -> HTTPRequestMethod {
         HTTPRequestMethod::Post
     }
-    fn header_params(&self) -> reqwest::header::HeaderMap {
-        let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert(
-            "objective_id",
-            reqwest::header::HeaderValue::from(self.objective_id),
-        );
-        headers
+    fn query_params(&self) -> HashMap<&str, String> {
+        let mut query = HashMap::new();
+        query.insert("objective_id", self.objective_id.to_string());
+        query
     }
 }
 
