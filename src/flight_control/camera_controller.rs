@@ -2,7 +2,7 @@ use crate::flight_control::{camera_state::CameraAngle, common::Vec2D, image_data
 use crate::http_handler::http_client::HTTPClient;
 use crate::http_handler::http_request::request_common::NoBodyHTTPRequestType;
 use crate::http_handler::http_request::shoot_image_get::ShootImageRequest;
-use bitvec::prelude::Lsb0;
+use bitvec::prelude::{Lsb0};
 use bitvec::{bitbox, prelude::BitBox};
 use futures::StreamExt;
 use image::{imageops::Lanczos3, ImageReader};
@@ -13,7 +13,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 pub struct Bitmap {
     width: u32,
     height: u32,
-    pub data: BitBox,
+    pub data: BitBox<usize, Lsb0>,
 }
 
 pub struct CameraController {
@@ -88,11 +88,9 @@ impl Bitmap {
         let x = pos.x() as isize;
         let y = pos.y() as isize;
         for slice_index in self.get_region_slice_indices_from_center(x, y, angle) {
-            if self.data.get(slice_index.0..slice_index.1).unwrap().any() {
-                px += 1;
+                px += self.data.get(slice_index.0..slice_index.1).unwrap().count_ones();
                 if px >= min {
                     return true;
-                }
             }
         }
         false
@@ -132,14 +130,13 @@ impl CameraController {
 
     pub async fn from_file(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let mut file = File::open(path).await?;
-        let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer).await?;
+        let mut file_buffer = Vec::new();
+        file.read_to_end(&mut file_buffer).await?;
 
-        let (bitmap, buffer_data): (Bitmap, Buffer) = bincode::deserialize(&buffer)?;
-
+        let (bitmap, buffer): (Bitmap, Buffer) = bincode::deserialize(&file_buffer)?;
         Ok(CameraController {
             bitmap,
-            buffer: buffer_data,
+            buffer,
         })
     }
 

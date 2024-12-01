@@ -19,7 +19,7 @@ impl Buffer {
     }
 
     pub fn save_pixel(&mut self, wrapped_pos: Vec2D<f32>, rgb: [u8; 3]) {
-        let index = wrapped_pos.y() * Vec2D::<f32>::map_size().x() + wrapped_pos.x();
-        self.data[index as usize] = rgb;
+        let index = wrapped_pos.y() as usize * Vec2D::<usize>::map_size().x() + wrapped_pos.x() as usize;
+        self.data[index] = rgb; // TODO: here index error is possible
     }
 }

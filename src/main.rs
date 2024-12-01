@@ -43,6 +43,7 @@ async fn main() {
             "Total Orbit Possible Coverage Gain: {:.2}",
             orbit_coverage.data.count_ones() as f64 / orbit_coverage.size() as f64
         );
+        
         while orbit_coverage.data.any() {
             let mut adaptable_tolerance = 5;
             fcont.update_observation().await;
@@ -56,7 +57,7 @@ async fn main() {
             let mut delay: TimeDelta = TimeDelta::seconds(185 + adaptable_tolerance); // TODO: fix adaptable tolerance
             adaptable_tolerance -= 1;
             let min_pixel =
-                (covered_perc * orbit_coverage.size() as f32 * MIN_PX_LEFT_FACTOR) as usize;
+                ((1.0-covered_perc) * orbit_coverage.size() as f32 * MIN_PX_LEFT_FACTOR) as usize;
             if fcont.get_state() == FlightState::Acquisition {
                 delay = TimeDelta::seconds(20);
             }
@@ -80,7 +81,7 @@ async fn main() {
                 adaptable_tolerance -= 1;
                 // skip duration until state transition to acquisition needs to be performed
                 fcont.make_ff_call(sleep_duration_std).await;
-                
+
                 // while next image time is more than 3 minutes + tolerance -> wait
                 while fcont.get_next_image().time_left().ge(&TimeDelta::seconds(185 + adaptable_tolerance)) {
                     tokio::time::sleep(Duration::from_millis(400)).await;
@@ -125,7 +126,7 @@ async fn main() {
             );
             fcont.remove_next_image();
         }
-        
+
         // if there is not enough fuel left -> reset
         if fcont.get_fuel_left() < FUEL_RESET_THRESHOLD {
             ResetRequest {}.send_request(&http_handler).await.unwrap();
@@ -149,9 +150,9 @@ fn next_image_dt(
     let mut current_calculation_time_delta = base_delay;
     let mut current_pos = init_pos;
 
-    loop {
+    while current_calculation_time_delta < TimeDelta::seconds(20000) {
         if map.enough_ones_in_square(current_pos, CameraAngle::Wide, min_px)
-            && time_del.get_end() <= time_del.get_start() + current_calculation_time_delta
+            && time_del.get_start() + current_calculation_time_delta <= Utc::now() + base_delay
         {
             time_del.set_delay(current_calculation_time_delta);
             let time_left = time_del.time_left();
@@ -162,9 +163,6 @@ fn next_image_dt(
                 time_left.num_seconds() - time_left.num_minutes() * 60
             );
             return time_del;
-        }
-        if current_calculation_time_delta > TimeDelta::seconds(20000) {
-            break;
         }
         current_calculation_time_delta += TimeDelta::seconds(1);
         current_pos = cont.pos_in_time_delta(current_calculation_time_delta);
