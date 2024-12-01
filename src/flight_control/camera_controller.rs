@@ -6,7 +6,7 @@ use crate::http_handler::http_request::shoot_image_get::ShootImageRequest;
 use bitvec::prelude::{Lsb0};
 use bitvec::{bitbox, prelude::BitBox};
 use futures::StreamExt;
-use image::{imageops::Lanczos3, ImageReader};
+use image::{imageops::Lanczos3, ImageBuffer, ImageReader, RgbImage};
 use rayon::prelude::IntoParallelRefIterator;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -18,6 +18,7 @@ pub struct Bitmap {
     pub data: BitBox<usize, Lsb0>,
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct CameraController {
     bitmap: Bitmap,
     buffer: Buffer,
@@ -36,6 +37,21 @@ impl Bitmap {
     pub fn from_mapsize() -> Self {
         let bitmap_size = Vec2D::<u32>::map_size();
         Self::new(bitmap_size.x(), bitmap_size.y())
+    }
+    
+    pub fn export_to_png(&self, output_path: &str) {
+        let mut img: RgbImage = ImageBuffer::new(self.width, self.height );
+
+        // Iterate through the bit vector and set pixel values
+        for (index, bit) in self.data.iter().enumerate() {
+            let x = (index % self.width as usize) as u32;
+            let y = (index / self.width as usize) as u32;
+            let pixel = if *bit { [255, 0, 0] } else { [0, 0, 0] }; // Red for true, Black for false
+            img.put_pixel(x, y, image::Rgb(pixel));
+        }
+
+        // Save the image to a file
+        img.save(output_path).expect("Failed to save the image");
     }
 
     pub fn size(&self) -> usize { (self.width * self.height) as usize }
@@ -135,24 +151,22 @@ impl CameraController {
         let mut file_buffer = Vec::new();
         file.read_to_end(&mut file_buffer).await?;
 
-        let (bitmap, buffer): (Bitmap, Buffer) = bincode::deserialize(&file_buffer)?;
-        Ok(CameraController {
-            bitmap,
-            buffer,
-        })
+        let camera = bincode::deserialize(&file_buffer)?;
+        Ok(camera)
     }
 
-    pub fn map_ref(&self) -> &BitBox { &self.bitmap.data }
+    pub fn map_data_ref(&self) -> &BitBox { &self.bitmap.data }
+    pub fn bitmap_ref(&self) -> &Bitmap { &self.bitmap }
+    pub fn buffer_ref(&self) -> &Buffer { &self.buffer }
 
     pub async fn export_bin(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let data_to_serialize = (self.bitmap.clone(), self.buffer.clone());
-        let encoded = bincode::serialize(&data_to_serialize)?;
+        let encoded = bincode::serialize(&self)?;
         let mut bin_file = File::create(path).await?;
         bin_file.write_all(&encoded).await?;
         bin_file.flush().await?;
         Ok(())
     }
-    
+
     pub async fn shoot_image_to_disk(
         &mut self,
         http_client: &HTTPClient,
@@ -207,8 +221,8 @@ impl CameraController {
                 let pixel = decoded_image.get_pixel(i, j);
                 self.buffer.save_pixel(coord2d, pixel.0);
             });
-         */        
-        
+         */
+
         self.bitmap
             .region_captured(Vec2D::new(position.x() as f32, position.y() as f32), angle);
 
@@ -236,14 +250,11 @@ impl CameraController {
         collected_png: &[u8],
         angle: CameraAngle,
     ) -> Result<image::RgbImage, Box<dyn std::error::Error>> {
-        const RESIZED_HEIGHT: u32 = 1000;
-        const RESIZED_WIDTH: u32 = 1000;
 
         let decoded_image = ImageReader::new(std::io::Cursor::new(collected_png))
             .with_guessed_format()?
             .decode()?
             .to_rgb8();
-        println!("Recv. Image size: {}x{}", decoded_image.width(), decoded_image.height());
         let resized_unit_length = angle.get_square_unit_length();
 
         let resized_image = image::imageops::resize(

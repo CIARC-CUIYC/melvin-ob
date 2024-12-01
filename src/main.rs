@@ -19,8 +19,9 @@ async fn main() {
     const MIN_PX_LEFT_FACTOR: f32 = 0.0005;
     const MIN_BATTERY_THRESHOLD: f32 = 20.0;
 
-    let mut camera_controller = CameraController::from_file(BIN_FILEPATH).await.unwrap_or({
-        println!("Failed to read camera controller from file, creating new!");
+    let mut camera_controller = CameraController::from_file(BIN_FILEPATH).await
+        .unwrap_or_else(|e| {
+        println!("Failed to read from binary file: {e}");
         CameraController::new()
     });
 
@@ -30,20 +31,20 @@ async fn main() {
 
     let mut max_orbit_prediction_secs = 20000;
 
-    'outer: while !camera_controller.map_ref().all() {
+    'outer: while !camera_controller.map_data_ref().all() {
         fcont.update_observation().await;
         let mut orbit_coverage = Bitmap::from_mapsize();
         calculate_orbit_coverage_map(&fcont, &mut orbit_coverage, max_orbit_prediction_secs);
-        orbit_coverage.data &= !(*camera_controller.map_ref()).clone(); // this checks if there are any possible, unphotographed regions on the current orbit
-
+        orbit_coverage.data &= !(*camera_controller.map_data_ref()).clone(); // this checks if there are any possible, unphotographed regions on the current orbit
+        
         println!(
             "Total Orbit Possible Coverage Gain: {:.2}",
             orbit_coverage.data.count_ones() as f64 / orbit_coverage.size() as f64
         );
         
         while orbit_coverage.data.any() {
-            let covered_perc = camera_controller.map_ref().count_ones() as f32
-                / camera_controller.map_ref().len() as f32;
+            let covered_perc = camera_controller.map_data_ref().count_ones() as f32
+                / camera_controller.map_data_ref().len() as f32;
             println!("Global Coverage percentage: {:.2}", covered_perc);
             let mut adaptable_tolerance = 5;
             fcont.update_observation().await;
@@ -150,7 +151,7 @@ fn next_image_dt(
 
     while current_calculation_time_delta < TimeDelta::seconds(20000) {
         if map.enough_ones_in_square(current_pos, CameraAngle::Wide, min_px)
-            && time_del.get_start() + current_calculation_time_delta <= Utc::now() + base_delay
+            && time_del.get_start() + current_calculation_time_delta > Utc::now() + base_delay
         {
             time_del.set_delay(current_calculation_time_delta);
             let time_left = time_del.time_left();
