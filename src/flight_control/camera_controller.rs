@@ -9,7 +9,7 @@ use image::{imageops::Lanczos3, ImageReader};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct Bitmap {
     width: u32,
     height: u32,
@@ -190,7 +190,7 @@ impl CameraController {
     }
 
     pub async fn export_bin(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let data_to_serialize = (&self.bitmap, &self.buffer);
+        let data_to_serialize = (self.bitmap.clone(), self.buffer.clone());
         let encoded = bincode::serialize(&data_to_serialize)?;
         let mut bin_file = File::create(path).await?;
         bin_file.write_all(&encoded).await?;
