@@ -59,6 +59,9 @@ impl<'a> FlightComputer<'a> {
     pub fn get_battery(&self) -> f32 { self.current_battery }
     pub fn set_next_image(&mut self, dt: PinnedTimeDelay) { self.next_image = dt; }
     pub fn get_next_image(&self) -> PinnedTimeDelay { self.next_image }
+    pub fn remove_next_image(&mut self) {
+        self.next_image = PinnedTimeDelay::new(TimeDelta::seconds(Self::TIME_DELAY_NO_IMAGE));
+    }
 
     pub async fn make_ff_call(&mut self, sleep: Duration) {
         if sleep.as_secs() == 0 {
@@ -215,6 +218,10 @@ impl<'a> FlightComputer<'a> {
     }
 
     pub async fn rotate_vel(&mut self, angle_degrees: f32) {
+        // TODO: there is a http error in this method
+        if self.current_state != FlightState::Acquisition{
+            self.set_state(FlightState::Acquisition).await;
+        }
         let current_vel = self.current_vel;
         self.current_vel.rotate_by(angle_degrees);
         let time_to_sleep = current_vel.to(&self.current_vel).abs() / f64::from(Self::ACCELERATION);

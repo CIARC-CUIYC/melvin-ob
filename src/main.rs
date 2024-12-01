@@ -116,7 +116,6 @@ async fn main() {
                 .await
                 .unwrap();
             camera_controller.export_bin(BIN_FILEPATH).await.unwrap();
-
             orbit_coverage.region_captured(
                 Vec2D::new(
                     fcont.get_current_pos().x() as f32,
@@ -124,8 +123,9 @@ async fn main() {
                 ),
                 CameraAngle::Wide,
             );
+            fcont.remove_next_image();
         }
-
+        
         // if there is not enough fuel left -> reset
         if fcont.get_fuel_left() < FUEL_RESET_THRESHOLD {
             ResetRequest {}.send_request(&http_handler).await.unwrap();
