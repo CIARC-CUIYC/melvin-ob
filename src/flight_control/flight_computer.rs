@@ -28,6 +28,7 @@ pub struct FlightComputer<'a> {
     last_observation_timestamp: chrono::DateTime<chrono::Utc>,
     request_client: &'a http_client::HTTPClient,
     next_image: PinnedTimeDelay,
+    next_image_valid: bool,
 }
 
 impl<'a> FlightComputer<'a> {
@@ -47,6 +48,7 @@ impl<'a> FlightComputer<'a> {
             fuel_left: 0.0,
             last_observation_timestamp: chrono::Utc::now(),
             next_image: PinnedTimeDelay::new(TimeDelta::seconds(Self::TIME_DELAY_NO_IMAGE)),
+            next_image_valid: false, // TODO: make this cleaner (enum maybe, combining next_image(_valid))
             request_client,
         };
         return_controller.update_observation().await;
@@ -57,10 +59,14 @@ impl<'a> FlightComputer<'a> {
     pub fn get_state(&self) -> FlightState { self.current_state }
     pub fn get_fuel_left(&self) -> f32 { self.fuel_left }
     pub fn get_battery(&self) -> f32 { self.current_battery }
-    pub fn set_next_image(&mut self, dt: PinnedTimeDelay) { self.next_image = dt; }
+    pub fn set_next_image(&mut self, dt: PinnedTimeDelay) {
+        self.next_image = dt;
+        self.next_image_valid = true;
+    }
     pub fn get_next_image(&self) -> PinnedTimeDelay { self.next_image }
     pub fn remove_next_image(&mut self) {
         self.next_image = PinnedTimeDelay::new(TimeDelta::seconds(Self::TIME_DELAY_NO_IMAGE));
+        self.next_image_valid = false;
     }
 
     pub async fn make_ff_call(&mut self, sleep: Duration) {
@@ -72,12 +78,15 @@ impl<'a> FlightComputer<'a> {
         self.next_image
             .remove_delay(TimeDelta::seconds(self.fast_forward(sleep).await as i64));
         let time_left = self.next_image.time_left();
-        println!(
-            "Return from Waiting! Next Image in {:02}:{:02}:{:02}",
-            time_left.num_hours(),
-            time_left.num_minutes() - time_left.num_hours() * 60,
-            time_left.num_seconds() - time_left.num_minutes() * 60
-        );
+        print!("Return from Waiting!");
+        if (self.next_image_valid) {
+            println!(
+                " Next Image in {:02}:{:02}:{:02}",
+                time_left.num_hours(),
+                time_left.num_minutes() - time_left.num_hours() * 60,
+                time_left.num_seconds() - time_left.num_minutes() * 60
+            );
+        }else { println!(); }
     }
 
     async fn fast_forward(&self, duration: Duration) -> u64 {
@@ -101,11 +110,7 @@ impl<'a> FlightComputer<'a> {
                 selected_saved_time = saved_time;
             }
         }
-        println!("Fast-Forward-Factor: {}", selected_factor);
-        println!(
-            "First Wait: {}",
-            (wait_time - selected_remainder) / selected_factor
-        );
+        println!("Fast-Forward with Factor: {selected_factor}");
         ConfigureSimulationRequest {
             is_network_simulation: false,
             user_speed_multiplier: selected_factor as u32,
@@ -124,7 +129,6 @@ impl<'a> FlightComputer<'a> {
         .send_request(self.request_client)
         .await
         .unwrap();
-        println!("Second Wait: {}", selected_remainder);
         sleep(Duration::from_secs(selected_remainder)).await;
         selected_saved_time
     }
@@ -138,7 +142,8 @@ impl<'a> FlightComputer<'a> {
         self.set_state(FlightState::Charge).await;
         self.make_ff_call(sleep_time).await;
         self.set_state(initial_state).await;
-        self.make_ff_call(transition_time + Duration::from_secs(5)).await;
+        self.make_ff_call(transition_time + Duration::from_secs(5))
+            .await;
         self.update_observation().await;
     }
 
@@ -153,7 +158,8 @@ impl<'a> FlightComputer<'a> {
         let init_state = self.current_state;
         self.current_state = FlightState::Transition;
         self.perform_state_transition(new_state).await;
-        self.make_ff_call(TRANSITION_DELAY_LOOKUP[&(init_state, new_state)]).await;
+        self.make_ff_call(TRANSITION_DELAY_LOOKUP[&(init_state, new_state)])
+            .await;
 
         self.update_observation().await;
     }
@@ -173,7 +179,9 @@ impl<'a> FlightComputer<'a> {
             Ok(_) => {
                 self.current_camera_state = new_angle;
             }
-            Err(_) => { println!("Unnotized HTTP Error in setAngle()");/* TODO: log error here */ }
+            Err(_) => {
+                println!("Unnotized HTTP Error in setAngle()"); /* TODO: log error here */
+            }
         }
         self.update_observation().await;
     }
@@ -195,7 +203,9 @@ impl<'a> FlightComputer<'a> {
                     self.fuel_left = obs.fuel();
                     return;
                 }
-                Err(err) => { println!("Unnotized HTTP Error in updateObservation()"); /* TODO: log error here */ }
+                Err(err) => {
+                    println!("Unnotized HTTP Error in updateObservation()"); /* TODO: log error here */
+                }
             }
         }
     }
@@ -212,14 +222,17 @@ impl<'a> FlightComputer<'a> {
                 Ok(_) => {
                     return;
                 }
-                Err(err) => { println!("Unnotized HTTP Error in perform_state_transition()") /* TODO: log error here */ }
+                Err(err) => {
+                    println!("Unnotized HTTP Error in perform_state_transition()")
+                    /* TODO: log error here */
+                }
             }
         }
     }
 
     pub async fn rotate_vel(&mut self, angle_degrees: f32) {
         // TODO: there is a http error in this method
-        if self.current_state != FlightState::Acquisition{
+        if self.current_state != FlightState::Acquisition {
             self.set_state(FlightState::Acquisition).await;
         }
         let current_vel = self.current_vel;
@@ -240,7 +253,9 @@ impl<'a> FlightComputer<'a> {
                         .await;
                     self.update_observation().await;
                 }
-                Err(err) => { println!("Unnotized HTTP Error in rotate_vel") /* TODO: log error here */ }
+                Err(err) => {
+                    println!("Unnotized HTTP Error in rotate_vel") /* TODO: log error here */
+                }
             }
         }
     }

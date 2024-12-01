@@ -1,3 +1,4 @@
+use rayon::iter::ParallelIterator;
 use crate::flight_control::{camera_state::CameraAngle, common::Vec2D, image_data::Buffer};
 use crate::http_handler::http_client::HTTPClient;
 use crate::http_handler::http_request::request_common::NoBodyHTTPRequestType;
@@ -6,6 +7,7 @@ use bitvec::prelude::{Lsb0};
 use bitvec::{bitbox, prelude::BitBox};
 use futures::StreamExt;
 use image::{imageops::Lanczos3, ImageReader};
+use rayon::prelude::IntoParallelRefIterator;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -142,6 +144,15 @@ impl CameraController {
 
     pub fn map_ref(&self) -> &BitBox { &self.bitmap.data }
 
+    pub async fn export_bin(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let data_to_serialize = (self.bitmap.clone(), self.buffer.clone());
+        let encoded = bincode::serialize(&data_to_serialize)?;
+        let mut bin_file = File::create(path).await?;
+        bin_file.write_all(&encoded).await?;
+        bin_file.flush().await?;
+        Ok(())
+    }
+    
     pub async fn shoot_image_to_disk(
         &mut self,
         http_client: &HTTPClient,
@@ -180,18 +191,27 @@ impl CameraController {
                 self.buffer.save_pixel(coord2d, pixel.0);
             }
         }
+        /*
+        (position.x() - angle_const..position.x() + angle_const)
+            .flat_map(|row| {
+                (position.x() - angle_const..position.x() + angle_const).map(move |col| (row, col))
+            })
+            .collect::<Vec<_>>() // Collect coordinates
+            .par_iter() // Process them in parallel
+            .for_each(|&(row, col)| {
+                let mut coord2d = Vec2D::new(row as f32, col as f32);
+                coord2d.wrap_around_map();
+                let i = (row - position.x() + angle_const) as u32;
+                let j = (col - position.x() + angle_const) as u32;
+
+                let pixel = decoded_image.get_pixel(i, j);
+                self.buffer.save_pixel(coord2d, pixel.0);
+            });
+         */        
+        
         self.bitmap
             .region_captured(Vec2D::new(position.x() as f32, position.y() as f32), angle);
 
-        Ok(())
-    }
-
-    pub async fn export_bin(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let data_to_serialize = (self.bitmap.clone(), self.buffer.clone());
-        let encoded = bincode::serialize(&data_to_serialize)?;
-        let mut bin_file = File::create(path).await?;
-        bin_file.write_all(&encoded).await?;
-        bin_file.flush().await?;
         Ok(())
     }
 
@@ -223,7 +243,7 @@ impl CameraController {
             .with_guessed_format()?
             .decode()?
             .to_rgb8();
-
+        println!("Recv. Image size: {}x{}", decoded_image.width(), decoded_image.height());
         let resized_unit_length = angle.get_square_unit_length();
 
         let resized_image = image::imageops::resize(

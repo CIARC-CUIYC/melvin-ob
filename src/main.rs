@@ -32,9 +32,6 @@ async fn main() {
 
     'outer: while !camera_controller.map_ref().all() {
         fcont.update_observation().await;
-        let covered_perc = camera_controller.map_ref().count_ones() as f32
-            / camera_controller.map_ref().len() as f32;
-        println!("Global Coverage percentage: {:.2}", covered_perc);
         let mut orbit_coverage = Bitmap::from_mapsize();
         calculate_orbit_coverage_map(&fcont, &mut orbit_coverage, max_orbit_prediction_secs);
         orbit_coverage.data &= !(*camera_controller.map_ref()).clone(); // this checks if there are any possible, unphotographed regions on the current orbit
@@ -45,12 +42,17 @@ async fn main() {
         );
         
         while orbit_coverage.data.any() {
+            let covered_perc = camera_controller.map_ref().count_ones() as f32
+                / camera_controller.map_ref().len() as f32;
+            println!("Global Coverage percentage: {:.2}", covered_perc);
             let mut adaptable_tolerance = 5;
             fcont.update_observation().await;
 
             // if battery to low go into charge
             if fcont.get_battery() < MIN_BATTERY_THRESHOLD {
+                println!("Battery to low, going into charge!");
                 fcont.charge_until(100.0).await;
+                println!("Charged to: {}", fcont.get_battery());
             }
 
             // calculate delay until next image and px threshold
@@ -61,8 +63,11 @@ async fn main() {
             if fcont.get_state() == FlightState::Acquisition {
                 delay = TimeDelta::seconds(20);
             }
-            fcont.set_next_image(next_image_dt(&fcont, &orbit_coverage, delay, min_pixel));
-            if fcont.get_next_image().get_end() < Utc::now() { break; }
+            let next_image = next_image_dt(&fcont, &orbit_coverage, delay, min_pixel);
+            if next_image.get_end() < Utc::now() { 
+                break; 
+            }
+            fcont.set_next_image(next_image);
 
             // if next image time is more than 6 minutes ahead -> switch to charge
             if fcont.get_next_image().time_left().ge(&TimeDelta::seconds(370)) {
@@ -95,13 +100,6 @@ async fn main() {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
             fcont.update_observation().await;
-
-            // if during all of this a safe event occured (max_battery < 100 %) -> reset
-            if fcont.get_max_battery() < 95.0 {
-                println!("SAFE event detected, resetting everything!");
-                ResetRequest {}.send_request(&http_handler).await.unwrap();
-                continue 'outer;
-            }
 
             println!("Shooting image!");
             fcont.set_angle(CameraAngle::Wide).await;
