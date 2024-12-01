@@ -8,18 +8,30 @@ pub struct PixelData {
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct Buffer {
     data: Vec<[u8; 3]>,
+    width: u32,
+    height: u32,
 }
 
 impl Buffer {
-    pub fn new() -> Self {
-        let map_size = Vec2D::<usize>::map_size();
+    pub fn new(width: u32, height: u32) -> Self {
         Self {
-            data: vec![[0, 0, 0]; map_size.x() * map_size.y()],
+            data: vec![[0, 0, 0]; width as usize * height as usize],
+            width,
+            height,
         }
     }
 
+    pub fn from_mapsize() -> Self {
+        let map_size = Vec2D::<u32>::map_size();
+        Self::new(map_size.x(), map_size.y())
+    }
+
     pub fn save_pixel(&mut self, wrapped_pos: Vec2D<f32>, rgb: [u8; 3]) {
-        let index = wrapped_pos.y() as usize * Vec2D::<usize>::map_size().x() + wrapped_pos.x() as usize;
-        self.data[index] = rgb; // TODO: here index error is possible
+        let index = self.get_buffer_index(wrapped_pos.x() as usize, wrapped_pos.y() as usize);
+        self.data[index] = rgb;
+    }
+
+    pub fn get_buffer_index(&self, x: usize, y: usize) -> usize {
+        y * self.width as usize + x
     }
 }

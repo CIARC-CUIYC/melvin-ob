@@ -12,13 +12,15 @@ use crate::http_handler::http_request::request_common::NoBodyHTTPRequestType;
 use crate::http_handler::http_request::reset_get::ResetRequest;
 use chrono::{TimeDelta, Utc};
 
+const FUEL_RESET_THRESHOLD: f32 = 20.0;
+const BIN_FILEPATH: &str = "camera_controller_narrow.bin";
+const MIN_PX_LEFT_FACTOR: f32 = 0.0005;
+const MIN_BATTERY_THRESHOLD: f32 = 20.0;
+const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
+
+
 #[tokio::main]
 async fn main() {
-    const FUEL_RESET_THRESHOLD: f32 = 20.0;
-    const BIN_FILEPATH: &str = "camera_controller.bin";
-    const MIN_PX_LEFT_FACTOR: f32 = 0.0005;
-    const MIN_BATTERY_THRESHOLD: f32 = 20.0;
-
     let mut camera_controller = CameraController::from_file(BIN_FILEPATH).await
         .unwrap_or_else(|e| {
         println!("Failed to read from binary file: {e}");
@@ -60,7 +62,7 @@ async fn main() {
             let mut delay: TimeDelta = TimeDelta::seconds(185 + adaptable_tolerance); // TODO: fix adaptable tolerance
             adaptable_tolerance -= 1;
             let min_pixel =
-                ((1.0-covered_perc) * orbit_coverage.size() as f32 * MIN_PX_LEFT_FACTOR) as usize;
+                CONST_ANGLE.get_square_unit_length().pow(2) as usize;
             if fcont.get_state() == FlightState::Acquisition {
                 delay = TimeDelta::seconds(20);
             }
@@ -103,7 +105,7 @@ async fn main() {
             fcont.update_observation().await;
 
             println!("Shooting image!");
-            fcont.set_angle(CameraAngle::Wide).await;
+            fcont.set_angle(CONST_ANGLE).await;
             camera_controller
                 .shoot_image_to_buffer(
                     &http_handler,
@@ -111,7 +113,7 @@ async fn main() {
                         fcont.get_current_pos().x() as isize,
                         fcont.get_current_pos().y() as isize,
                     ),
-                    CameraAngle::Wide,
+                    CONST_ANGLE,
                 )
                 .await
                 .unwrap();
@@ -121,7 +123,8 @@ async fn main() {
                     fcont.get_current_pos().x() as f32,
                     fcont.get_current_pos().y() as f32,
                 ),
-                CameraAngle::Wide,
+                CONST_ANGLE,
+                false
             );
             fcont.remove_next_image();
         }
@@ -150,7 +153,7 @@ fn next_image_dt(
     let mut current_pos = init_pos;
 
     while current_calculation_time_delta < TimeDelta::seconds(20000) {
-        if map.enough_ones_in_square(current_pos, CameraAngle::Wide, min_px)
+        if map.enough_ones_in_square(current_pos, CONST_ANGLE, min_px)
             && time_del.get_start() + current_calculation_time_delta > Utc::now() + base_delay
         {
             time_del.set_delay(current_calculation_time_delta);
@@ -184,7 +187,8 @@ fn calculate_orbit_coverage_map(cont: &FlightComputer, map: &mut Bitmap, max_dt:
         }
         map.region_captured(
             Vec2D::new(next_pos.x() as f32, next_pos.y() as f32),
-            CameraAngle::Wide,
+            CONST_ANGLE,
+            true
         );
         dt += 1;
     }

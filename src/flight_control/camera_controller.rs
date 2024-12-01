@@ -38,7 +38,7 @@ impl Bitmap {
         let bitmap_size = Vec2D::<u32>::map_size();
         Self::new(bitmap_size.x(), bitmap_size.y())
     }
-    
+
     pub fn export_to_png(&self, output_path: &str) {
         let mut img: RgbImage = ImageBuffer::new(self.width, self.height );
 
@@ -56,7 +56,7 @@ impl Bitmap {
 
     pub fn size(&self) -> usize { (self.width * self.height) as usize }
 
-    pub fn region_captured(&mut self, pos: Vec2D<f32>, angle: CameraAngle) {
+    pub fn region_captured(&mut self, pos: Vec2D<f32>, angle: CameraAngle, set_to: bool) {
         let x = pos.x() as isize;
         let y = pos.y() as isize;
         let slices_vec = self.get_region_slice_indices_from_center(x, y, angle);
@@ -79,7 +79,7 @@ impl Bitmap {
         let max_height = self.height as isize;
         let max_width = self.width as isize;
 
-        for y_it in y - angle_const..y + angle_const {
+        for y_it in (y - angle_const..y + angle_const) {
             let wrapped_y = Vec2D::wrap_coordinate(y_it, max_height);
             let x_start = Vec2D::wrap_coordinate(x - angle_const, max_width);
             let x_end = Vec2D::wrap_coordinate(x + angle_const, max_width);
@@ -133,13 +133,15 @@ impl Bitmap {
     }
 
     // Converts 2D (x, y) coordinates to a 1D index of memory
-    fn get_bitmap_index(&self, x: usize, y: usize) -> usize { y * self.width as usize + x }
+    fn get_bitmap_index(&self, x: usize, y: usize) -> usize {
+        y * self.width as usize + x
+    }
 }
 
 impl CameraController {
     pub fn new() -> Self {
         let png_bitmap = Bitmap::from_mapsize();
-        let png_buffer = Buffer::new();
+        let png_buffer = Buffer::from_mapsize();
         Self {
             bitmap: png_bitmap,
             buffer: png_buffer,
@@ -196,8 +198,10 @@ impl CameraController {
         let decoded_image = self.decode_png_data(&collected_png, angle)?;
 
         let angle_const = angle.get_square_radius() as isize;
+
+        // TODO: maybe this can work in parallel?
         for (i, row) in (position.x() - angle_const..position.x() + angle_const).enumerate() {
-            for (j, col) in (position.x() - angle_const..position.x() + angle_const).enumerate() {
+            for (j, col) in (position.y() - angle_const..position.y() + angle_const).enumerate() {
                 let mut coord2d = Vec2D::new(row as f32, col as f32);
                 coord2d.wrap_around_map();
                 let pixel = decoded_image.get_pixel(i as u32, j as u32);
@@ -205,26 +209,9 @@ impl CameraController {
                 self.buffer.save_pixel(coord2d, pixel.0);
             }
         }
-        /*
-        (position.x() - angle_const..position.x() + angle_const)
-            .flat_map(|row| {
-                (position.x() - angle_const..position.x() + angle_const).map(move |col| (row, col))
-            })
-            .collect::<Vec<_>>() // Collect coordinates
-            .par_iter() // Process them in parallel
-            .for_each(|&(row, col)| {
-                let mut coord2d = Vec2D::new(row as f32, col as f32);
-                coord2d.wrap_around_map();
-                let i = (row - position.x() + angle_const) as u32;
-                let j = (col - position.x() + angle_const) as u32;
-
-                let pixel = decoded_image.get_pixel(i, j);
-                self.buffer.save_pixel(coord2d, pixel.0);
-            });
-         */
 
         self.bitmap
-            .region_captured(Vec2D::new(position.x() as f32, position.y() as f32), angle);
+            .region_captured(Vec2D::new(position.x() as f32, position.y() as f32), angle, true);
 
         Ok(())
     }

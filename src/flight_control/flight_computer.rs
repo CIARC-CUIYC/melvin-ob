@@ -134,16 +134,13 @@ impl<'a> FlightComputer<'a> {
     }
 
     pub async fn charge_until(&mut self, target_battery: f32) {
-        let charge_rate = FlightState::Charge.get_charge_rate();
-        let transition_time = TRANSITION_DELAY_LOOKUP[&(self.current_state, FlightState::Charge)];
-        let charge_time = (target_battery - self.current_battery) * charge_rate;
-        let sleep_time = transition_time + Duration::from_secs(charge_time as u64 + 5);
+        let charge_rate: f32  = FlightState::Charge.get_charge_rate();
+        let charge_time_s = target_battery - self.current_battery / charge_rate + 5.0;
+        let charge_time = Duration::from_secs_f32(charge_time_s);
         let initial_state = self.current_state;
         self.set_state(FlightState::Charge).await;
-        self.make_ff_call(sleep_time).await;
+        self.make_ff_call(charge_time).await;
         self.set_state(initial_state).await;
-        self.make_ff_call(transition_time + Duration::from_secs(5))
-            .await;
         self.update_observation().await;
     }
 
