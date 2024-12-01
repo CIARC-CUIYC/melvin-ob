@@ -22,4 +22,8 @@ impl Buffer {
         let index = wrapped_pos.y() * Vec2D::<f32>::map_size().x() + wrapped_pos.x();
         self.data[index as usize] = rgb;
     }
+
+    pub fn get_at(&self, index: usize) -> Option<&[u8; 3]> {
+        self.data.get(index)
+    }
 }
