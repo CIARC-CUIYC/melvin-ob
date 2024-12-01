@@ -7,7 +7,7 @@ pub struct PixelData {
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct Buffer {
-    data: Vec<[u8; 3]>,
+     pub data: Vec<[u8; 3]>,
 }
 
 impl Buffer {

@@ -26,10 +26,11 @@ async fn main(){
     match CameraController::from_file(bin_path.to_str().unwrap_or("FEHLER")).await {
         Ok(camera_controller) => {
             println!("hallo2");
-            let camera_controller = CameraController::from_file(BIN_PATH).await.unwrap();
 
             let recorded_bitmap = camera_controller.bitmap;
             let recorded_buffer = camera_controller.buffer;
+
+            println!("Rein in die Methode");
 
             bin_to_png(png_path, recorded_bitmap, recorded_buffer).unwrap();
         }
@@ -41,9 +42,6 @@ async fn main(){
             );
         }
     }
-
-
-
 }
 
 fn bin_to_png(
@@ -60,20 +58,15 @@ fn bin_to_png(
 
     println!("Created new RGB image!");
 
-    let default_color = Rgb([100, 100, 100]);
-
-    for (i, bit) in bitmap.iter().enumerate() {
+    for (i, rgb) in buffer.data.iter().enumerate() {
         let x = (i % world_map_width as usize) as u32;
         let y = (i / world_map_width as usize) as u32;
 
-        let color = if *bit {
-            Rgb(*buffer.get_at(i).unwrap())
-        } else {
-            default_color
-        };
-
-        world_map_png.put_pixel(x, y, color);
+        // Write the RGB data directly to the image
+        world_map_png.put_pixel(x, y, Rgb(*rgb));
     }
+
+    println!("Jetz no speichre!");
 
     world_map_png.save(Path::new(&png_path))?;
     println!("World map saved to {:?}", png_path);
