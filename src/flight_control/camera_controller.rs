@@ -1,13 +1,11 @@
-use rayon::iter::ParallelIterator;
+use crate::flight_control::flight_computer::FlightComputer;
 use crate::flight_control::{camera_state::CameraAngle, common::Vec2D, image_data::Buffer};
 use crate::http_handler::http_client::HTTPClient;
 use crate::http_handler::http_request::request_common::NoBodyHTTPRequestType;
 use crate::http_handler::http_request::shoot_image_get::ShootImageRequest;
-use bitvec::prelude::{Lsb0};
-use bitvec::{bitbox, prelude::BitBox};
+use bitvec::{bitbox, prelude::{BitBox, Lsb0}};
 use futures::StreamExt;
 use image::{imageops::Lanczos3, ImageBuffer, ImageReader, RgbImage};
-use rayon::prelude::IntoParallelRefIterator;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -40,7 +38,7 @@ impl Bitmap {
     }
 
     pub fn export_to_png(&self, output_path: &str) {
-        let mut img: RgbImage = ImageBuffer::new(self.width, self.height );
+        let mut img: RgbImage = ImageBuffer::new(self.width, self.height);
 
         // Iterate through the bit vector and set pixel values
         for (index, bit) in self.data.iter().enumerate() {
@@ -79,7 +77,7 @@ impl Bitmap {
         let max_height = self.height as isize;
         let max_width = self.width as isize;
 
-        for y_it in (y - angle_const..y + angle_const) {
+        for y_it in y - angle_const..y + angle_const {
             let wrapped_y = Vec2D::wrap_coordinate(y_it, max_height);
             let x_start = Vec2D::wrap_coordinate(x - angle_const, max_width);
             let x_end = Vec2D::wrap_coordinate(x + angle_const, max_width);
@@ -106,9 +104,13 @@ impl Bitmap {
         let x = pos.x() as isize;
         let y = pos.y() as isize;
         for slice_index in self.get_region_slice_indices_from_center(x, y, angle) {
-                px += self.data.get(slice_index.0..slice_index.1).unwrap().count_ones();
-                if px >= min {
-                    return true;
+            px += self
+                .data
+                .get(slice_index.0..slice_index.1)
+                .unwrap()
+                .count_ones();
+            if px >= min {
+                return true;
             }
         }
         false
@@ -133,9 +135,7 @@ impl Bitmap {
     }
 
     // Converts 2D (x, y) coordinates to a 1D index of memory
-    fn get_bitmap_index(&self, x: usize, y: usize) -> usize {
-        y * self.width as usize + x
-    }
+    fn get_bitmap_index(&self, x: usize, y: usize) -> usize { y * self.width as usize + x }
 }
 
 impl CameraController {
@@ -191,18 +191,23 @@ impl CameraController {
     pub async fn shoot_image_to_buffer(
         &mut self,
         httpclient: &HTTPClient,
-        position: Vec2D<isize>,
+        controller: &mut FlightComputer<'_>,
         angle: CameraAngle,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let collected_png = self.fetch_image_data(httpclient).await?;
-        let decoded_image = self.decode_png_data(&collected_png, angle)?;
-
+        let (_, collected_png) = tokio::join!(
+            controller.update_observation(),
+            self.fetch_image_data(httpclient)
+        );
+        let decoded_image = self.decode_png_data(&collected_png.unwrap(), angle)?;
+        let position = controller.get_current_pos();
+        let pos_x = position.x().round() as isize;
+        let pos_y = position.y() as isize;
         let angle_const = angle.get_square_radius() as isize;
 
         // TODO: maybe this can work in parallel?
-        for (i, row) in (position.x() - angle_const..position.x() + angle_const).enumerate() {
-            for (j, col) in (position.y() - angle_const..position.y() + angle_const).enumerate() {
-                let mut coord2d = Vec2D::new(row as f32, col as f32);
+        for (i, row) in (pos_x - angle_const..pos_x + angle_const).enumerate() {
+            for (j, col) in (pos_y - angle_const..pos_y + angle_const).enumerate() {
+                let mut coord2d = Vec2D::new(row, col);
                 coord2d.wrap_around_map();
                 let pixel = decoded_image.get_pixel(i as u32, j as u32);
 
@@ -210,8 +215,11 @@ impl CameraController {
             }
         }
 
-        self.bitmap
-            .region_captured(Vec2D::new(position.x() as f32, position.y() as f32), angle, true);
+        self.bitmap.region_captured(
+            Vec2D::new(position.x() as f32, position.y() as f32),
+            angle,
+            true,
+        );
 
         Ok(())
     }
@@ -237,7 +245,6 @@ impl CameraController {
         collected_png: &[u8],
         angle: CameraAngle,
     ) -> Result<image::RgbImage, Box<dyn std::error::Error>> {
-
         let decoded_image = ImageReader::new(std::io::Cursor::new(collected_png))
             .with_guessed_format()?
             .decode()?

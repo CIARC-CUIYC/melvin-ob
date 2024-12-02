@@ -27,7 +27,7 @@ async fn main() {
     let mut finished = false;
     while !finished {
         let result = panic::AssertUnwindSafe(execute_main_loop()).catch_unwind().await;
-        match result { 
+        match result {
             Ok(Ok(..)) => {finished = true},
             Ok(Err(e)) => {
                 println!("Error: {e}");
@@ -82,7 +82,7 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>>{
             let mut delay: TimeDelta = TimeDelta::seconds(185 + adaptable_tolerance); // TODO: fix adaptable tolerance
             adaptable_tolerance -= 1;
             let min_pixel = min(
-                (CONST_ANGLE.get_square_unit_length() as usize - 10).pow(2),
+                (CONST_ANGLE.get_square_unit_length() as usize - 50).pow(2),
                 (orbit_coverage.size() as f32 * MIN_PX_LEFT_FACTOR * covered_perc).round() as usize
             );
             if fcont.get_state() == FlightState::Acquisition {
@@ -124,20 +124,14 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>>{
             while fcont.get_next_image().time_left().ge(&TimeDelta::milliseconds(100)) {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
-            fcont.update_observation().await;
-
             println!("Shooting image!");
             fcont.set_angle(CONST_ANGLE).await;
             camera_controller
                 .shoot_image_to_buffer(
                     &http_handler,
-                    Vec2D::new(
-                        fcont.get_current_pos().x().round() as isize,
-                        fcont.get_current_pos().y().round() as isize,
-                    ),
+                    &mut fcont,
                     CONST_ANGLE,
-                )
-                .await?;
+                ).await?;
             camera_controller.export_bin(BIN_FILEPATH).await?;
             orbit_coverage.region_captured(
                 Vec2D::new(
@@ -158,7 +152,7 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>>{
             continue 'outer;
         }
         println!("Performing orbit change and starting over!");
-        fcont.rotate_vel(20.0).await;
+        fcont.rotate_vel(40.0).await;
     }
     Ok(())
 }
@@ -175,7 +169,7 @@ fn next_image_dt(
     let mut current_calculation_time_delta = base_delay;
     let mut current_pos = init_pos;
 
-    while current_calculation_time_delta < TimeDelta::seconds(15000) {
+    while current_calculation_time_delta < TimeDelta::seconds(20000) {
         if map.enough_ones_in_square(current_pos, CONST_ANGLE, min_px)
             && time_del.get_start() + current_calculation_time_delta > Utc::now() + base_delay
         {

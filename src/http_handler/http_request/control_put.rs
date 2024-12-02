@@ -12,7 +12,7 @@ pub struct ControlSatelliteRequest {
 impl JSONBodyHTTPRequestType for ControlSatelliteRequest {
     type Body = ControlSatelliteRequest;
     fn body(&self) -> &Self::Body {
-        &self
+        self
     }
 }
 

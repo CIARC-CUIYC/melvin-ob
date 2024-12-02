@@ -111,13 +111,16 @@ impl<'a> FlightComputer<'a> {
             }
         }
         println!("Fast-Forward with Factor: {selected_factor}");
-        ConfigureSimulationRequest {
-            is_network_simulation: false,
-            user_speed_multiplier: selected_factor as u32,
+        loop {
+            let resp = ConfigureSimulationRequest {
+                is_network_simulation: false,
+                user_speed_multiplier: selected_factor as u32,
+            }.send_request(self.request_client).await;
+            match resp{
+                Ok(..) => break,
+                Err(e) => println!("{e} while starting fast-forward."),
+            };// TODO: HTTP Error here
         }
-        .send_request(self.request_client)
-        .await
-        .unwrap();
         sleep(Duration::from_secs(
             (wait_time - selected_remainder) / selected_factor,
         ))
@@ -138,7 +141,7 @@ impl<'a> FlightComputer<'a> {
 
     pub async fn charge_until(&mut self, target_battery: f32) {
         let charge_rate: f32  = FlightState::Charge.get_charge_rate();
-        let charge_time_s = (target_battery - self.current_battery) / charge_rate + 30.0;
+        let charge_time_s = ((target_battery - self.current_battery) / charge_rate) * 2.0;
         let charge_time = Duration::from_secs_f32(charge_time_s);
         let initial_state = self.current_state;
         self.set_state(FlightState::Charge).await;
@@ -156,7 +159,6 @@ impl<'a> FlightComputer<'a> {
             return;
         }
         let init_state = self.current_state;
-        self.current_state = FlightState::Transition;
         self.perform_state_transition(new_state).await;
         self.make_ff_call(TRANSITION_DELAY_LOOKUP[&(init_state, new_state)])
             .await;
@@ -238,21 +240,20 @@ impl<'a> FlightComputer<'a> {
         }
         let current_vel = self.current_vel;
         self.current_vel.rotate_by(angle_degrees);
-        let time_to_sleep = current_vel.to(&self.current_vel).abs() / f64::from(Self::ACCELERATION);
+        let time_to_sleep = (current_vel.to(&self.current_vel).abs() / f64::from(Self::ACCELERATION))*2.0;
         loop {
-            match (ControlSatelliteRequest {
+            let req = ControlSatelliteRequest {
                 vel_x: self.current_vel.x(),
                 vel_y: self.current_vel.y(),
                 camera_angle: self.current_camera_state.into(),
                 state: self.current_state.into(),
-            }
-            .send_request(self.request_client)
-            .await)
-            {
+            };
+            match req.send_request(self.request_client).await {
                 Ok(_) => {
-                    self.fast_forward(Duration::from_secs((time_to_sleep + 1.0) as u64))
+                    self.make_ff_call(Duration::from_secs((time_to_sleep + 1.0) as u64))
                         .await;
                     self.update_observation().await;
+                    break;
                 }
                 Err(err) => {
                     println!("Unnotized HTTP Error in rotate_vel") /* TODO: log error here */

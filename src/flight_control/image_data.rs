@@ -26,7 +26,7 @@ impl Buffer {
         Self::new(map_size.x(), map_size.y())
     }
 
-    pub fn save_pixel(&mut self, wrapped_pos: Vec2D<f32>, rgb: [u8; 3]) {
+    pub fn save_pixel(&mut self, wrapped_pos: Vec2D<isize>, rgb: [u8; 3]) {
         let index = self.get_buffer_index(wrapped_pos.x() as usize, wrapped_pos.y() as usize);
         self.data[index] = rgb;
     }

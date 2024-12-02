@@ -9,6 +9,7 @@ impl HTTPClient {
         HTTPClient {
             client: reqwest::Client::builder()
                 .danger_accept_invalid_certs(true)
+                .timeout(std::time::Duration::from_secs(5))
                 .build()
                 .unwrap(),
             base_url: String::from(base_url),
