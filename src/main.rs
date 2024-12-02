@@ -169,7 +169,7 @@ fn next_image_dt(
     let mut current_calculation_time_delta = base_delay;
     let mut current_pos = init_pos;
 
-    while current_calculation_time_delta < TimeDelta::seconds(20000) {
+    while current_calculation_time_delta < TimeDelta::seconds(10000) {
         if map.enough_ones_in_square(current_pos, CONST_ANGLE, min_px)
             && time_del.get_start() + current_calculation_time_delta > Utc::now() + base_delay
         {
@@ -194,7 +194,8 @@ fn calculate_orbit_coverage_map(cont: &FlightComputer, map: &mut Bitmap, max_dt:
     println!("Calculating Orbit Coverage!");
     let mut dt = 0; // TODO: should be higher than 0 to account for spent time during calculation
     loop {
-        let next_pos = cont.pos_in_time_delta(TimeDelta::seconds(dt));
+        let mut next_pos = cont.pos_in_time_delta(TimeDelta::seconds(dt));
+        next_pos.wrap_around_map();
         if dt > max_dt {
             println!(
                 "Coverage Percentage of current Orbit: {}",

@@ -58,10 +58,12 @@ impl Bitmap {
         let x = pos.x() as isize;
         let y = pos.y() as isize;
         let slices_vec = self.get_region_slice_indices_from_center(x, y, angle);
-        for slice_index in slices_vec {
+        let len = self.data.len();
+        for mut slice_index in slices_vec {
+            if slice_index.1 >= self.data.len() { slice_index.1 = self.data.len() }
             self.data
                 .get_mut(slice_index.0..slice_index.1)
-                .unwrap()
+                .unwrap_or_else(|| panic!("Unwrapped index range {} - {} is out of bounds for array of {len} length", slice_index.0, slice_index.1))
                 .fill(set_to);
         }
     }
@@ -76,24 +78,27 @@ impl Bitmap {
         let mut slices = Vec::new();
         let max_height = self.height as isize;
         let max_width = self.width as isize;
-
+        
+        let x_start = Vec2D::wrap_coordinate(x - angle_const, max_width);
+        let x_end = Vec2D::wrap_coordinate(x + angle_const, max_width);
+        let is_wrapped = (x_end - x_start).abs() > (angle_const * 2);
+        
         for y_it in y - angle_const..y + angle_const {
             let wrapped_y = Vec2D::wrap_coordinate(y_it, max_height);
-            let x_start = Vec2D::wrap_coordinate(x - angle_const, max_width);
-            let x_end = Vec2D::wrap_coordinate(x + angle_const, max_width);
-
+            
             let start_index = self.get_bitmap_index(x_start as usize, wrapped_y as usize);
             let end_index = self.get_bitmap_index(x_end as usize, wrapped_y as usize);
 
-            if (x_end - x_start).abs() <= (angle_const * 2) {
-                // The row is contiguous, no wrapping needed
-                slices.push((start_index, end_index));
-            } else {
+            if is_wrapped {
                 // The row wraps around the width of the map
+                let wrapped_y_plus_one = Vec2D::wrap_coordinate(wrapped_y + 1, max_height);
                 let first_part_end_index = self.get_bitmap_index(0, (wrapped_y + 1) as usize);
                 let second_part_start_index = self.get_bitmap_index(0, wrapped_y as usize);
                 slices.push((start_index, first_part_end_index));
                 slices.push((second_part_start_index, end_index));
+            } else {
+                // The row is contiguous, no wrapping needed
+                slices.push((start_index, end_index));
             }
         }
         slices
