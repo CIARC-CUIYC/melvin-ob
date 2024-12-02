@@ -1,3 +1,5 @@
+use std::cmp::min;
+use std::panic;
 use rayon::iter::ParallelIterator;
 use std::time::Duration;
 mod flight_control;
@@ -11,39 +13,57 @@ use crate::flight_control::flight_state::FlightState;
 use crate::http_handler::http_request::request_common::NoBodyHTTPRequestType;
 use crate::http_handler::http_request::reset_get::ResetRequest;
 use chrono::{TimeDelta, Utc};
+use futures::FutureExt;
 
 const FUEL_RESET_THRESHOLD: f32 = 20.0;
 const BIN_FILEPATH: &str = "camera_controller_narrow.bin";
-const MIN_PX_LEFT_FACTOR: f32 = 0.0005;
+const MIN_PX_LEFT_FACTOR: f32 = 0.05;
 const MIN_BATTERY_THRESHOLD: f32 = 20.0;
 const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 
 
 #[tokio::main]
 async fn main() {
+    let mut finished = false;
+    while !finished {
+        let result = panic::AssertUnwindSafe(execute_main_loop()).catch_unwind().await;
+        match result { 
+            Ok(Ok(..)) => {finished = true},
+            Ok(Err(e)) => {
+                println!("Error: {e}");
+            }
+            Err(_) => println!("Caught a panic!"),
+        };
+        println!("Restarting!");
+        tokio::time::sleep(Duration::from_secs(10)).await;
+    }
+}
+
+
+async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>>{
     let mut camera_controller = CameraController::from_file(BIN_FILEPATH).await
         .unwrap_or_else(|e| {
-        println!("Failed to read from binary file: {e}");
-        CameraController::new()
-    });
+            println!("Failed to read from binary file: {e}");
+            CameraController::new()
+        });
 
     let http_handler = http_handler::http_client::HTTPClient::new("http://localhost:33000");
-    ResetRequest {}.send_request(&http_handler).await.unwrap();
+    ResetRequest {}.send_request(&http_handler).await?;
     let mut fcont = FlightComputer::new(&http_handler).await;
 
-    let mut max_orbit_prediction_secs = 20000;
+    let mut max_orbit_prediction_secs = 60000;
 
     'outer: while !camera_controller.map_data_ref().all() {
         fcont.update_observation().await;
         let mut orbit_coverage = Bitmap::from_mapsize();
         calculate_orbit_coverage_map(&fcont, &mut orbit_coverage, max_orbit_prediction_secs);
         orbit_coverage.data &= !(*camera_controller.map_data_ref()).clone(); // this checks if there are any possible, unphotographed regions on the current orbit
-        
+
         println!(
             "Total Orbit Possible Coverage Gain: {:.2}",
             orbit_coverage.data.count_ones() as f64 / orbit_coverage.size() as f64
         );
-        
+
         while orbit_coverage.data.any() {
             let covered_perc = camera_controller.map_data_ref().count_ones() as f32
                 / camera_controller.map_data_ref().len() as f32;
@@ -61,14 +81,16 @@ async fn main() {
             // calculate delay until next image and px threshold
             let mut delay: TimeDelta = TimeDelta::seconds(185 + adaptable_tolerance); // TODO: fix adaptable tolerance
             adaptable_tolerance -= 1;
-            let min_pixel =
-                CONST_ANGLE.get_square_unit_length().pow(2) as usize;
+            let min_pixel = min(
+                (CONST_ANGLE.get_square_unit_length() as usize - 10).pow(2),
+                (orbit_coverage.size() as f32 * MIN_PX_LEFT_FACTOR * covered_perc).round() as usize
+            );
             if fcont.get_state() == FlightState::Acquisition {
                 delay = TimeDelta::seconds(20);
             }
             let next_image = next_image_dt(&fcont, &orbit_coverage, delay, min_pixel);
-            if next_image.get_end() < Utc::now() { 
-                break; 
+            if next_image.get_end() < Utc::now() {
+                break;
             }
             fcont.set_next_image(next_image);
 
@@ -110,14 +132,13 @@ async fn main() {
                 .shoot_image_to_buffer(
                     &http_handler,
                     Vec2D::new(
-                        fcont.get_current_pos().x() as isize,
-                        fcont.get_current_pos().y() as isize,
+                        fcont.get_current_pos().x().round() as isize,
+                        fcont.get_current_pos().y().round() as isize,
                     ),
                     CONST_ANGLE,
                 )
-                .await
-                .unwrap();
-            camera_controller.export_bin(BIN_FILEPATH).await.unwrap();
+                .await?;
+            camera_controller.export_bin(BIN_FILEPATH).await?;
             orbit_coverage.region_captured(
                 Vec2D::new(
                     fcont.get_current_pos().x() as f32,
@@ -131,7 +152,7 @@ async fn main() {
 
         // if there is not enough fuel left -> reset
         if fcont.get_fuel_left() < FUEL_RESET_THRESHOLD {
-            ResetRequest {}.send_request(&http_handler).await.unwrap();
+            ResetRequest {}.send_request(&http_handler).await?;
             max_orbit_prediction_secs += 10000;
             println!("No Fuel left: Resetting!");
             continue 'outer;
@@ -139,7 +160,9 @@ async fn main() {
         println!("Performing orbit change and starting over!");
         fcont.rotate_vel(20.0).await;
     }
+    Ok(())
 }
+
 
 fn next_image_dt(
     cont: &FlightComputer,
@@ -152,7 +175,7 @@ fn next_image_dt(
     let mut current_calculation_time_delta = base_delay;
     let mut current_pos = init_pos;
 
-    while current_calculation_time_delta < TimeDelta::seconds(20000) {
+    while current_calculation_time_delta < TimeDelta::seconds(15000) {
         if map.enough_ones_in_square(current_pos, CONST_ANGLE, min_px)
             && time_del.get_start() + current_calculation_time_delta > Utc::now() + base_delay
         {

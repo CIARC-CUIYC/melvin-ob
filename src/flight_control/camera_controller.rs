@@ -64,7 +64,7 @@ impl Bitmap {
             self.data
                 .get_mut(slice_index.0..slice_index.1)
                 .unwrap()
-                .fill(true);
+                .fill(set_to);
         }
     }
 
