@@ -160,10 +160,17 @@ impl<'a> FlightComputer<'a> {
         }
         let init_state = self.current_state;
         self.perform_state_transition(new_state).await;
-        self.make_ff_call(TRANSITION_DELAY_LOOKUP[&(init_state, new_state)])
+        let transition_t = TRANSITION_DELAY_LOOKUP
+            .get(&(init_state, new_state))
+            .unwrap_or_else(||{panic!("({init_state}, {new_state}) not in TRANSITION_DELAY_LOOKUP")});
+        self.make_ff_call(*transition_t)
             .await;
-
+        // TODO: implement "wait_for_condition" functionality with condition enum
         self.update_observation().await;
+        while self.current_state != new_state {
+            sleep(Duration::from_millis(100)).await;
+            self.update_observation().await;
+        }
     }
 
     pub async fn set_angle(&mut self, new_angle: CameraAngle) {
@@ -241,6 +248,7 @@ impl<'a> FlightComputer<'a> {
         let current_vel = self.current_vel;
         self.current_vel.rotate_by(angle_degrees);
         let time_to_sleep = (current_vel.to(&self.current_vel).abs() / f64::from(Self::ACCELERATION))*2.0;
+
         loop {
             let req = ControlSatelliteRequest {
                 vel_x: self.current_vel.x(),

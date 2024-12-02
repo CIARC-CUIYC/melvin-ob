@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use std::sync::LazyLock;
 use std::time::Duration;
+use strum_macros::Display;
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+#[derive(Debug, Display, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum FlightState {
     Deployment,
     Transition,

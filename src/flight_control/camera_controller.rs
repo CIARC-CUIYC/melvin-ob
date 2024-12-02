@@ -63,7 +63,7 @@ impl Bitmap {
             if slice_index.1 >= self.data.len() { slice_index.1 = self.data.len() }
             self.data
                 .get_mut(slice_index.0..slice_index.1)
-                .unwrap_or_else(|| panic!("Unwrapped index range {} - {} is out of bounds for array of {len} length", slice_index.0, slice_index.1))
+                .unwrap_or_else(|| panic!("Index {} - {} not in {len} length", slice_index.0, slice_index.1))
                 .fill(set_to);
         }
     }
@@ -108,11 +108,12 @@ impl Bitmap {
         let mut px = 0;
         let x = pos.x() as isize;
         let y = pos.y() as isize;
+        let len = self.data.len();
         for slice_index in self.get_region_slice_indices_from_center(x, y, angle) {
             px += self
                 .data
                 .get(slice_index.0..slice_index.1)
-                .unwrap()
+                .unwrap_or_else(|| panic!("Index {} - {} not in {len} length", slice_index.0, slice_index.1))
                 .count_ones();
             if px >= min {
                 return true;
@@ -203,7 +204,10 @@ impl CameraController {
             controller.update_observation(),
             self.fetch_image_data(httpclient)
         );
-        let decoded_image = self.decode_png_data(&collected_png.unwrap(), angle)?;
+        let decoded_image = self.decode_png_data(
+            &collected_png.unwrap_or_else(|e|{panic!("PNG coulndt be unwrapped: {e}")}), 
+            angle
+        )?;
         let position = controller.get_current_pos();
         let pos_x = position.x().round() as isize;
         let pos_y = position.y() as isize;
