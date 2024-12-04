@@ -57,6 +57,10 @@ impl<'a> FlightComputer<'a> {
 
     pub fn get_max_battery(&self) -> f32 { self.max_battery }
     pub fn get_state(&self) -> FlightState { self.current_state }
+    pub async fn get_state_update(&mut self) -> FlightState { 
+        self.update_observation().await;
+        self.current_state 
+    }
     pub fn get_fuel_left(&self) -> f32 { self.fuel_left }
     pub fn get_battery(&self) -> f32 { self.current_battery }
     pub fn set_next_image(&mut self, dt: PinnedTimeDelay) {
@@ -71,14 +75,14 @@ impl<'a> FlightComputer<'a> {
 
     pub async fn make_ff_call(&mut self, sleep: Duration) {
         if sleep.as_secs() == 0 {
-            println!("Wait call rejected! Duration was 0!");
+            println!("[LOG] Wait call rejected! Duration was 0!");
             return;
         }
-        println!("Waiting for {} seconds!", sleep.as_secs());
+        println!("[INFO] Waiting for {} seconds!", sleep.as_secs());
         self.next_image
             .remove_delay(TimeDelta::seconds(self.fast_forward(sleep).await as i64));
         let time_left = self.next_image.time_left();
-        print!("Return from Waiting!");
+        print!("[INFO] Return from Waiting!");
         if (self.next_image_valid) {
             println!(
                 " Next Image in {:02}:{:02}:{:02}",
@@ -110,7 +114,7 @@ impl<'a> FlightComputer<'a> {
                 selected_saved_time = saved_time;
             }
         }
-        println!("Fast-Forward with Factor: {selected_factor}");
+        println!("[LOG] Fast-Forward with Factor: {selected_factor}");
         loop {
             let resp = ConfigureSimulationRequest {
                 is_network_simulation: false,
@@ -118,7 +122,7 @@ impl<'a> FlightComputer<'a> {
             }.send_request(self.request_client).await;
             match resp{
                 Ok(..) => break,
-                Err(e) => println!("{e} while starting fast-forward."),
+                Err(e) => println!("[ERROR] {e} while starting fast-forward."),
             };// TODO: HTTP Error here
         }
         sleep(Duration::from_secs(
@@ -132,7 +136,7 @@ impl<'a> FlightComputer<'a> {
             }.send_request(self.request_client).await;
            match resp{
                 Ok(..) => break,
-                Err(e) => println!("{e} while returning from fast-forward."),
+                Err(e) => println!("[ERROR] {e} while returning from fast-forward."),
             };// TODO: HTTP Error here
         }
         sleep(Duration::from_secs(selected_remainder)).await;
@@ -162,7 +166,7 @@ impl<'a> FlightComputer<'a> {
         self.perform_state_transition(new_state).await;
         let transition_t = TRANSITION_DELAY_LOOKUP
             .get(&(init_state, new_state))
-            .unwrap_or_else(||{panic!("({init_state}, {new_state}) not in TRANSITION_DELAY_LOOKUP")});
+            .unwrap_or_else(||{panic!("[FATAL] ({init_state}, {new_state}) not in TRANSITION_DELAY_LOOKUP")});
         self.make_ff_call(*transition_t)
             .await;
         // TODO: implement "wait_for_condition" functionality with condition enum
@@ -189,7 +193,7 @@ impl<'a> FlightComputer<'a> {
                 self.current_camera_state = new_angle;
             }
             Err(_) => {
-                println!("Unnotized HTTP Error in setAngle()"); /* TODO: log error here */
+                println!("[ERROR] Unnotized HTTP Error in setAngle()"); /* TODO: log error here */
             }
         }
         self.update_observation().await;
@@ -213,7 +217,7 @@ impl<'a> FlightComputer<'a> {
                     return;
                 }
                 Err(err) => {
-                    println!("Unnotized HTTP Error in updateObservation()"); /* TODO: log error here */
+                    println!("[ERROR] Unnotized HTTP Error in updateObservation()"); /* TODO: log error here */
                 }
             }
         }
@@ -232,14 +236,14 @@ impl<'a> FlightComputer<'a> {
                     return;
                 }
                 Err(err) => {
-                    println!("Unnotized HTTP Error in perform_state_transition()")
+                    println!("[ERROR] Unnotized HTTP Error in perform_state_transition()")
                     /* TODO: log error here */
                 }
             }
         }
     }
 
-    pub async fn rotate_vel(&mut self, angle_degrees: f32) {
+    pub async fn rotate_vel(&mut self, angle_degrees: f32, accel_factor: f32) {
         self.update_observation().await;
         // TODO: there is a http error in this method
         if self.current_state != FlightState::Acquisition {
@@ -247,6 +251,7 @@ impl<'a> FlightComputer<'a> {
         }
         let current_vel = self.current_vel;
         self.current_vel.rotate_by(angle_degrees);
+        self.current_vel = self.current_vel * (1.0 + accel_factor);
         let time_to_sleep = (current_vel.to(&self.current_vel).abs() / f64::from(Self::ACCELERATION))*2.0;
 
         loop {
@@ -264,7 +269,7 @@ impl<'a> FlightComputer<'a> {
                     break;
                 }
                 Err(err) => {
-                    println!("Unnotized HTTP Error in rotate_vel") /* TODO: log error here */
+                    println!("[ERROR] Unnotized HTTP Error in rotate_vel") /* TODO: log error here */
                 }
             }
         }

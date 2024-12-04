@@ -49,7 +49,7 @@ impl Bitmap {
         }
 
         // Save the image to a file
-        img.save(output_path).expect("Failed to save the image");
+        img.save(output_path).expect("[ERROR] Failed to save the image");
     }
 
     pub fn size(&self) -> usize { (self.width * self.height) as usize }
@@ -63,7 +63,7 @@ impl Bitmap {
             if slice_index.1 >= self.data.len() { slice_index.1 = self.data.len() }
             self.data
                 .get_mut(slice_index.0..slice_index.1)
-                .unwrap_or_else(|| panic!("Index {} - {} not in {len} length", slice_index.0, slice_index.1))
+                .unwrap_or_else(|| panic!("[FATAL] Index {} - {} not in {len} length", slice_index.0, slice_index.1))
                 .fill(set_to);
         }
     }
@@ -113,7 +113,7 @@ impl Bitmap {
             px += self
                 .data
                 .get(slice_index.0..slice_index.1)
-                .unwrap_or_else(|| panic!("Index {} - {} not in {len} length", slice_index.0, slice_index.1))
+                .unwrap_or_else(|| panic!("[FATAL] Index {} - {} not in {len} length", slice_index.0, slice_index.1))
                 .count_ones();
             if px >= min {
                 return true;
@@ -205,7 +205,7 @@ impl CameraController {
             self.fetch_image_data(httpclient)
         );
         let decoded_image = self.decode_png_data(
-            &collected_png.unwrap_or_else(|e|{panic!("PNG coulndt be unwrapped: {e}")}), 
+            &collected_png.unwrap_or_else(|e|{panic!("[ERROR] PNG coulndt be unwrapped: {e}")}), 
             angle
         )?;
         let position = controller.get_current_pos();
