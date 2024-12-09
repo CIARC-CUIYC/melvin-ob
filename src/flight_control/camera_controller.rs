@@ -1,12 +1,12 @@
+use crate::flight_control::common::Vec2D;
+use crate::flight_control::image_data::Buffer;
 use bitvec::prelude::Lsb0;
-use bitvec::{bitbox, prelude::BitBox};
 use bitvec::slice::Iter;
+use bitvec::{bitbox, prelude::BitBox};
 use futures::StreamExt;
 use image::{imageops::Lanczos3, ImageReader};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use crate::flight_control::image_data::Buffer;
-use crate::flight_control::common::Vec2D;
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct Bitmap {
@@ -14,6 +14,7 @@ pub struct Bitmap {
     height: u32,
     pub data: BitBox,
 }
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct CameraController {
     pub bitmap: Bitmap,
     pub buffer: Buffer,
@@ -54,7 +55,6 @@ impl CameraController {
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer).await?;
 
-
         let (bitmap, buffer_data): (Bitmap, Buffer) = bincode::deserialize(&buffer)?;
 
         Ok(CameraController {
@@ -71,6 +71,4 @@ impl CameraController {
         bin_file.flush().await?;
         Ok(())
     }
-
 }
-
