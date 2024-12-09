@@ -25,3 +25,8 @@ Cargo.lock
 #Custom
 .idea
 camera_controller.bin
+*.bin
+*.png
+
+#MAC OS specific
+*.DS_Store
