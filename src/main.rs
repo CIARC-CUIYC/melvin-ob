@@ -1,38 +1,26 @@
-use std::env;
 use image::{Rgb, RgbImage};
+use std::env;
 use std::path::{Path, PathBuf};
 
 mod flight_control;
 
-use crate::flight_control::camera_controller::{Bitmap, CameraController};
-use crate::flight_control::image_data::{Buffer};
-
-
-
+use crate::flight_control::camera_controller::CameraController;
+use crate::flight_control::image_data::Buffer;
 
 #[tokio::main]
-async fn main(){
+async fn main() {
     const BIN_PATH: &str = "src/camera_controller.bin";
-    const PNG_PATH: &str = "../graphics/world.png";
+    const PNG_PATH: &str = "src/graphics/world.png";
 
     let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let bin_path = cwd.join(BIN_PATH);
-
-    // Use CARGO_MANIFEST_DIR to construct an absolute path
-    let project_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    //let bin_path = project_dir.join("src/camera_controller.bin");
-    let png_path = project_dir.join("src/graphics/world.png");
+    let png_path = cwd.join(PNG_PATH);
 
     match CameraController::from_file(bin_path.to_str().unwrap_or("FEHLER")).await {
         Ok(camera_controller) => {
-            println!("hallo2");
-
-            let recorded_bitmap = camera_controller.bitmap;
             let recorded_buffer = camera_controller.buffer;
 
-            println!("Rein in die Methode");
-
-            bin_to_png(png_path, recorded_bitmap, recorded_buffer).unwrap();
+            bin_to_png(&png_path, &recorded_buffer).unwrap();
         }
         Err(e) => {
             eprintln!(
@@ -47,14 +35,12 @@ async fn main(){
 fn bin_to_png(
     png_path: PathBuf,
     bitmap: Bitmap,
-    buffer: Buffer
+    buffer: Buffer,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let world_map_width = 21600;
     let world_map_height = 10800;
 
-    let mut world_map_png = RgbImage::new(
-        world_map_width as u32, world_map_height as u32
-    );
+    let mut world_map_png = RgbImage::new(world_map_width as u32, world_map_height as u32);
 
     println!("Created new RGB image!");
 
