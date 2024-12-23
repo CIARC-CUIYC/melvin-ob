@@ -52,7 +52,7 @@ async fn watchdog(timeout: Duration, action: impl Fn() + Send + 'static) {
 async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>>{
     // Spawn the watchdog task
     let timeout = Duration::from_secs(7200);
-    tokio::spawn(watchdog(timeout, || {panic!("[INFO] Resetting normally after 2 hours")}));
+    //tokio::spawn(watchdog(timeout, || {panic!("[INFO] Resetting normally after 2 hours")}));
 
     let mut camera_controller = CameraController::from_file(BIN_FILEPATH).await
         .unwrap_or_else(|e| {
@@ -68,7 +68,7 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>>{
 
     'outer: while !camera_controller.map_data_ref().all() {
         fcont.update_observation().await;
-        //fcont.rotate_vel(rand::rng().random_range(-169.0..169.0), ACCEL_FACTOR).await;
+        fcont.rotate_vel(rand::rng().random_range(-169.0..169.0), ACCEL_FACTOR).await;
         let mut orbit_coverage = Bitmap::from_mapsize();
         calculate_orbit_coverage_map(&fcont, &mut orbit_coverage, max_orbit_prediction_secs);
         orbit_coverage.data &= !(*camera_controller.map_data_ref()).clone(); // this checks if there are any possible, unphotographed regions on the current orbit
