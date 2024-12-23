@@ -27,7 +27,9 @@ where
 {
     type ParsedResponseType = T;
 
-    async fn read_response(response: reqwest::Response) -> Result<Self::ParsedResponseType, ResponseError> {
+    async fn read_response(
+        response: reqwest::Response,
+    ) -> Result<Self::ParsedResponseType, ResponseError> {
         let response = Self::unwrap_return_code(response).await?;
         Self::parse_json_body(response).await
     }
@@ -87,7 +89,8 @@ impl std::error::Error for ResponseError {}
 impl From<reqwest::Error> for ResponseError {
     fn from(value: reqwest::Error) -> Self {
         if value.is_request() {
-            ResponseError::BadRequest(BadRequestReturn { detail: vec![] })
+            
+            ResponseError::BadRequest(BadRequestReturn { detail: vec![]})
         } else if value.is_timeout() || value.is_redirect() {
             ResponseError::InternalServer
         } else if value.is_connect() {

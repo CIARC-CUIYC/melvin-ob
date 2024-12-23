@@ -1,4 +1,6 @@
-use crate::http_handler::http_response::response_common::{HTTPResponseType, JSONBodyHTTPResponseType, ResponseError, SerdeJSONBodyHTTPResponseType};
+use crate::http_handler::http_response::response_common::{
+    HTTPResponseType, JSONBodyHTTPResponseType, ResponseError, SerdeJSONBodyHTTPResponseType,
+};
 
 #[derive(serde::Deserialize, Debug)]
 pub struct ModifySlotResponse {

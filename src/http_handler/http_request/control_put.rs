@@ -1,5 +1,5 @@
-use super::request_common::{HTTPRequestMethod, HTTPRequestType, JSONBodyHTTPRequestType};
 use super::control_satellite::ControlSatelliteResponse;
+use super::request_common::{HTTPRequestMethod, HTTPRequestType, JSONBodyHTTPRequestType};
 
 #[derive(serde::Serialize, Debug)]
 pub struct ControlSatelliteRequest {
@@ -11,11 +11,17 @@ pub struct ControlSatelliteRequest {
 
 impl JSONBodyHTTPRequestType for ControlSatelliteRequest {
     type Body = ControlSatelliteRequest;
-    fn body(&self) -> &Self::Body { &self }
+    fn body(&self) -> &Self::Body {
+        self
+    }
 }
 
 impl HTTPRequestType for ControlSatelliteRequest {
     type Response = ControlSatelliteResponse;
-    fn endpoint(&self) -> &str { "/control" }
-    fn request_method(&self) -> HTTPRequestMethod { HTTPRequestMethod::Put }
+    fn endpoint(&self) -> &str {
+        "/control"
+    }
+    fn request_method(&self) -> HTTPRequestMethod {
+        HTTPRequestMethod::Put
+    }
 }
