@@ -1,21 +1,23 @@
 use std::cmp::min;
 use std::panic;
-use rayon::iter::ParallelIterator;
 use std::time::Duration;
 mod flight_control;
 mod http_handler;
 
-use crate::flight_control::camera_controller::{Bitmap, CameraController};
-use crate::flight_control::camera_state::CameraAngle;
-use crate::flight_control::common::{PinnedTimeDelay, Vec2D};
-use crate::flight_control::flight_computer::FlightComputer;
-use crate::flight_control::flight_state::FlightState;
-use crate::http_handler::http_request::request_common::NoBodyHTTPRequestType;
-use crate::http_handler::http_request::reset_get::ResetRequest;
+use crate::flight_control::{
+    common::{bitmap::Bitmap, pinned_dt::PinnedTimeDelay, vec2d::Vec2D},
+    camera_state::CameraAngle,
+    camera_controller::CameraController,
+    flight_computer::FlightComputer,
+    flight_state::FlightState
+};
+use crate::http_handler::http_request::{
+    request_common::NoBodyHTTPRequestType,
+    reset_get::ResetRequest
+};
 use chrono::{TimeDelta, Utc};
 use futures::FutureExt;
 use rand::Rng;
-use tokio::sync::mpsc;
 use tokio::time;
 
 const FUEL_RESET_THRESHOLD: f32 = 20.0;
@@ -25,14 +27,15 @@ const MIN_BATTERY_THRESHOLD: f32 = 20.0;
 const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 const ACCEL_FACTOR: f32 = 0.6;
 
-
 #[tokio::main]
 async fn main() {
     let mut finished = false;
     while !finished {
-        let result = panic::AssertUnwindSafe(execute_main_loop()).catch_unwind().await;
+        let result = panic::AssertUnwindSafe(execute_main_loop())
+            .catch_unwind()
+            .await;
         match result {
-            Ok(Ok(..)) => {finished = true},
+            Ok(Ok(..)) => finished = true,
             Ok(Err(e)) => {
                 println!("[FATAL] {e}");
             }
@@ -44,17 +47,18 @@ async fn main() {
 }
 
 async fn watchdog(timeout: Duration, action: impl Fn() + Send + 'static) {
-        // Create a timer for the timeout duration
-        time::sleep(timeout).await;
-        action();
+    // Create a timer for the timeout duration
+    time::sleep(timeout).await;
+    action();
 }
 
-async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>>{
+async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>> {
     // Spawn the watchdog task
     let timeout = Duration::from_secs(7200);
     //tokio::spawn(watchdog(timeout, || {panic!("[INFO] Resetting normally after 2 hours")}));
 
-    let mut camera_controller = CameraController::from_file(BIN_FILEPATH).await
+    let mut camera_controller = CameraController::from_file(BIN_FILEPATH)
+        .await
         .unwrap_or_else(|e| {
             println!("[WARN] Failed to read from binary file: {e}");
             CameraController::new()
@@ -68,7 +72,9 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>>{
 
     'outer: while !camera_controller.map_data_ref().all() {
         fcont.update_observation().await;
-        fcont.rotate_vel(rand::rng().random_range(-169.0..169.0), ACCEL_FACTOR).await;
+        fcont
+            .rotate_vel(rand::rng().random_range(-169.0..169.0), ACCEL_FACTOR)
+            .await;
         let mut orbit_coverage = Bitmap::from_mapsize();
         calculate_orbit_coverage_map(&fcont, &mut orbit_coverage, max_orbit_prediction_secs);
         orbit_coverage.data &= !(*camera_controller.map_data_ref()).clone(); // this checks if there are any possible, unphotographed regions on the current orbit
@@ -97,7 +103,7 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>>{
             adaptable_tolerance -= 1;
             let min_pixel = min(
                 (CONST_ANGLE.get_square_unit_length() as usize - 50).pow(2),
-                (orbit_coverage.size() as f32 * MIN_PX_LEFT_FACTOR * covered_perc).round() as usize
+                (orbit_coverage.size() as f32 * MIN_PX_LEFT_FACTOR * covered_perc).round() as usize,
             );
             if fcont.get_state() == FlightState::Acquisition {
                 delay = TimeDelta::seconds(20);
@@ -109,7 +115,11 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>>{
             fcont.set_next_image(next_image);
 
             // if next image time is more than 6 minutes ahead -> switch to charge
-            if fcont.get_next_image().time_left().ge(&TimeDelta::seconds(370)) {
+            if fcont
+                .get_next_image()
+                .time_left()
+                .ge(&TimeDelta::seconds(370))
+            {
                 // TODO: magic numbers
                 fcont.set_state(FlightState::Charge).await;
             }
@@ -128,7 +138,11 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>>{
                 fcont.make_ff_call(sleep_duration_std).await;
 
                 // while next image time is more than 3 minutes + tolerance -> wait
-                while fcont.get_next_image().time_left().ge(&TimeDelta::seconds(185 + adaptable_tolerance)) {
+                while fcont
+                    .get_next_image()
+                    .time_left()
+                    .ge(&TimeDelta::seconds(185 + adaptable_tolerance))
+                {
                     tokio::time::sleep(Duration::from_millis(400)).await;
                 }
                 // switch to acquisition and wait for exact image taking timestamp
@@ -140,23 +154,27 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>>{
                 continue;
             }
             // skip duration until state transition to acquisition is finished
-            while fcont.get_next_image().time_left().ge(&TimeDelta::milliseconds(100)) {
+            while fcont
+                .get_next_image()
+                .time_left()
+                .ge(&TimeDelta::milliseconds(100))
+            {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
             println!("[INFO] Shooting image!");
             fcont.set_angle(CONST_ANGLE).await;
             camera_controller
-                .shoot_image_to_buffer(
-                    &http_handler,
-                    &mut fcont,
-                    CONST_ANGLE,
-                ).await?;
+                .shoot_image_to_buffer(&http_handler, &mut fcont, CONST_ANGLE)
+                .await?;
             camera_controller.export_bin(BIN_FILEPATH).await?;
             orbit_coverage.region_captured(
                 Vec2D::new(
                     fcont.get_current_pos().x() as f32,
                     fcont.get_current_pos().y() as f32,
-                ), CONST_ANGLE, false);
+                ),
+                CONST_ANGLE,
+                false,
+            );
             fcont.remove_next_image();
         }
 
@@ -172,7 +190,6 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>>{
     }
     Ok(())
 }
-
 
 fn next_image_dt(
     cont: &FlightComputer,
@@ -223,7 +240,7 @@ fn calculate_orbit_coverage_map(cont: &FlightComputer, map: &mut Bitmap, max_dt:
         map.region_captured(
             Vec2D::new(next_pos.x() as f32, next_pos.y() as f32),
             CONST_ANGLE,
-            true
+            true,
         );
         dt += 1;
     }

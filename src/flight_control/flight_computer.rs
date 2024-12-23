@@ -1,19 +1,19 @@
 use super::{
     camera_state::CameraAngle,
-    common::{PinnedTimeDelay, Vec2D},
+    common::{pinned_dt::PinnedTimeDelay, vec2d::Vec2D},
     flight_state::{FlightState, TRANSITION_DELAY_LOOKUP},
 };
-use crate::http_handler::http_request::configure_simulation_put::ConfigureSimulationRequest;
 use crate::http_handler::{
     http_client,
     http_request::{
         control_put::*,
         observation_get::*,
         request_common::{JSONBodyHTTPRequestType, NoBodyHTTPRequestType},
+        configure_simulation_put::ConfigureSimulationRequest
     },
 };
 use chrono::TimeDelta;
-use std::{cmp::min, time, time::Duration};
+use std::{cmp::min, time::Duration};
 use tokio::time::sleep;
 
 #[derive(Debug)]
