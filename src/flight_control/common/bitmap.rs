@@ -59,6 +59,13 @@ impl Bitmap {
     ///
     /// # Returns
     /// The 1D index as `u32`.
+    /// 
+    /// # Example
+    /// ```rust
+    /// let bitmap = Bitmap::new(4, 4);
+    /// let index = bitmap.get_bitmap_index(2, 3);
+    /// assert_eq!(index, 14);
+    /// ```
     fn get_bitmap_index(&self, x: u32, y: u32) -> u32 { y * self.width + x }
 
     /// Returns the total number of pixels in the bitmap.
@@ -217,8 +224,8 @@ impl Bitmap {
     #[allow(clippy::cast_possible_truncation)]
     pub fn has_sufficient_set_bits(&self, pos: Vec2D<f32>, angle: CameraAngle, min: usize) -> bool {
         let mut px = 0;
-        let x = pos.x() as i32;
-        let y = pos.y() as i32;
+        let x = pos.x().round() as i32;
+        let y = pos.y().round() as i32;
         for slice_index in self.get_region_slice_indices(x, y, angle) {
             px += self
                 .data

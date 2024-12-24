@@ -24,7 +24,7 @@ pub struct CameraController {
 impl CameraController {
     pub fn new() -> Self {
         let png_bitmap = Bitmap::from_map_size();
-        let png_buffer = Buffer::from_mapsize();
+        let png_buffer = Buffer::from_map_size();
         Self {
             bitmap: png_bitmap,
             buffer: png_buffer,
@@ -71,6 +71,7 @@ impl CameraController {
         Ok(())
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     pub async fn shoot_image_to_buffer(
         &mut self,
         httpclient: &HTTPClient,
@@ -82,18 +83,20 @@ impl CameraController {
             self.fetch_image_data(httpclient)
         );
         let decoded_image = self.decode_png_data(
-            &collected_png.unwrap_or_else(|e| panic!("[ERROR] PNG coulndt be unwrapped: {e}")),
+            &collected_png.unwrap_or_else(|e| panic!("[ERROR] PNG couldn't be unwrapped: {e}")),
             angle,
         )?;
         let position = controller.get_current_pos();
-        let pos_x = position.x().round() as isize;
-        let pos_y = position.y() as isize;
-        let angle_const = angle.get_square_radius() as isize;
+        let pos_x = position.x().round() as i32;
+        let pos_y = position.y().round() as i32;
+        let angle_const = i32::from(angle.get_square_radius());
 
         // TODO: maybe this can work in parallel?
         for (i, row) in (pos_x - angle_const..pos_x + angle_const).enumerate() {
             for (j, col) in (pos_y - angle_const..pos_y + angle_const).enumerate() {
-                let mut coord2d = Vec2D::new(row, col);
+                let row_u32 = u32::try_from(row).expect("[FATAL] Conversion to u32 failed!");
+                let col_u32 = u32::try_from(col).expect("[FATAL] Conversion to u32 failed!");
+                let mut coord2d = Vec2D::new(row_u32, col_u32);
                 coord2d.wrap_around_map();
                 let pixel = decoded_image.get_pixel(i as u32, j as u32);
 
