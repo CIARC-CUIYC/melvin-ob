@@ -75,13 +75,13 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>> {
         fcont
             .rotate_vel(rand::rng().random_range(-169.0..169.0), ACCEL_FACTOR)
             .await;
-        let mut orbit_coverage = Bitmap::from_mapsize();
+        let mut orbit_coverage = Bitmap::from_map_size();
         calculate_orbit_coverage_map(&fcont, &mut orbit_coverage, max_orbit_prediction_secs);
         orbit_coverage.data &= !(*camera_controller.map_data_ref()).clone(); // this checks if there are any possible, unphotographed regions on the current orbit
 
         println!(
             "[LOG] Total Orbit Possible Coverage Gain: {:.2}",
-            orbit_coverage.data.count_ones() as f64 / orbit_coverage.size() as f64
+            orbit_coverage.data.count_ones() as f64 / orbit_coverage.len() as f64
         );
 
         while orbit_coverage.data.any() {
@@ -103,7 +103,7 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>> {
             adaptable_tolerance -= 1;
             let min_pixel = min(
                 (CONST_ANGLE.get_square_unit_length() as usize - 50).pow(2),
-                (orbit_coverage.size() as f32 * MIN_PX_LEFT_FACTOR * covered_perc).round() as usize,
+                (orbit_coverage.len() as f32 * MIN_PX_LEFT_FACTOR * covered_perc).round() as usize,
             );
             if fcont.get_state() == FlightState::Acquisition {
                 delay = TimeDelta::seconds(20);
@@ -167,7 +167,7 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>> {
                 .shoot_image_to_buffer(&http_handler, &mut fcont, CONST_ANGLE)
                 .await?;
             camera_controller.export_bin(BIN_FILEPATH).await?;
-            orbit_coverage.region_captured(
+            orbit_coverage.set_region(
                 Vec2D::new(
                     fcont.get_current_pos().x() as f32,
                     fcont.get_current_pos().y() as f32,
@@ -203,7 +203,7 @@ fn next_image_dt(
     let mut current_pos = init_pos;
 
     while current_calculation_time_delta < TimeDelta::seconds(20000) {
-        if map.enough_ones_in_square(current_pos, CONST_ANGLE, min_px)
+        if map.has_sufficient_set_bits(current_pos, CONST_ANGLE, min_px)
             && time_del.get_start() + current_calculation_time_delta > Utc::now() + base_delay
         {
             time_del.set_delay(current_calculation_time_delta);
@@ -233,11 +233,11 @@ fn calculate_orbit_coverage_map(cont: &FlightComputer, map: &mut Bitmap, max_dt:
         if dt > max_dt {
             println!(
                 "[LOG] Coverage Percentage of current Orbit: {}",
-                map.data.count_ones() as f64 / map.size() as f64
+                map.data.count_ones() as f64 / map.len() as f64
             );
             break;
         }
-        map.region_captured(
+        map.set_region(
             Vec2D::new(next_pos.x() as f32, next_pos.y() as f32),
             CONST_ANGLE,
             true,

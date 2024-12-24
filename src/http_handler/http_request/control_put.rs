@@ -3,8 +3,8 @@ use super::request_common::{HTTPRequestMethod, HTTPRequestType, JSONBodyHTTPRequ
 
 #[derive(serde::Serialize, Debug)]
 pub struct ControlSatelliteRequest {
-    pub vel_x: f64,
-    pub vel_y: f64,
+    pub vel_x: f32,
+    pub vel_y: f32,
     pub camera_angle: &'static str,
     pub state: &'static str,
 }

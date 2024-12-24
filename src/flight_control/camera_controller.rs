@@ -1,19 +1,18 @@
 use crate::flight_control::{
-    flight_computer::FlightComputer,
     camera_state::CameraAngle,
     common::{bitmap::Bitmap, img_buffer::Buffer, vec2d::Vec2D},
+    flight_computer::FlightComputer,
 };
 use crate::http_handler::{
-    http_client::HTTPClient,
-    http_request::request_common::NoBodyHTTPRequestType,
-    http_request::shoot_image_get::ShootImageRequest    
+    http_client::HTTPClient, http_request::request_common::NoBodyHTTPRequestType,
+    http_request::shoot_image_get::ShootImageRequest,
 };
 use bitvec::prelude::BitBox;
 use futures::StreamExt;
 use image::{imageops::Lanczos3, ImageReader};
 use tokio::{
+    fs::File,
     io::{AsyncReadExt, AsyncWriteExt},
-    fs::File
 };
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -24,7 +23,7 @@ pub struct CameraController {
 
 impl CameraController {
     pub fn new() -> Self {
-        let png_bitmap = Bitmap::from_mapsize();
+        let png_bitmap = Bitmap::from_map_size();
         let png_buffer = Buffer::from_mapsize();
         Self {
             bitmap: png_bitmap,
@@ -78,7 +77,7 @@ impl CameraController {
         controller: &mut FlightComputer<'_>,
         angle: CameraAngle,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let (_, collected_png) = tokio::join!(
+        let ((), collected_png) = tokio::join!(
             controller.update_observation(),
             self.fetch_image_data(httpclient)
         );
@@ -101,13 +100,7 @@ impl CameraController {
                 self.buffer.save_pixel(coord2d, pixel.0);
             }
         }
-
-        self.bitmap.region_captured(
-            Vec2D::new(position.x() as f32, position.y() as f32),
-            angle,
-            true,
-        );
-
+        self.bitmap.set_region(Vec2D::new(position.x(), position.y()), angle, true);
         Ok(())
     }
 

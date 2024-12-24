@@ -18,8 +18,8 @@ use tokio::time::sleep;
 
 #[derive(Debug)]
 pub struct FlightComputer<'a> {
-    current_pos: Vec2D<f64>,
-    current_vel: Vec2D<f64>,
+    current_pos: Vec2D<f32>,
+    current_vel: Vec2D<f32>,
     current_state: FlightState,
     current_camera_state: CameraAngle,
     current_battery: f32, // this is an artifact caused by dumb main
@@ -207,8 +207,8 @@ impl<'a> FlightComputer<'a> {
             {
                 Ok(obs) => {
                     self.current_pos =
-                        Vec2D::from((f64::from(obs.pos_x()), f64::from(obs.pos_y())));
-                    self.current_vel = Vec2D::from((obs.vel_x(), obs.vel_y()));
+                        Vec2D::from((obs.pos_x() as f32, obs.pos_y() as f32));
+                    self.current_vel = Vec2D::from((obs.vel_x() as f32, obs.vel_y() as f32));
                     self.current_state = FlightState::from(obs.state());
                     self.last_observation_timestamp = obs.timestamp();
                     self.current_battery = obs.battery();
@@ -252,7 +252,7 @@ impl<'a> FlightComputer<'a> {
         let current_vel = self.current_vel;
         self.current_vel.rotate_by(angle_degrees);
         self.current_vel = self.current_vel * (1.0 + accel_factor);
-        let time_to_sleep = (current_vel.to(&self.current_vel).abs() / f64::from(Self::ACCELERATION))*2.0;
+        let time_to_sleep = (current_vel.to(&self.current_vel).abs() / Self::ACCELERATION)*2.0;
 
         loop {
             let req = ControlSatelliteRequest {
@@ -275,13 +275,13 @@ impl<'a> FlightComputer<'a> {
         }
     }
 
-    pub fn pos_in_time_delta(&self, time_delta: TimeDelta) -> Vec2D<f64> {
+    pub fn pos_in_time_delta(&self, time_delta: TimeDelta) -> Vec2D<f32> {
         let mut pos = self.current_pos + (self.current_vel * time_delta.num_seconds());
         pos.wrap_around_map();
         pos
     }
 
-    pub fn get_current_pos(&self) -> Vec2D<f64> { self.current_pos }
+    pub fn get_current_pos(&self) -> Vec2D<f32> { self.current_pos }
 
     /* TODO: not implemented
     fn picture_options_p<T>(&self, point: Vec2D<T>, time_delta: TimeDelta, margin: i16) -> PictureOption
