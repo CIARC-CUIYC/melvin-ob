@@ -80,7 +80,7 @@ impl<'a> FlightComputer<'a> {
         }
         println!("[INFO] Waiting for {} seconds!", sleep.as_secs());
         self.next_image
-            .remove_delay(TimeDelta::seconds(self.fast_forward(sleep).await as i64));
+            .sub_delay(TimeDelta::seconds(self.fast_forward(sleep).await as i64));
         let time_left = self.next_image.time_left();
         print!("[INFO] Return from Waiting!");
         if (self.next_image_valid) {
