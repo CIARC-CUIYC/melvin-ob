@@ -73,7 +73,7 @@ async fn execute_main_loop(console_endpoint: &Arc<ConsoleEndpoint>) -> Result<()
             CameraController::new()
         });
 
-    let http_handler = http_handler::http_client::HTTPClient::new("http://localhost:33000");
+    let http_handler = http_handler::http_client::HTTPClient::new("http://10.100.50.1:33000");
     ResetRequest {}.send_request(&http_handler).await?;
     let mut fcont = FlightComputer::new(&http_handler).await;
 
@@ -191,13 +191,16 @@ async fn execute_main_loop(console_endpoint: &Arc<ConsoleEndpoint>) -> Result<()
                 .await?;
             camera_controller.export_bin(BIN_FILEPATH).await?;
 
-            let c_pos = fcont.get_current_pos();
-            let img_jpg = camera_controller.export_jpg((c_pos.x() as u32, c_pos.y() as u32), (600, 600)).unwrap();
+            let radius = CONST_ANGLE.get_square_radius() as u32;
+            let c_pos = fcont.get_current_pos().wrap_around_map();
+            let c_pos = Vec2D::new(c_pos.x() as u32, c_pos.y() as u32);
+            let img_jpg = camera_controller.export_jpg(c_pos, radius).unwrap();
+            let offset = Vec2D::new(c_pos.x() - radius, c_pos.y() - radius).wrap_around_map();
             console_endpoint.send_downstream(melvin_messages::Content::Image(melvin_messages::Image {
-                height: 600 / 25,
-                width: 600 / 25,
-                offset_x: c_pos.x() as i32 / 25,
-                offset_y: c_pos.y() as i32 / 25,
+                height: (radius as i32 * 2) / 25,
+                width: (radius as i32 * 2) / 25,
+                offset_x: offset.x() as i32 / 25,
+                offset_y: offset.y() as i32 / 25,
                 data: img_jpg,
             }));
 
@@ -251,8 +254,7 @@ fn next_image_dt(
             return time_del;
         }
         current_calculation_time_delta += TimeDelta::seconds(1);
-        current_pos = cont.pos_in_time_delta(current_calculation_time_delta);
-        current_pos.wrap_around_map();
+        current_pos = cont.pos_in_time_delta(current_calculation_time_delta).wrap_around_map();
     }
     println!("[WARN] No possible image time found!");
     PinnedTimeDelay::new(TimeDelta::seconds(-100))
@@ -262,8 +264,7 @@ fn calculate_orbit_coverage_map(cont: &FlightComputer, map: &mut Bitmap, max_dt:
     println!("[INFO] Calculating Orbit Coverage!");
     let mut dt = 0; // TODO: should be higher than 0 to account for spent time during calculation
     loop {
-        let mut next_pos = cont.pos_in_time_delta(TimeDelta::seconds(dt));
-        next_pos.wrap_around_map();
+        let mut next_pos = cont.pos_in_time_delta(TimeDelta::seconds(dt)).wrap_around_map();
         if dt > max_dt {
             println!(
                 "[LOG] Coverage Percentage of current Orbit: {}",

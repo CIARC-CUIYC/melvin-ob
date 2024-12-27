@@ -17,7 +17,8 @@ pub struct Vec2D<T> {
 }
 
 impl<T> Vec2D<T>
-where T: Real + NumCast + NumAssignOps
+where
+    T: Real + NumCast + NumAssignOps,
 {
     /// Computes the magnitude (absolute value) of the vector.
     ///
@@ -82,19 +83,19 @@ impl<T: Copy> Vec2D<T> {
     ///
     /// # Returns
     /// A new `Vec2D` object.
-    pub fn new(x: T, y: T) -> Self { Self { x, y } }
-    
+    pub const fn new(x: T, y: T) -> Self { Self { x, y } }
+
     /// Returns the x-component of the vector.
     ///
     /// # Returns
     /// The `x` value of type `T`.
-    pub fn x(&self) -> T { self.x }
+    pub const fn x(&self) -> T { self.x }
 
     /// Returns the y-component of the vector.
     ///
     /// # Returns
     /// The `y` value of type `T`.
-    pub fn y(&self) -> T { self.y }
+    pub const fn y(&self) -> T { self.y }
 }
 
 impl<T: Num + NumCast + Copy> Vec2D<T> {
@@ -114,7 +115,7 @@ impl<T: Num + NumCast + Copy> Vec2D<T> {
 
     /// Computes the Euclidean distance between the current vector and another vector as an `f64`.
     /// This enables Euclidean distance calculation for integer type `T`. 
-    /// 
+    ///
     /// # Arguments
     /// * `other` - Another `Vec2D` vector to compute the distance to.
     ///
@@ -173,12 +174,11 @@ impl<T: Num + NumCast + Copy> Vec2D<T> {
     /// This method ensures the vector’s coordinates do not exceed the boundaries
     /// of the map defined by `map_size()`. If coordinates go beyond these boundaries,
     /// they are wrapped to remain within valid values.
-    pub fn wrap_around_map(&mut self) {
+    pub fn wrap_around_map(&self) -> Self {
         let map_size_x = Self::map_size().x();
         let map_size_y = Self::map_size().y();
 
-        self.x = Self::wrap_coordinate(self.x, map_size_x);
-        self.y = Self::wrap_coordinate(self.y, map_size_y);
+        Vec2D::new(Self::wrap_coordinate(self.x, map_size_x), Self::wrap_coordinate(self.y, map_size_y))
     }
 
     /// Wraps a single coordinate around a specific maximum value.

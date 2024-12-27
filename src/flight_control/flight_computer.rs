@@ -276,9 +276,7 @@ impl<'a> FlightComputer<'a> {
     }
 
     pub fn pos_in_time_delta(&self, time_delta: TimeDelta) -> Vec2D<f32> {
-        let mut pos = self.current_pos + (self.current_vel * time_delta.num_seconds());
-        pos.wrap_around_map();
-        pos
+        (self.current_pos + (self.current_vel * time_delta.num_seconds())).wrap_around_map()
     }
 
     pub fn get_current_pos(&self) -> Vec2D<f32> { self.current_pos }

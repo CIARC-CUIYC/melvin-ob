@@ -1,4 +1,5 @@
 use std::io::Cursor;
+use std::ops::Deref;
 use crate::flight_control::{
     camera_state::CameraAngle,
     common::{bitmap::Bitmap, img_buffer::Buffer, vec2d::Vec2D},
@@ -47,10 +48,10 @@ impl CameraController {
     pub fn buffer_ref(&self) -> &Buffer { &self.buffer }
 
     pub async fn export_bin(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let encoded = bincode::serialize(&self)?;
-        let mut bin_file = File::create(path).await?;
-        bin_file.write_all(&encoded).await?;
-        bin_file.flush().await?;
+        //let encoded = bincode::serialize(&self)?;
+        //let mut bin_file = File::create(path).await?;
+        //bin_file.write_all(&encoded).await?;
+        //bin_file.flush().await?;
         Ok(())
     }
 
@@ -98,10 +99,8 @@ impl CameraController {
             for (j, col) in (pos_y - angle_const..pos_y + angle_const).enumerate() {
                 let row_u32 = u32::try_from(row).expect("[FATAL] Conversion to u32 failed!");
                 let col_u32 = u32::try_from(col).expect("[FATAL] Conversion to u32 failed!");
-                let mut coord2d = Vec2D::new(row_u32, col_u32);
-                coord2d.wrap_around_map();
+                let coord2d = Vec2D::new(row_u32, col_u32).wrap_around_map();
                 let pixel = decoded_image.get_pixel(i as u32, j as u32);
-
                 self.buffer.save_pixel(coord2d, pixel.0);
             }
         }
@@ -146,17 +145,31 @@ impl CameraController {
         Ok(resized_image)
     }
 
+    pub(crate) fn export_full_jpg(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        const SCALE_FACTOR: u32 = 25;
+        let resized_image = image::imageops::thumbnail(
+            &self.buffer,
+            Vec2D::<u32>::map_size().x() / SCALE_FACTOR,
+            Vec2D::<u32>::map_size().y() / SCALE_FACTOR,
+        );
+        let mut writer = Cursor::new(Vec::<u8>::new());
+        JpegEncoder::new(&mut writer).encode_image(&resized_image)?;
+
+        Ok(writer.into_inner())
+    }
+
     pub(crate) fn export_jpg(
         &mut self,
-        offset: (u32, u32),
-        size: (u32, u32),
+        position: Vec2D<u32>,
+        radius: u32,
     ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         const SCALE_FACTOR: u32 = 25;
-        let resized_image = image::imageops::resize(
-            self.buffer.view(offset.0, offset.1, size.0, size.1).inner(),
-            u32::from(size.0 / SCALE_FACTOR),
-            u32::from(size.1 / SCALE_FACTOR),
-            Lanczos3,
+        let offset = Vec2D::new(position.x() - radius, position.y() - radius).wrap_around_map();
+
+        let resized_image = image::imageops::thumbnail(
+            &self.buffer.view(offset, Vec2D::new(radius * 2, radius * 2)),
+            (radius * 2) / SCALE_FACTOR,
+            (radius * 2) / SCALE_FACTOR,
         );
         let mut writer = Cursor::new(Vec::<u8>::new());
         JpegEncoder::new(&mut writer).encode_image(&resized_image)?;

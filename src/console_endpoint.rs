@@ -57,6 +57,7 @@ impl ConsoleEndpoint {
             loop {
                 if let Ok((mut socket, _)) = listener.accept().await {
                     let inst_local = inst_local.clone();
+                    inst_local.connected.fetch_add(1, Ordering::Relaxed);
                     tokio::spawn(async move {
                         let (mut rx_socket, mut tx_socket) = socket.split();
                         let result = tokio::select! {
@@ -72,6 +73,7 @@ impl ConsoleEndpoint {
                             _ => {}
                         };
                         let _ = socket.shutdown().await;
+                        inst_local.connected.fetch_sub(1, Ordering::Relaxed);
                     });
                 } else {
                     break;
@@ -89,36 +91,5 @@ impl ConsoleEndpoint {
         let _ = self.downstream.send(melvin_messages::Downstream {
             content: Some(msg)
         }.encode_to_vec());
-    }
-}
-
-pub(crate) fn random_message() -> Vec<u8> {
-    if random_bool(0.5f64) {
-        melvin_messages::Downstream {
-            content: Some(melvin_messages::Content::Telemetry(melvin_messages::Telemetry {
-                timestamp: Utc::now().timestamp_millis(),
-                state: melvin_messages::SatelliteState::Communication as i32,
-                battery: random_range(0..=100u8).to_f32().unwrap(),
-                fuel: random_range(0..=100u8).to_f32().unwrap(),
-                position_x: random_range(0..=4000i32),
-                position_y: random_range(0..=4000i32),
-                velocity_x: random_range(-1..=2i8).to_f32().unwrap(),
-                velocity_y: random_range(-1..=2i8).to_f32().unwrap(),
-                data_sent: 43,
-                data_received: 44,
-                distance_covered: 1024f32,
-            }))
-        }.encode_to_vec()
-    } else {
-        let data = include_bytes!("penguin.png");
-        melvin_messages::Downstream {
-            content: Some(melvin_messages::Content::Image(melvin_messages::Image {
-                height: 32,
-                width: 32,
-                offset_x: random_range(0..=700),
-                offset_y: random_range(0..=360),
-                data: data.to_vec(),
-            }))
-        }.encode_to_vec()
     }
 }
