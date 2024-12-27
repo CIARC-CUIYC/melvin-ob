@@ -83,7 +83,7 @@ impl Bitmap {
     ///
     /// # Returns
     /// `true` if the pixel is set, `false` if the pixel is out of bounds or unset.
-    fn is_set(&self, x: u32, y: u32) -> bool {
+    pub(crate) fn is_set(&self, x: u32, y: u32) -> bool {
         let index = self.get_bitmap_index(x, y);
         self.data.get(index as usize).is_some_and(|x| *x)
     }

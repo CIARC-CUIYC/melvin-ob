@@ -1,7 +1,7 @@
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Upstream {
-    #[prost(message, optional, tag = "1")]
-    pub ping: Option<Ping>,
+    #[prost(oneof = "UpstreamContent", tags = "1, 2, 3, 4")]
+    pub content: Option<UpstreamContent>,
 }
 
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -11,8 +11,8 @@ pub struct Ping {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Downstream {
-    #[prost(oneof = "Content", tags = "1, 2, 3")]
-    pub content: Option<Content>,
+    #[prost(oneof = "DownstreamContent", tags = "1, 2, 3")]
+    pub content: Option<DownstreamContent>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Pong {
@@ -58,7 +58,7 @@ pub struct Telemetry {
     pub distance_covered: f32,
 }
 #[derive(Clone, PartialEq, ::prost::Oneof)]
-pub enum Content {
+pub enum DownstreamContent {
     #[prost(message, tag = "1")]
     Pong(Pong),
     #[prost(message, tag = "2")]
@@ -66,6 +66,29 @@ pub enum Content {
     #[prost(message, tag = "3")]
     Telemetry(Telemetry),
 }
+
+#[derive(Clone, PartialEq, ::prost::Oneof)]
+pub enum UpstreamContent {
+    #[prost(message, tag = "1")]
+    Ping(Ping),
+    #[prost(message, tag = "2")]
+    GetFullImage(GetFullImage),
+    #[prost(message, tag = "3")]
+    GetSnapshotDiffImage(GetSnapshotDiffImage),
+    #[prost(message, tag = "4")]
+    CreateSnapshotImage(CreateSnapshotImage),
+}
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct GetFullImage {}
+
+
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct GetSnapshotDiffImage {}
+
+
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct CreateSnapshotImage {}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum SatelliteState {

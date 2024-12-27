@@ -80,7 +80,7 @@ impl Buffer {
         y * self.width + x
     }
 
-    pub fn view(&self, offset: Vec2D<u32>, size: Vec2D<u32>) -> SubBuffer {
+    pub fn view(&self, offset: Vec2D<u32>, size: Vec2D<u32>) -> SubBuffer<Buffer> {
         SubBuffer {
             buffer: &self,
             offset,
@@ -101,14 +101,14 @@ impl GenericImageView for Buffer {
     }
 }
 
-pub struct SubBuffer<'a> {
-    buffer: &'a Buffer,
-    offset: Vec2D<u32>,
-    size: Vec2D<u32>,
+pub struct SubBuffer<'a, T: GenericImageView> {
+    pub(crate) buffer: &'a T,
+    pub(crate) offset: Vec2D<u32>,
+    pub(crate) size: Vec2D<u32>,
 }
 
-impl<'a> GenericImageView for SubBuffer<'a> {
-    type Pixel = image::Rgb<u8>;
+impl<'a, T: GenericImageView> GenericImageView for SubBuffer<'a, T> {
+    type Pixel = T::Pixel;
 
     fn dimensions(&self) -> (u32, u32) {
         (self.size.x(), self.size.y())
@@ -117,6 +117,6 @@ impl<'a> GenericImageView for SubBuffer<'a> {
     fn get_pixel(&self, x: u32, y: u32) -> Self::Pixel {
         let x = (x + self.offset.x()) % Vec2D::<u32>::map_size().x();
         let y = (y + self.offset.y()) % Vec2D::<u32>::map_size().y();
-        image::Rgb(self.buffer.data[(y * self.buffer.width + x) as usize])
+        self.buffer.get_pixel(x, y)
     }
 }

@@ -1,23 +1,28 @@
 use crate::melvin_messages;
-use chrono::Utc;
-use num_traits::ToPrimitive;
 use prost::Message;
-use rand::{random_bool, random_range};
-use std::io::ErrorKind;
-use std::sync::atomic::{AtomicI32, Ordering};
-use std::sync::Arc;
+use std::io::{Cursor, ErrorKind};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{ReadHalf, WriteHalf};
 use tokio::net::TcpListener;
 use tokio::sync::broadcast;
+use tokio::sync::oneshot;
+use crate::melvin_messages::{Upstream, UpstreamContent};
+
+#[derive(Debug, Clone)]
+pub enum ConsoleEndpointEvent {
+    Connected,
+    Disconnected,
+    Message(UpstreamContent),
+}
 
 pub(crate) struct ConsoleEndpoint {
-    connected: AtomicI32,
-    downstream: broadcast::Sender<Vec<u8>>,
+    downstream_sender: broadcast::Sender<Option<Vec<u8>>>,
+    upstream_event_receiver: broadcast::Receiver<ConsoleEndpointEvent>,
+    close_oneshot_sender: Option<oneshot::Sender<()>>,
 }
 
 impl ConsoleEndpoint {
-    async fn handle_connection_rx(self: &Arc<Self>, mut socket: &mut ReadHalf<'_>) -> Result<(), std::io::Error> {
+    async fn handle_connection_rx(mut socket: &mut ReadHalf<'_>, upstream_event_sender: &broadcast::Sender<ConsoleEndpointEvent>) -> Result<(), std::io::Error> {
         loop {
             let length = socket
                 .read_u32()
@@ -27,11 +32,15 @@ impl ConsoleEndpoint {
             socket
                 .read_exact(&mut buffer)
                 .await?;
+
+            if let Ok(message) = Upstream::decode(&mut Cursor::new(buffer)) {
+                upstream_event_sender.send(ConsoleEndpointEvent::Message(message.content.unwrap())).unwrap();
+            }
         }
     }
-    async fn handle_connection_tx(self: &Arc<Self>, mut socket: &mut WriteHalf<'_>) -> Result<(), std::io::Error> {
+    async fn handle_connection_tx(mut socket: &mut WriteHalf<'_>, downstream_receiver: &mut broadcast::Receiver<Option<Vec<u8>>>) -> Result<(), std::io::Error> {
         loop {
-            if let Ok(message_buffer) = self.downstream.subscribe().recv().await
+            if let Ok(Some(message_buffer)) = downstream_receiver.recv().await
             {
                 socket.write_u32(message_buffer.len() as u32).await?;
                 socket.write_all(&message_buffer).await?;
@@ -42,29 +51,39 @@ impl ConsoleEndpoint {
         Ok(())
     }
 
-    pub(crate) fn start() -> Arc::<Self> {
-        let sender = broadcast::Sender::new(10);
-        let inst = Arc::new(Self {
-            connected: AtomicI32::new(0),
-            downstream: sender,
-        });
+    pub(crate) fn start() -> Self {
+        let downstream_sender = broadcast::Sender::new(10);
+        let upstream_event_sender = broadcast::Sender::new(10);
+        let (close_oneshot_sender, mut close_oneshot_receiver) = oneshot::channel();
+        let inst = Self {
+            downstream_sender: downstream_sender.clone(),
+            upstream_event_receiver: upstream_event_sender.subscribe(),
+            close_oneshot_sender: Some(close_oneshot_sender),
+        };
 
 
-        let inst_local = inst.clone();
         tokio::spawn(async move {
             let listener = TcpListener::bind("0.0.0.0:1337").await.unwrap();
-
             loop {
-                if let Ok((mut socket, _)) = listener.accept().await {
-                    let inst_local = inst_local.clone();
-                    inst_local.connected.fetch_add(1, Ordering::Relaxed);
+                let accept = tokio::select! {
+                    accept = listener.accept() => accept,
+                    _ = &mut close_oneshot_receiver => break
+                };
+
+                if let Ok((mut socket, _)) = accept {
+                    upstream_event_sender.send(ConsoleEndpointEvent::Connected).unwrap();
+                    let mut upstream_event_sender_local = upstream_event_sender.clone();
+                    let mut downstream_receiver = downstream_sender.subscribe();
+
                     tokio::spawn(async move {
                         let (mut rx_socket, mut tx_socket) = socket.split();
+
                         let result = tokio::select! {
-                            res = ConsoleEndpoint::handle_connection_tx(&inst_local, &mut tx_socket) => res,
-                            res = ConsoleEndpoint::handle_connection_rx(&inst_local, &mut rx_socket) => res
+                            res = ConsoleEndpoint::handle_connection_tx(&mut tx_socket, &mut downstream_receiver) => res,
+                            res = ConsoleEndpoint::handle_connection_rx(&mut rx_socket, &mut upstream_event_sender_local) => res
                         };
 
+                        upstream_event_sender_local.send(ConsoleEndpointEvent::Disconnected).unwrap();
                         match result {
                             Err(e) if e.kind() == ErrorKind::UnexpectedEof || e.kind() == ErrorKind::ConnectionReset || e.kind() == ErrorKind::ConnectionAborted => {
                                 return;
@@ -73,7 +92,6 @@ impl ConsoleEndpoint {
                             _ => {}
                         };
                         let _ = socket.shutdown().await;
-                        inst_local.connected.fetch_sub(1, Ordering::Relaxed);
                     });
                 } else {
                     break;
@@ -83,13 +101,20 @@ impl ConsoleEndpoint {
         inst
     }
 
-    pub(crate) fn is_connected(self: &Arc<Self>) -> bool {
-        self.connected.load(Ordering::Relaxed) > 0
+    pub(crate) fn send_downstream(&self, msg: melvin_messages::DownstreamContent) {
+        let _ = self.downstream_sender.send(Some(melvin_messages::Downstream {
+            content: Some(msg)
+        }.encode_to_vec()));
     }
 
-    pub(crate) fn send_downstream(self: &Arc<Self>, msg: melvin_messages::Content) {
-        let _ = self.downstream.send(melvin_messages::Downstream {
-            content: Some(msg)
-        }.encode_to_vec());
+    pub(crate) fn upstream_event_receiver(&self) -> &broadcast::Receiver<ConsoleEndpointEvent> {
+        &self.upstream_event_receiver
+    }
+}
+
+impl Drop for ConsoleEndpoint {
+    fn drop(&mut self) {
+        self.close_oneshot_sender.take().unwrap().send(()).unwrap();
+        self.downstream_sender.send(None).unwrap();
     }
 }

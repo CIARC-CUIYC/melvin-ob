@@ -9,7 +9,7 @@ mod http_handler;
 mod console_endpoint;
 mod melvin_messages;
 
-use crate::console_endpoint::ConsoleEndpoint;
+use crate::console_endpoint::{ConsoleEndpoint, ConsoleEndpointEvent};
 use crate::flight_control::{
     camera_controller::CameraController,
     camera_state::CameraAngle,
@@ -25,6 +25,7 @@ use chrono::{TimeDelta, Utc};
 use futures::FutureExt;
 use prost::Message;
 use rand::Rng;
+use tokio::sync::broadcast::error::RecvError;
 use tokio::time;
 
 const FUEL_RESET_THRESHOLD: f32 = 20.0;
@@ -37,7 +38,7 @@ const ACCEL_FACTOR: f32 = 0.6;
 #[tokio::main]
 async fn main() {
     let mut finished = false;
-    let console_endpoint = ConsoleEndpoint::start();
+    let console_endpoint = Arc::new(ConsoleEndpoint::start());
 
     while !finished {
         let result = panic::AssertUnwindSafe(execute_main_loop(&console_endpoint))
@@ -73,15 +74,59 @@ async fn execute_main_loop(console_endpoint: &Arc<ConsoleEndpoint>) -> Result<()
             CameraController::new()
         });
 
+
+    let camera_controller_local = camera_controller.clone();
+    let console_endpoint_local = console_endpoint.clone();
+    tokio::spawn(async move {
+        let mut receiver = console_endpoint_local.upstream_event_receiver().resubscribe();
+        loop {
+            if let Ok(event) = receiver.recv().await {
+                println!("{:?}", event);
+                match event {
+                    ConsoleEndpointEvent::Message(melvin_messages::UpstreamContent::CreateSnapshotImage(_)) => {
+                        camera_controller_local.create_snapshot().await.unwrap();
+                    }
+                    ConsoleEndpointEvent::Message(melvin_messages::UpstreamContent::GetSnapshotDiffImage(_)) => {
+                        let img_jpg = camera_controller_local.diff_snapshot().await.unwrap();
+                        console_endpoint_local.send_downstream(melvin_messages::DownstreamContent::Image(melvin_messages::Image {
+                            height: Vec2D::<i32>::map_size().y() / 25,
+                            width: Vec2D::<i32>::map_size().x() / 25,
+                            offset_x: 0,
+                            offset_y: 0,
+                            data: img_jpg,
+                        }));
+                    }
+                    ConsoleEndpointEvent::Message(melvin_messages::UpstreamContent::GetFullImage(_)) => {
+                        let img_jpg = camera_controller_local.export_full_thumbnail_png().await.unwrap();
+                        console_endpoint_local.send_downstream(melvin_messages::DownstreamContent::Image(melvin_messages::Image {
+                            height: Vec2D::<i32>::map_size().y() / 25,
+                            width: Vec2D::<i32>::map_size().x() / 25,
+                            offset_x: 0,
+                            offset_y: 0,
+                            data: img_jpg,
+                        }));
+                    }
+                    _ => {}
+                }
+            } else {
+                break;
+            }
+        }
+    });
+
     let http_handler = http_handler::http_client::HTTPClient::new("http://10.100.50.1:33000");
     ResetRequest {}.send_request(&http_handler).await?;
     let mut fcont = FlightComputer::new(&http_handler).await;
 
     let mut max_orbit_prediction_secs = 60000;
 
-    'outer: while !camera_controller.map_data_ref().all() {
+    'outer: loop {
+        let coverage_bitmap = camera_controller.clone_coverage_bitmap().await;
+        if coverage_bitmap.all() {
+            break;
+        }
         fcont.update_observation().await;
-        console_endpoint.send_downstream(melvin_messages::Content::Telemetry(melvin_messages::Telemetry {
+        console_endpoint.send_downstream(melvin_messages::DownstreamContent::Telemetry(melvin_messages::Telemetry {
             timestamp: Utc::now().timestamp_millis(),
             state: 0,
             position_x: fcont.get_current_pos().x().as_i32(),
@@ -96,11 +141,11 @@ async fn execute_main_loop(console_endpoint: &Arc<ConsoleEndpoint>) -> Result<()
         }));
 
         fcont
-            .rotate_vel(rand::rng().random_range(-169.0..169.0), ACCEL_FACTOR)
+            .rotate_vel(rand::rng().random_range(-60.0..60.0), ACCEL_FACTOR)
             .await;
         let mut orbit_coverage = Bitmap::from_map_size();
         calculate_orbit_coverage_map(&fcont, &mut orbit_coverage, max_orbit_prediction_secs);
-        orbit_coverage.data &= !(*camera_controller.map_data_ref()).clone(); // this checks if there are any possible, unphotographed regions on the current orbit
+        orbit_coverage.data &= &coverage_bitmap; // this checks if there are any possible, unphotographed regions on the current orbit
 
         println!(
             "[LOG] Total Orbit Possible Coverage Gain: {:.2}",
@@ -108,8 +153,8 @@ async fn execute_main_loop(console_endpoint: &Arc<ConsoleEndpoint>) -> Result<()
         );
 
         while orbit_coverage.data.any() {
-            let covered_perc = camera_controller.map_data_ref().count_ones() as f32
-                / camera_controller.map_data_ref().len() as f32;
+            let covered_perc = coverage_bitmap.count_ones() as f32
+                / coverage_bitmap.len() as f32;
             println!("[INFO] Global Coverage percentage: {:.5}", covered_perc);
             let mut adaptable_tolerance = 5;
             fcont.update_observation().await;
@@ -194,9 +239,9 @@ async fn execute_main_loop(console_endpoint: &Arc<ConsoleEndpoint>) -> Result<()
             let radius = CONST_ANGLE.get_square_radius() as u32;
             let c_pos = fcont.get_current_pos().wrap_around_map();
             let c_pos = Vec2D::new(c_pos.x() as u32, c_pos.y() as u32);
-            let img_jpg = camera_controller.export_jpg(c_pos, radius).unwrap();
+            let img_jpg = camera_controller.export_thumbnail_png(c_pos, radius).await.unwrap();
             let offset = Vec2D::new(c_pos.x() - radius, c_pos.y() - radius).wrap_around_map();
-            console_endpoint.send_downstream(melvin_messages::Content::Image(melvin_messages::Image {
+            console_endpoint.send_downstream(melvin_messages::DownstreamContent::Image(melvin_messages::Image {
                 height: (radius as i32 * 2) / 25,
                 width: (radius as i32 * 2) / 25,
                 offset_x: offset.x() as i32 / 25,
