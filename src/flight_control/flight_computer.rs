@@ -9,7 +9,7 @@ use crate::http_handler::{
         control_put::*,
         observation_get::*,
         request_common::{JSONBodyHTTPRequestType, NoBodyHTTPRequestType},
-        configure_simulation_put::ConfigureSimulationRequest
+        configure_simulation_put::ConfigureSimulationRequest,
     },
 };
 use chrono::TimeDelta;
@@ -57,9 +57,9 @@ impl<'a> FlightComputer<'a> {
 
     pub fn get_max_battery(&self) -> f32 { self.max_battery }
     pub fn get_state(&self) -> FlightState { self.current_state }
-    pub async fn get_state_update(&mut self) -> FlightState { 
+    pub async fn get_state_update(&mut self) -> FlightState {
         self.update_observation().await;
-        self.current_state 
+        self.current_state
     }
     pub fn get_fuel_left(&self) -> f32 { self.fuel_left }
     pub fn get_battery(&self) -> f32 { self.current_battery }
@@ -90,7 +90,7 @@ impl<'a> FlightComputer<'a> {
                 time_left.num_minutes() - time_left.num_hours() * 60,
                 time_left.num_seconds() - time_left.num_minutes() * 60
             );
-        }else { println!(); }
+        } else { println!(); }
     }
 
     async fn fast_forward(&self, duration: Duration) -> u64 {
@@ -120,31 +120,31 @@ impl<'a> FlightComputer<'a> {
                 is_network_simulation: false,
                 user_speed_multiplier: selected_factor as u32,
             }.send_request(self.request_client).await;
-            match resp{
+            match resp {
                 Ok(..) => break,
                 Err(e) => println!("[ERROR] {e} while starting fast-forward."),
-            };// TODO: HTTP Error here
+            }; // TODO: HTTP Error here
         }
         sleep(Duration::from_secs(
             (wait_time - selected_remainder) / selected_factor,
         ))
-        .await;
+            .await;
         loop {
             let resp = ConfigureSimulationRequest {
                 is_network_simulation: false,
                 user_speed_multiplier: 1,
             }.send_request(self.request_client).await;
-           match resp{
+            match resp {
                 Ok(..) => break,
                 Err(e) => println!("[ERROR] {e} while returning from fast-forward."),
-            };// TODO: HTTP Error here
+            }; // TODO: HTTP Error here
         }
         sleep(Duration::from_secs(selected_remainder)).await;
         selected_saved_time
     }
 
     pub async fn charge_until(&mut self, target_battery: f32) {
-        let charge_rate: f32  = FlightState::Charge.get_charge_rate();
+        let charge_rate: f32 = FlightState::Charge.get_charge_rate();
         let charge_time_s = ((target_battery - self.current_battery) / charge_rate) * 2.0;
         let charge_time = Duration::from_secs_f32(charge_time_s);
         let initial_state = self.current_state;
@@ -166,7 +166,7 @@ impl<'a> FlightComputer<'a> {
         self.perform_state_transition(new_state).await;
         let transition_t = TRANSITION_DELAY_LOOKUP
             .get(&(init_state, new_state))
-            .unwrap_or_else(||{panic!("[FATAL] ({init_state}, {new_state}) not in TRANSITION_DELAY_LOOKUP")});
+            .unwrap_or_else(|| { panic!("[FATAL] ({init_state}, {new_state}) not in TRANSITION_DELAY_LOOKUP") });
         self.make_ff_call(*transition_t)
             .await;
         // TODO: implement "wait_for_condition" functionality with condition enum
@@ -252,7 +252,7 @@ impl<'a> FlightComputer<'a> {
         let current_vel = self.current_vel;
         self.current_vel.rotate_by(angle_degrees);
         self.current_vel = self.current_vel * (1.0 + accel_factor);
-        let time_to_sleep = (current_vel.to(&self.current_vel).abs() / Self::ACCELERATION)*2.0;
+        let time_to_sleep = (current_vel.to(&self.current_vel).abs() / Self::ACCELERATION) * 2.0;
 
         loop {
             let req = ControlSatelliteRequest {
@@ -282,6 +282,7 @@ impl<'a> FlightComputer<'a> {
     }
 
     pub fn get_current_pos(&self) -> Vec2D<f32> { self.current_pos }
+    pub fn get_current_vel(&self) -> Vec2D<f32> { self.current_vel }
 
     /* TODO: not implemented
     fn picture_options_p<T>(&self, point: Vec2D<T>, time_delta: TimeDelta, margin: i16) -> PictureOption

@@ -1,22 +1,29 @@
+use bitvec::macros::internal::funty::Fundamental;
 use std::cmp::min;
 use std::panic;
+use std::sync::Arc;
 use std::time::Duration;
+
 mod flight_control;
 mod http_handler;
+mod console_endpoint;
+mod melvin_messages;
 
+use crate::console_endpoint::ConsoleEndpoint;
 use crate::flight_control::{
-    common::{bitmap::Bitmap, pinned_dt::PinnedTimeDelay, vec2d::Vec2D},
-    camera_state::CameraAngle,
     camera_controller::CameraController,
+    camera_state::CameraAngle,
+    common::{bitmap::Bitmap, pinned_dt::PinnedTimeDelay, vec2d::Vec2D},
     flight_computer::FlightComputer,
-    flight_state::FlightState
+    flight_state::FlightState,
 };
 use crate::http_handler::http_request::{
     request_common::NoBodyHTTPRequestType,
-    reset_get::ResetRequest
+    reset_get::ResetRequest,
 };
 use chrono::{TimeDelta, Utc};
 use futures::FutureExt;
+use prost::Message;
 use rand::Rng;
 use tokio::time;
 
@@ -30,8 +37,10 @@ const ACCEL_FACTOR: f32 = 0.6;
 #[tokio::main]
 async fn main() {
     let mut finished = false;
+    let console_endpoint = ConsoleEndpoint::start();
+
     while !finished {
-        let result = panic::AssertUnwindSafe(execute_main_loop())
+        let result = panic::AssertUnwindSafe(execute_main_loop(&console_endpoint))
             .catch_unwind()
             .await;
         match result {
@@ -52,7 +61,7 @@ async fn watchdog(timeout: Duration, action: impl Fn() + Send + 'static) {
     action();
 }
 
-async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>> {
+async fn execute_main_loop(console_endpoint: &Arc<ConsoleEndpoint>) -> Result<(), Box<dyn std::error::Error>> {
     // Spawn the watchdog task
     let timeout = Duration::from_secs(7200);
     //tokio::spawn(watchdog(timeout, || {panic!("[INFO] Resetting normally after 2 hours")}));
@@ -72,6 +81,20 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>> {
 
     'outer: while !camera_controller.map_data_ref().all() {
         fcont.update_observation().await;
+        console_endpoint.send_downstream(melvin_messages::Content::Telemetry(melvin_messages::Telemetry {
+            timestamp: Utc::now().timestamp_millis(),
+            state: 0,
+            position_x: fcont.get_current_pos().x().as_i32(),
+            position_y: fcont.get_current_pos().y().as_i32(),
+            velocity_x: fcont.get_current_vel().x(),
+            velocity_y: fcont.get_current_vel().y(),
+            battery: 0.0,
+            fuel: 0.0,
+            data_sent: 0,
+            data_received: 0,
+            distance_covered: 0.0,
+        }));
+
         fcont
             .rotate_vel(rand::rng().random_range(-169.0..169.0), ACCEL_FACTOR)
             .await;
@@ -167,6 +190,17 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>> {
                 .shoot_image_to_buffer(&http_handler, &mut fcont, CONST_ANGLE)
                 .await?;
             camera_controller.export_bin(BIN_FILEPATH).await?;
+
+            let c_pos = fcont.get_current_pos();
+            let img_jpg = camera_controller.export_jpg((c_pos.x() as u32, c_pos.y() as u32), (600, 600)).unwrap();
+            console_endpoint.send_downstream(melvin_messages::Content::Image(melvin_messages::Image {
+                height: 600 / 25,
+                width: 600 / 25,
+                offset_x: c_pos.x() as i32 / 25,
+                offset_y: c_pos.y() as i32 / 25,
+                data: img_jpg,
+            }));
+
             orbit_coverage.set_region(
                 Vec2D::new(
                     fcont.get_current_pos().x() as f32,

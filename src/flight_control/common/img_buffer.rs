@@ -1,3 +1,4 @@
+use image::GenericImageView;
 use super::vec2d::Vec2D;
 
 // TODO: this could be useful as soon as metadata for pixels is necessary
@@ -68,7 +69,7 @@ impl Buffer {
     ///
     /// # Returns
     /// The 1D index as `u32`.
-    /// 
+    ///
     /// # Example
     /// ```rust
     /// let buffer = Buffer::new(4, 4);
@@ -77,5 +78,17 @@ impl Buffer {
     /// ```
     pub fn get_buffer_index(&self, x: u32, y: u32) -> u32 {
         y * self.width + x
+    }
+}
+
+impl GenericImageView for Buffer {
+    type Pixel = image::Rgb<u8>;
+
+    fn dimensions(&self) -> (u32, u32) {
+        (self.width, self.height)
+    }
+
+    fn get_pixel(&self, x: u32, y: u32) -> Self::Pixel {
+        image::Rgb(self.data[(y * self.width + x) as usize])
     }
 }

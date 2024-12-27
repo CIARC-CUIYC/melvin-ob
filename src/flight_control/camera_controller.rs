@@ -1,3 +1,4 @@
+use std::io::Cursor;
 use crate::flight_control::{
     camera_state::CameraAngle,
     common::{bitmap::Bitmap, img_buffer::Buffer, vec2d::Vec2D},
@@ -9,7 +10,8 @@ use crate::http_handler::{
 };
 use bitvec::prelude::BitBox;
 use futures::StreamExt;
-use image::{imageops::Lanczos3, ImageReader};
+use image::{imageops::Lanczos3, GenericImageView, ImageReader};
+use image::codecs::jpeg::JpegEncoder;
 use tokio::{
     fs::File,
     io::{AsyncReadExt, AsyncWriteExt},
@@ -142,5 +144,23 @@ impl CameraController {
         );
 
         Ok(resized_image)
+    }
+
+    pub(crate) fn export_jpg(
+        &mut self,
+        offset: (u32, u32),
+        size: (u32, u32),
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        const SCALE_FACTOR: u32 = 25;
+        let resized_image = image::imageops::resize(
+            self.buffer.view(offset.0, offset.1, size.0, size.1).inner(),
+            u32::from(size.0 / SCALE_FACTOR),
+            u32::from(size.1 / SCALE_FACTOR),
+            Lanczos3,
+        );
+        let mut writer = Cursor::new(Vec::<u8>::new());
+        JpegEncoder::new(&mut writer).encode_image(&resized_image)?;
+
+        Ok(writer.into_inner())
     }
 }
