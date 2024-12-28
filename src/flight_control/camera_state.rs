@@ -33,7 +33,7 @@ impl From<&str> for CameraAngle {
     /// Converts a string value into a `CameraAngle` enum.
     ///
     /// # Arguments
-    /// - `value`: A string slice representing the camera angle (`"narrow"`, `"normal"`, or `"wide"`).
+    /// - `value`: A string slice representing the camera angle (`"narrow"`, `"normal"` or `"wide"`).
     ///
     /// # Returns
     /// A `CameraAngle` converted from the input string. 
