@@ -7,6 +7,11 @@ use std::ops::Not;
 /// A 2D bitmap structure that uses a bit-packed vector to represent the
 /// state of individual pixels. Each pixel is either set (`true`) or unset (`false`).
 ///
+/// # Fields
+/// - `width`: A `u32` representing the 2D bitmap width.
+/// - `height`: A `u32` representing the 2D bitmap height.
+/// - `data`: A `BitBox` storing the actual bitmap data.
+/// 
 /// This structure provides methods for manipulating pixel data, checking
 /// regions, and exporting the bitmap to a PNG image.
 #[derive(serde::Serialize, serde::Deserialize, Clone)]

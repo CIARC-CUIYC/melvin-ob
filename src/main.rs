@@ -70,14 +70,14 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut max_orbit_prediction_secs = 60000;
 
-    'outer: while !camera_controller.map_data_ref().all() {
+    'outer: while !camera_controller.bitmap_ref().data.all() {
         fcont.update_observation().await;
         fcont
             .rotate_vel(rand::rng().random_range(-169.0..169.0), ACCEL_FACTOR)
             .await;
         let mut orbit_coverage = Bitmap::from_map_size();
         calculate_orbit_coverage_map(&fcont, &mut orbit_coverage, max_orbit_prediction_secs);
-        orbit_coverage.data &= !(*camera_controller.map_data_ref()).clone(); // this checks if there are any possible, unphotographed regions on the current orbit
+        orbit_coverage.data &= !camera_controller.bitmap_ref().data.clone(); // this checks if there are any possible, unphotographed regions on the current orbit
 
         println!(
             "[LOG] Total Orbit Possible Coverage Gain: {:.2}",
@@ -85,8 +85,8 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>> {
         );
 
         while orbit_coverage.data.any() {
-            let covered_perc = camera_controller.map_data_ref().count_ones() as f32
-                / camera_controller.map_data_ref().len() as f32;
+            let covered_perc = camera_controller.bitmap_ref().data.count_ones() as f32
+                / camera_controller.bitmap_ref().data.len() as f32;
             println!("[INFO] Global Coverage percentage: {:.5}", covered_perc);
             let mut adaptable_tolerance = 5;
             fcont.update_observation().await;

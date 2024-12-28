@@ -7,7 +7,6 @@ use crate::http_handler::{
     http_client::HTTPClient, http_request::request_common::NoBodyHTTPRequestType,
     http_request::shoot_image_get::ShootImageRequest,
 };
-use bitvec::prelude::BitBox;
 use futures::StreamExt;
 use image::{imageops::Lanczos3, ImageReader};
 use tokio::{
@@ -15,6 +14,13 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
 };
 
+/// Represents a controller that manages camera operations, including saving images to disk
+/// or a buffer, and updating regions within a bitmap representation.
+///
+/// # Fields
+/// - `bitmap`: A `Bitmap` for storing and managing the region map.
+/// - `buffer`: A `Buffer` for storing image data in memory.
+#[allow(clippy::unsafe_derive_deserialize)]
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct CameraController {
     bitmap: Bitmap,
@@ -22,15 +28,29 @@ pub struct CameraController {
 }
 
 impl CameraController {
+    /// Creates a new `CameraController` instance with default map-sized bitmap and buffer.
+    ///
+    /// # Returns
+    /// A newly initialized `CameraController`.
     pub fn new() -> Self {
-        let png_bitmap = Bitmap::from_map_size();
-        let png_buffer = Buffer::from_map_size();
+        let bitmap = Bitmap::from_map_size();
+        let buffer = Buffer::from_map_size();
         Self {
-            bitmap: png_bitmap,
-            buffer: png_buffer,
+            bitmap,
+            buffer,
         }
     }
 
+    /// Creates a `CameraController` instance by deserializing its content from a binary file.
+    ///
+    /// # Arguments
+    /// - `path`: The path to the binary file to be read.
+    ///
+    /// # Errors
+    /// - Returns an error if the file cannot be opened, read, or its contents fail deserialization.
+    ///
+    /// # Returns
+    /// An instance of `CameraController` loaded from the specified file.
     pub async fn from_file(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let mut file = File::open(path).await?;
         let mut file_buffer = Vec::new();
@@ -40,20 +60,27 @@ impl CameraController {
         Ok(camera)
     }
 
-    pub fn map_data_ref(&self) -> &BitBox { &self.bitmap.data }
+    /// Provides an immutable reference to the bitmap.
+    ///
+    /// # Returns
+    /// A reference to the `Bitmap` of the controller.
     pub fn bitmap_ref(&self) -> &Bitmap { &self.bitmap }
+
+    /// Provides an immutable reference to the buffer.
+    ///
+    /// # Returns
+    /// A reference to the `Buffer` of the controller.
     pub fn buffer_ref(&self) -> &Buffer { &self.buffer }
 
-    pub async fn export_bin(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let encoded = bincode::serialize(&self)?;
-        let mut bin_file = File::create(path).await?;
-        bin_file.write_all(&encoded).await?;
-        bin_file.flush().await?;
-        Ok(())
-    }
-
+    /// Fetches an image from MELVIN DRS and writes it to a file on disk.
+    ///
+    /// # Arguments
+    /// - `http_client`: An HTTP client instance for sending the request.
+    /// - `file_path`: The destination path for saving the retrieved image.
+    ///
+    /// # Errors
+    /// - Returns an error if the HTTP request fails or the file cannot be written to disk.
     pub async fn shoot_image_to_disk(
-        &mut self,
         http_client: &HTTPClient,
         file_path: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -71,19 +98,29 @@ impl CameraController {
         Ok(())
     }
 
+    /// Fetches an image from MELVIN DRS and stores it in the buffer after processing.
+    ///
+    /// # Arguments
+    /// - `http_client`: The HTTP client used to send the image request.
+    /// - `controller`: The flight computer managing flight data.
+    /// - `angle`: Camera angle information for determining the image size.
+    ///
+    /// # Errors
+    /// - Returns an error if the HTTP request fails, data cannot be downloaded,
+    ///   or any subsequent decoding/parsing operations fail.
     #[allow(clippy::cast_possible_truncation)]
     pub async fn shoot_image_to_buffer(
         &mut self,
-        httpclient: &HTTPClient,
+        http_client: &HTTPClient,
         controller: &mut FlightComputer<'_>,
         angle: CameraAngle,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let ((), collected_png) = tokio::join!(
             controller.update_observation(),
-            self.fetch_image_data(httpclient)
+            self.fetch_image_data(http_client)
         );
-        let decoded_image = self.decode_png_data(
-            &collected_png.unwrap_or_else(|e| panic!("[ERROR] PNG couldn't be unwrapped: {e}")),
+        let decoded_image = Self::decode_png_data(
+            &collected_png.expect("[ERROR] PNG couldn't be unwrapped"),
             angle,
         )?;
         let position = controller.get_current_pos();
@@ -103,15 +140,26 @@ impl CameraController {
                 self.buffer.save_pixel(coord2d, pixel.0);
             }
         }
-        self.bitmap.set_region(Vec2D::new(position.x(), position.y()), angle, true);
+        self.bitmap
+            .set_region(Vec2D::new(position.x(), position.y()), angle, true);
         Ok(())
     }
 
+    /// Fetches raw image data from the camera via HTTP and returns it as a byte vector.
+    ///
+    /// # Arguments
+    /// - `http_client`: The HTTP client used to send requests.
+    ///
+    /// # Errors
+    /// - Returns an error if the HTTP stream fails or cannot be read properly.
+    ///
+    /// # Returns
+    /// A vector of bytes representing the raw PNG image data.
     async fn fetch_image_data(
         &mut self,
-        httpclient: &HTTPClient,
+        http_client: &HTTPClient,
     ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        let response_stream = ShootImageRequest {}.send_request(httpclient).await?;
+        let response_stream = ShootImageRequest {}.send_request(http_client).await?;
 
         let mut collected_png: Vec<u8> = Vec::new();
         futures::pin_mut!(response_stream);
@@ -123,8 +171,18 @@ impl CameraController {
         Ok(collected_png)
     }
 
+    /// Decodes raw PNG data into an RGB image and resizes it based on the camera angle.
+    ///
+    /// # Arguments
+    /// - `collected_png`: A slice containing raw PNG data.
+    /// - `angle`: The camera angle used to calculate the target image size.
+    ///
+    /// # Errors
+    /// - Returns an error if the decoding or resizing operation fails.
+    ///
+    /// # Returns
+    /// A resized RGB image.
     fn decode_png_data(
-        &mut self,
         collected_png: &[u8],
         angle: CameraAngle,
     ) -> Result<image::RgbImage, Box<dyn std::error::Error>> {
@@ -142,5 +200,20 @@ impl CameraController {
         );
 
         Ok(resized_image)
+    }
+
+    /// Exports the current state of the `CameraController` to a binary file.
+    ///
+    /// # Arguments
+    /// - `path`: The file path where the data will be exported.
+    ///
+    /// # Errors
+    /// - Returns an error if the file could not be created, written to, or flushed.
+    pub async fn export_bin(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let encoded = bincode::serialize(&self)?;
+        let mut bin_file = File::create(path).await?;
+        bin_file.write_all(&encoded).await?;
+        bin_file.flush().await?;
+        Ok(())
     }
 }
