@@ -7,7 +7,7 @@ use chrono::{DateTime, TimeDelta, Utc};
 /// # Fields
 /// - `start_time`: A `DateTime<Utc>` representing the starting time timestamp.
 /// - `delay`: A `TimeDelta` representing the time left for the delay.
-/// 
+///
 /// The delay can be adjusted dynamically, and the end time can be calculated
 /// based on the current delay.
 #[derive(Debug, Clone, Copy)]

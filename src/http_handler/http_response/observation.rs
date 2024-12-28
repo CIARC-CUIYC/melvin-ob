@@ -7,10 +7,10 @@ pub struct ObservationResponse {
     state: String,
     angle: String,
     simulation_speed: u32,
-    width_x: u32,
-    height_y: u32,
-    vx: f64,
-    vy: f64,
+    width_x: u16,
+    height_y: u16,
+    vx: f32,
+    vy: f32,
     battery: f32,
     max_battery: f32,
     fuel: f32,
@@ -36,16 +36,16 @@ impl ObservationResponse {
     pub fn simulation_speed(&self) -> u32 {
         self.simulation_speed
     }
-    pub fn pos_x(&self) -> u32 {
+    pub fn pos_x(&self) -> u16 {
         self.width_x
     }
-    pub fn pos_y(&self) -> u32 {
+    pub fn pos_y(&self) -> u16 {
         self.height_y
     }
-    pub fn vel_x(&self) -> f64 {
+    pub fn vel_x(&self) -> f32 {
         self.vx
     }
-    pub fn vel_y(&self) -> f64 {
+    pub fn vel_y(&self) -> f32 {
         self.vy
     }
     pub fn battery(&self) -> f32 {

@@ -92,10 +92,10 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>> {
             fcont.update_observation().await;
 
             // if battery to low go into charge
-            if fcont.get_battery() < MIN_BATTERY_THRESHOLD {
+            if fcont.current_battery() < MIN_BATTERY_THRESHOLD {
                 println!("[INFO] Battery to low, going into charge!");
                 fcont.charge_until(100.0).await;
-                println!("[LOG] Charged to: {}", fcont.get_battery());
+                println!("[LOG] Charged to: {}", fcont.current_battery());
             }
 
             // calculate delay until next image and px threshold
@@ -105,31 +105,31 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>> {
                 (CONST_ANGLE.get_square_side_length() as usize - 50).pow(2),
                 (orbit_coverage.len() as f32 * MIN_PX_LEFT_FACTOR * covered_perc).round() as usize,
             );
-            if fcont.get_state() == FlightState::Acquisition {
+            if fcont.state() == FlightState::Acquisition {
                 delay = TimeDelta::seconds(20);
             }
             let next_image = next_image_dt(&fcont, &orbit_coverage, delay, min_pixel);
             if next_image.get_end() < Utc::now() {
                 break;
             }
-            fcont.set_next_image(next_image);
+            *fcont.next_img_ref_mut() = next_image;
 
             // if next image time is more than 6 minutes ahead -> switch to charge
             if fcont
-                .get_next_image()
+                .next_img_ref()
                 .time_left()
                 .ge(&TimeDelta::seconds(370))
             {
                 // TODO: magic numbers
-                fcont.set_state(FlightState::Charge).await;
+                fcont.state_change_ff(FlightState::Charge).await;
             }
-            if fcont.get_state() == FlightState::Acquisition {
+            if fcont.state() == FlightState::Acquisition {
                 // TODO: print detailed here to debug this further
-                let image_dt = fcont.get_next_image().time_left();
+                let image_dt = fcont.next_img_ref().time_left();
                 let image_dt_std = image_dt.to_std().unwrap_or(Duration::from_secs(0));
                 fcont.make_ff_call(image_dt_std).await;
             } else {
-                let sleep_duration = fcont.get_next_image().time_left()
+                let sleep_duration = fcont.next_img_ref().time_left()
                     - TimeDelta::seconds(185 - adaptable_tolerance); // tolerance for
 
                 let sleep_duration_std = sleep_duration.to_std().unwrap_or(Duration::from_secs(0));
@@ -139,23 +139,24 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>> {
 
                 // while next image time is more than 3 minutes + tolerance -> wait
                 while fcont
-                    .get_next_image()
+                    .next_img_ref()
                     .time_left()
                     .ge(&TimeDelta::seconds(185 + adaptable_tolerance))
                 {
                     tokio::time::sleep(Duration::from_millis(400)).await;
                 }
                 // switch to acquisition and wait for exact image taking timestamp
-                fcont.set_state(FlightState::Acquisition).await;
+                fcont.state_change_ff(FlightState::Acquisition).await;
             }
-            if fcont.get_state_update().await != FlightState::Acquisition {
-                let dt = fcont.get_next_image().time_left();
+            fcont.update_observation().await;
+            if fcont.state() != FlightState::Acquisition {
+                let dt = fcont.next_img_ref().time_left();
                 println!("[WARN] Failed to be ready and in acquisition for image in {dt}");
                 continue;
             }
             // skip duration until state transition to acquisition is finished
             while fcont
-                .get_next_image()
+                .next_img_ref()
                 .time_left()
                 .ge(&TimeDelta::milliseconds(100))
             {
@@ -169,8 +170,8 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>> {
             camera_controller.export_bin(BIN_FILEPATH).await?;
             orbit_coverage.set_region(
                 Vec2D::new(
-                    fcont.get_current_pos().x() as f32,
-                    fcont.get_current_pos().y() as f32,
+                    fcont.current_pos().x(),
+                    fcont.current_pos().y(),
                 ),
                 CONST_ANGLE,
                 false,
@@ -179,7 +180,7 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // if there is not enough fuel left -> reset
-        if fcont.get_fuel_left() < FUEL_RESET_THRESHOLD {
+        if fcont.fuel_left() < FUEL_RESET_THRESHOLD {
             ResetRequest {}.send_request(&http_handler).await?;
             max_orbit_prediction_secs += 10000;
             println!("[WARN] No Fuel left: Resetting!");
@@ -197,7 +198,7 @@ fn next_image_dt(
     base_delay: TimeDelta,
     min_px: usize,
 ) -> PinnedTimeDelay {
-    let init_pos = cont.pos_in_time_delta(base_delay);
+    let init_pos = cont.pos_in_dt(base_delay);
     let mut time_del = PinnedTimeDelay::new(base_delay);
     let mut current_calculation_time_delta = base_delay;
     let mut current_pos = init_pos;
@@ -217,7 +218,7 @@ fn next_image_dt(
             return time_del;
         }
         current_calculation_time_delta += TimeDelta::seconds(1);
-        current_pos = cont.pos_in_time_delta(current_calculation_time_delta);
+        current_pos = cont.pos_in_dt(current_calculation_time_delta);
         current_pos.wrap_around_map();
     }
     println!("[WARN] No possible image time found!");
@@ -228,7 +229,7 @@ fn calculate_orbit_coverage_map(cont: &FlightComputer, map: &mut Bitmap, max_dt:
     println!("[INFO] Calculating Orbit Coverage!");
     let mut dt = 0; // TODO: should be higher than 0 to account for spent time during calculation
     loop {
-        let mut next_pos = cont.pos_in_time_delta(TimeDelta::seconds(dt));
+        let mut next_pos = cont.pos_in_dt(TimeDelta::seconds(dt));
         next_pos.wrap_around_map();
         if dt > max_dt {
             println!(

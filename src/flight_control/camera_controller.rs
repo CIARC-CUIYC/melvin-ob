@@ -23,7 +23,9 @@ use tokio::{
 #[allow(clippy::unsafe_derive_deserialize)]
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct CameraController {
+    /// The bitmap which stores metainformation.
     bitmap: Bitmap,
+    /// The buffer storing actual RGB data.
     buffer: Buffer,
 }
 
@@ -123,7 +125,7 @@ impl CameraController {
             &collected_png.expect("[ERROR] PNG couldn't be unwrapped"),
             angle,
         )?;
-        let position = controller.get_current_pos();
+        let position = controller.current_pos();
         let pos_x = position.x().round() as i32;
         let pos_y = position.y().round() as i32;
         let angle_const = i32::from(angle.get_square_side_length()/2);
