@@ -35,14 +35,14 @@ impl FlightState {
     ///
     /// # Returns
     /// A `f32` value representing the charge rate for the flight state.
-    pub fn get_charge_rate(self) -> f32{
+    pub fn get_charge_rate(self) -> f32 {
         match self {
-            FlightState::Deployment => {-0.025}
-            FlightState::Transition => {0.0}
-            FlightState::Acquisition => {-0.2}
-            FlightState::Charge => {0.2}
-            FlightState::Comms => {-0.016}
-            FlightState::Safe => {0.05}
+            FlightState::Deployment => -0.025,
+            FlightState::Transition => 0.0,
+            FlightState::Acquisition => -0.2,
+            FlightState::Charge => 0.2,
+            FlightState::Comms => -0.016,
+            FlightState::Safe => 0.05,
         }
     }
 }
@@ -51,11 +51,11 @@ impl From<&str> for FlightState {
     /// Converts a string value into a `FlightState` enum.
     ///
     /// # Arguments
-    /// - `value`: A string slice representing the flight state (`"deployment"`, `"transition"`, 
+    /// - `value`: A string slice representing the flight state (`"deployment"`, `"transition"`,
     ///   `"acquisition"`, `"charge"`, `"comms"` or `"safe"`).
     ///
     /// # Returns
-    /// A `FlightState` converted from the input string. 
+    /// A `FlightState` converted from the input string.
     /// If the input is an unknown string this defaults to `safe` and logs the error.
     fn from(value: &str) -> Self {
         match value.to_lowercase().as_str() {
@@ -65,7 +65,7 @@ impl From<&str> for FlightState {
             "charge" => FlightState::Charge,
             "comms" => FlightState::Comms,
             "safe" => FlightState::Safe,
-            _ => panic!("Couldn't convert flight_state string")// TODO: conversion error should be logged
+            _ => panic!("Couldn't convert flight_state string"), // TODO: conversion error should be logged
         }
     }
 }
@@ -108,85 +108,81 @@ pub static TRANSITION_DELAY_LOOKUP: LazyLock<HashMap<(FlightState, FlightState),
             (
                 FlightState::Deployment,
                 FlightState::Acquisition,
-                Duration::from_secs(180+TRANSITION_TOLERANCE),
+                Duration::from_secs(180 + TRANSITION_TOLERANCE),
             ),
             (
                 FlightState::Deployment,
                 FlightState::Charge,
-                Duration::from_secs(180+TRANSITION_TOLERANCE),
+                Duration::from_secs(180 + TRANSITION_TOLERANCE),
             ),
             (
                 FlightState::Deployment,
                 FlightState::Comms,
-                Duration::from_secs(180+TRANSITION_TOLERANCE),
+                Duration::from_secs(180 + TRANSITION_TOLERANCE),
             ),
-            
             // Acquisition transitions
             (
                 FlightState::Acquisition,
                 FlightState::Deployment,
-                Duration::from_secs(180+TRANSITION_TOLERANCE),
+                Duration::from_secs(180 + TRANSITION_TOLERANCE),
             ),
             (
                 FlightState::Acquisition,
                 FlightState::Charge,
-                Duration::from_secs(180+TRANSITION_TOLERANCE),
+                Duration::from_secs(180 + TRANSITION_TOLERANCE),
             ),
             (
                 FlightState::Acquisition,
                 FlightState::Comms,
-                Duration::from_secs(180+TRANSITION_TOLERANCE),
+                Duration::from_secs(180 + TRANSITION_TOLERANCE),
             ),
-            
             // Charge transitions
             (
                 FlightState::Charge,
                 FlightState::Deployment,
-                Duration::from_secs(180+TRANSITION_TOLERANCE),
+                Duration::from_secs(180 + TRANSITION_TOLERANCE),
             ),
             (
                 FlightState::Charge,
                 FlightState::Acquisition,
-                Duration::from_secs(180+TRANSITION_TOLERANCE),
+                Duration::from_secs(180 + TRANSITION_TOLERANCE),
             ),
             (
                 FlightState::Charge,
                 FlightState::Comms,
-                Duration::from_secs(180+TRANSITION_TOLERANCE),
+                Duration::from_secs(180 + TRANSITION_TOLERANCE),
             ),
-            
             // Comms transitions
             (
                 FlightState::Comms,
                 FlightState::Deployment,
-                Duration::from_secs(180+TRANSITION_TOLERANCE),
+                Duration::from_secs(180 + TRANSITION_TOLERANCE),
             ),
             (
                 FlightState::Comms,
                 FlightState::Acquisition,
-                Duration::from_secs(180+TRANSITION_TOLERANCE),
+                Duration::from_secs(180 + TRANSITION_TOLERANCE),
             ),
             (
                 FlightState::Comms,
                 FlightState::Charge,
-                Duration::from_secs(180+TRANSITION_TOLERANCE),
+                Duration::from_secs(180 + TRANSITION_TOLERANCE),
             ),
-            
             // Safe transitions
             (
                 FlightState::Safe,
                 FlightState::Deployment,
-                Duration::from_secs(1200+TRANSITION_TOLERANCE),
+                Duration::from_secs(1200 + TRANSITION_TOLERANCE),
             ),
             (
                 FlightState::Safe,
                 FlightState::Acquisition,
-                Duration::from_secs(1200+TRANSITION_TOLERANCE),
+                Duration::from_secs(1200 + TRANSITION_TOLERANCE),
             ),
             (
                 FlightState::Safe,
                 FlightState::Charge,
-                Duration::from_secs(1200+TRANSITION_TOLERANCE),
+                Duration::from_secs(1200 + TRANSITION_TOLERANCE),
             ),
         ];
 

@@ -13,8 +13,12 @@ impl NoBodyHTTPRequestType for BeaconPositionRequest {}
 
 impl HTTPRequestType for BeaconPositionRequest {
     type Response = BeaconPositionResponse;
-    fn endpoint(&self) -> &str { "/beacon" }
-    fn request_method(&self) -> HTTPRequestMethod { HTTPRequestMethod::Put }
+    fn endpoint(&self) -> &str {
+        "/beacon"
+    }
+    fn request_method(&self) -> HTTPRequestMethod {
+        HTTPRequestMethod::Put
+    }
     fn query_params(&self) -> HashMap<&str, String> {
         let mut query = HashMap::new();
         query.insert("beacon_id", self.beacon_id.to_string());

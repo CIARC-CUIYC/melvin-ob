@@ -1,6 +1,4 @@
-use super::response_common::{
-    HTTPResponseType, JSONBodyHTTPResponseType, ResponseError, SerdeJSONBodyHTTPResponseType,
-};
+use super::response_common::SerdeJSONBodyHTTPResponseType;
 use crate::http_handler::http_handler_common::Achievement;
 
 #[derive(serde::Deserialize, Debug)]

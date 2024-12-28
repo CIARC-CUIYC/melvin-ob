@@ -11,7 +11,7 @@ use std::ops::Not;
 /// - `width`: A `u32` representing the 2D bitmap width.
 /// - `height`: A `u32` representing the 2D bitmap height.
 /// - `data`: A `BitBox` storing the actual bitmap data.
-/// 
+///
 /// This structure provides methods for manipulating pixel data, checking
 /// regions, and exporting the bitmap to a PNG image.
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
@@ -64,21 +64,25 @@ impl Bitmap {
     ///
     /// # Returns
     /// The 1D index as `u32`.
-    /// 
+    ///
     /// # Example
     /// ```rust
     /// let bitmap = Bitmap::new(4, 4);
     /// let index = bitmap.get_bitmap_index(2, 3);
     /// assert_eq!(index, 14);
     /// ```
-    fn get_bitmap_index(&self, x: u32, y: u32) -> u32 { y * self.width + x }
+    fn get_bitmap_index(&self, x: u32, y: u32) -> u32 {
+        y * self.width + x
+    }
 
     /// Returns the total number of pixels in the bitmap.
     /// This is equivalent to the product of its `width` and `height`.
     ///
     /// # Returns
     /// The total number of pixels as `u32`.
-    pub fn len(&self) -> u32 { self.width * self.height }
+    pub fn len(&self) -> u32 {
+        self.width * self.height
+    }
 
     /// Checks whether the pixel at the specified `(x, y)` coordinates is set.
     ///
@@ -150,10 +154,8 @@ impl Bitmap {
     /// # Panics
     /// This can panic due to conversion errors or bugs left in `get_region_slice_indices`.
     #[allow(clippy::cast_possible_truncation)]
-    pub fn set_region(&mut self, pos: Vec2D<f32>, angle: CameraAngle, set_to: bool) {
-        let x = pos.x().round() as i32;
-        let y = pos.y().round() as i32;
-        let slices_vec = self.get_region_slice_indices(x, y, angle);
+    pub fn set_region(&mut self, offset: Vec2D<u32>, size: u32, set_to: bool) {
+        let slices_vec = self.get_region_slice_indices(offset, size);
 
         for mut slice_index in slices_vec {
             if slice_index.1 >= self.len() {
@@ -179,23 +181,17 @@ impl Bitmap {
     ///
     /// # Panics
     /// This can panic due to conversion errors or bugs left.
-    pub fn get_region_slice_indices(&self, x: i32, y: i32, angle: CameraAngle) -> Vec<(u32, u32)> {
-        let angle_const = i32::from(angle.get_square_side_length()/2);
+    pub fn get_region_slice_indices(&self, position: Vec2D<u32>, size: u32) -> Vec<(u32, u32)> {
         let mut slices = Vec::new();
-        let max_height = i32::try_from(self.height).expect("[FATAL] Cast to i32 failed!");
-        let max_width = i32::try_from(self.width).expect("[FATAL] Cast to i32 failed!");
+        let x_start = Vec2D::wrap_coordinate(position.x(), self.width);
+        let x_end = Vec2D::wrap_coordinate(position.x() + size, self.width);
+        let y_start = Vec2D::wrap_coordinate(position.y(), self.height);
+        let y_end = y_start + size;
 
-        let x_start = u32::try_from(Vec2D::wrap_coordinate(x - angle_const, max_width))
-            .expect("[FATAL] Cast to u32 failed!");
-        let x_end = u32::try_from(Vec2D::wrap_coordinate(x + angle_const, max_width))
-            .expect("[FATAL] Cast to u32 failed!");
+        let is_wrapped = x_start > x_end;
 
-        let is_wrapped =
-            (i128::from(x_end) - i128::from(x_start)).abs() > i128::from(angle_const * 2);
-
-        for y_it in y - angle_const..y + angle_const {
-            let wrapped_y = u32::try_from(Vec2D::wrap_coordinate(y_it, max_height))
-                .expect("[FATAL] Cast to u32 failed!");
+        for y_it in y_start..y_end {
+            let wrapped_y = Vec2D::wrap_coordinate(y_it, self.height);
 
             let start_index = self.get_bitmap_index(x_start, wrapped_y);
             let end_index = self.get_bitmap_index(x_end, wrapped_y);
@@ -227,11 +223,9 @@ impl Bitmap {
     /// # Panics
     /// This can panic due to conversion errors or bugs left in `get_region_slice_indices`.
     #[allow(clippy::cast_possible_truncation)]
-    pub fn has_sufficient_set_bits(&self, pos: Vec2D<f32>, angle: CameraAngle, min: usize) -> bool {
+    pub fn has_sufficient_set_bits(&self, offset: Vec2D<u32>, size: u32, min: usize) -> bool {
         let mut px = 0;
-        let x = pos.x().round() as i32;
-        let y = pos.y().round() as i32;
-        for slice_index in self.get_region_slice_indices(x, y, angle) {
+        for slice_index in self.get_region_slice_indices(offset, size) {
             px += self
                 .data
                 .get(slice_index.0 as usize..slice_index.1 as usize)
@@ -266,6 +260,7 @@ impl Bitmap {
         }
 
         // Save the image to a file
-        img.save(output_path).expect("[ERROR] Failed to save the image");
+        img.save(output_path)
+            .expect("[ERROR] Failed to save the image");
     }
 }

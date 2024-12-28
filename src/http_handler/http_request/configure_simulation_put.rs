@@ -15,8 +15,12 @@ impl NoBodyHTTPRequestType for ConfigureSimulationRequest {}
 
 impl HTTPRequestType for ConfigureSimulationRequest {
     type Response = configure_simulation::ConfigureSimulationResponse;
-    fn endpoint(&self) -> &str { "/simulation" }
-    fn request_method(&self) -> HTTPRequestMethod { HTTPRequestMethod::Put }
+    fn endpoint(&self) -> &str {
+        "/simulation"
+    }
+    fn request_method(&self) -> HTTPRequestMethod {
+        HTTPRequestMethod::Put
+    }
     fn query_params(&self) -> HashMap<&str, String> {
         let mut query = HashMap::new();
         query.insert(

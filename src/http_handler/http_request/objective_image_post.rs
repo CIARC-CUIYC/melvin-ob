@@ -1,8 +1,8 @@
-use std::collections::HashMap;
 use super::objective_image::ObjectiveImageResponse;
 use super::request_common::{
     HTTPRequestMethod, HTTPRequestType, MultipartBodyHTTPRequestType, RequestError,
 };
+use std::collections::HashMap;
 use std::io;
 use std::path::Path;
 

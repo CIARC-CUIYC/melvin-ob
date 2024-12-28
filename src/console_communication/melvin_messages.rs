@@ -1,6 +1,4 @@
-use crate::console_communication::melvin_messages;
-use crate::flight_control::camera_controller::{CameraController, MapImage};
-use crate::flight_control::common::vec2d::Vec2D;
+use crate::flight_control::camera_controller::MapImageThumbnail;
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Upstream {
@@ -40,8 +38,8 @@ pub struct Image {
 impl Image {
     pub(crate) fn new_full_size(encoded_image: Vec<u8>) -> Self {
         Self {
-            height: Vec2D::<i32>::map_size().y() / MapImage::THUMBNAIL_SCALE_FACTOR as i32,
-            width: Vec2D::<i32>::map_size().x() / MapImage::THUMBNAIL_SCALE_FACTOR as i32,
+            width: MapImageThumbnail::thumbnail_size().x() as i32,
+            height: MapImageThumbnail::thumbnail_size().y() as i32,
             offset_x: 0,
             offset_y: 0,
             data: encoded_image,
@@ -98,10 +96,8 @@ pub enum UpstreamContent {
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct GetFullImage {}
 
-
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct GetSnapshotDiffImage {}
-
 
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct CreateSnapshotImage {}

@@ -4,12 +4,13 @@ use std::panic;
 use std::sync::Arc;
 use std::time::Duration;
 
+mod console_communication;
 mod flight_control;
 mod http_handler;
-mod console_communication;
 
 use crate::console_communication::console_endpoint::{ConsoleEndpoint, ConsoleEndpointEvent};
 use crate::console_communication::melvin_messages;
+use crate::flight_control::camera_controller::MapImageThumbnail;
 use crate::flight_control::{
     camera_controller::CameraController,
     camera_state::CameraAngle,
@@ -18,15 +19,12 @@ use crate::flight_control::{
     flight_state::FlightState,
 };
 use crate::http_handler::http_request::{
-    request_common::NoBodyHTTPRequestType,
-    reset_get::ResetRequest,
+    request_common::NoBodyHTTPRequestType, reset_get::ResetRequest,
 };
 use chrono::{TimeDelta, Utc};
 use futures::FutureExt;
-use prost::Message;
 use rand::Rng;
 use tokio::time;
-use crate::flight_control::camera_controller::MapImage;
 
 const FUEL_RESET_THRESHOLD: f32 = 20.0;
 const BIN_FILEPATH: &str = "camera_controller_narrow.bin";
@@ -62,37 +60,59 @@ async fn watchdog(timeout: Duration, action: impl Fn() + Send + 'static) {
     action();
 }
 
-async fn execute_main_loop(console_endpoint: &Arc<ConsoleEndpoint>) -> Result<(), Box<dyn std::error::Error>> {
+async fn execute_main_loop(
+    console_endpoint: &Arc<ConsoleEndpoint>,
+) -> Result<(), Box<dyn std::error::Error>> {
     // Spawn the watchdog task
-    let timeout = Duration::from_secs(7200);
+    // let timeout = Duration::from_secs(7200);
     //tokio::spawn(watchdog(timeout, || {panic!("[INFO] Resetting normally after 2 hours")}));
 
-    let mut camera_controller = CameraController::from_file(BIN_FILEPATH)
-        .await
-        .unwrap_or_else(|e| {
-            println!("[WARN] Failed to read from binary file: {e}");
-            CameraController::new()
-        });
-
+    let camera_controller = Arc::new(
+        CameraController::from_file(BIN_FILEPATH)
+            .await
+            .unwrap_or_else(|e| {
+                println!("[WARN] Failed to read from binary file: {e}");
+                CameraController::new()
+            }),
+    );
 
     let camera_controller_local = camera_controller.clone();
     let console_endpoint_local = console_endpoint.clone();
     tokio::spawn(async move {
-        let mut receiver = console_endpoint_local.upstream_event_receiver().resubscribe();
+        let mut receiver = console_endpoint_local
+            .upstream_event_receiver()
+            .resubscribe();
         loop {
             if let Ok(event) = receiver.recv().await {
                 println!("{:?}", event);
                 match event {
-                    ConsoleEndpointEvent::Message(melvin_messages::UpstreamContent::CreateSnapshotImage(_)) => {
+                    ConsoleEndpointEvent::Message(
+                        melvin_messages::UpstreamContent::CreateSnapshotImage(_),
+                    ) => {
                         camera_controller_local.create_snapshot().await.unwrap();
                     }
-                    ConsoleEndpointEvent::Message(melvin_messages::UpstreamContent::GetSnapshotDiffImage(_)) => {
+                    ConsoleEndpointEvent::Message(
+                        melvin_messages::UpstreamContent::GetSnapshotDiffImage(_),
+                    ) => {
                         let encoded_image = camera_controller_local.diff_snapshot().await.unwrap();
-                        console_endpoint_local.send_downstream(melvin_messages::DownstreamContent::Image(melvin_messages::Image::new_full_size(encoded_image)));
+                        console_endpoint_local.send_downstream(
+                            melvin_messages::DownstreamContent::Image(
+                                melvin_messages::Image::new_full_size(encoded_image),
+                            ),
+                        );
                     }
-                    ConsoleEndpointEvent::Message(melvin_messages::UpstreamContent::GetFullImage(_)) => {
-                        let encoded_image = camera_controller_local.export_full_thumbnail_png().await.unwrap();
-                        console_endpoint_local.send_downstream(melvin_messages::DownstreamContent::Image(melvin_messages::Image::new_full_size(encoded_image)));
+                    ConsoleEndpointEvent::Message(
+                        melvin_messages::UpstreamContent::GetFullImage(_),
+                    ) => {
+                        let encoded_image = camera_controller_local
+                            .export_full_thumbnail_png()
+                            .await
+                            .unwrap();
+                        console_endpoint_local.send_downstream(
+                            melvin_messages::DownstreamContent::Image(
+                                melvin_messages::Image::new_full_size(encoded_image),
+                            ),
+                        );
                     }
                     _ => {}
                 }
@@ -114,23 +134,25 @@ async fn execute_main_loop(console_endpoint: &Arc<ConsoleEndpoint>) -> Result<()
             break;
         }
         fcont.update_observation().await;
-        console_endpoint.send_downstream(melvin_messages::DownstreamContent::Telemetry(melvin_messages::Telemetry {
-            timestamp: Utc::now().timestamp_millis(),
-            state: 0,
-            position_x: fcont.get_current_pos().x().as_i32(),
-            position_y: fcont.get_current_pos().y().as_i32(),
-            velocity_x: fcont.get_current_vel().x(),
-            velocity_y: fcont.get_current_vel().y(),
-            battery: 0.0,
-            fuel: 0.0,
-            data_sent: 0,
-            data_received: 0,
-            distance_covered: 0.0,
-        }));
+        console_endpoint.send_downstream(melvin_messages::DownstreamContent::Telemetry(
+            melvin_messages::Telemetry {
+                timestamp: Utc::now().timestamp_millis(),
+                state: 0,
+                position_x: fcont.current_pos().x().as_i32(),
+                position_y: fcont.current_pos().y().as_i32(),
+                velocity_x: fcont.current_vel().x(),
+                velocity_y: fcont.current_vel().y(),
+                battery: 0.0,
+                fuel: 0.0,
+                data_sent: 0,
+                data_received: 0,
+                distance_covered: 0.0,
+            },
+        ));
 
-        fcont
-            .rotate_vel(rand::rng().random_range(-169.0..169.0), ACCEL_FACTOR)
-            .await;
+        /*fcont
+        .rotate_vel(rand::rng().random_range(-69.0..69.0), ACCEL_FACTOR)
+        .await;*/
         let mut orbit_coverage = Bitmap::from_map_size();
         calculate_orbit_coverage_map(&fcont, &mut orbit_coverage, max_orbit_prediction_secs);
         orbit_coverage.data &= !coverage_bitmap.clone(); // this checks if there are any possible, unphotographed regions on the current orbit
@@ -141,8 +163,7 @@ async fn execute_main_loop(console_endpoint: &Arc<ConsoleEndpoint>) -> Result<()
         );
 
         while orbit_coverage.data.any() {
-            let covered_perc = coverage_bitmap.count_ones() as f32
-                / coverage_bitmap.len() as f32;
+            let covered_perc = coverage_bitmap.count_ones() as f32 / coverage_bitmap.len() as f32;
             println!("[INFO] Global Coverage percentage: {:.5}", covered_perc);
             let mut adaptable_tolerance = 5;
             fcont.update_observation().await;
@@ -168,7 +189,7 @@ async fn execute_main_loop(console_endpoint: &Arc<ConsoleEndpoint>) -> Result<()
             if next_image.get_end() < Utc::now() {
                 break;
             }
-            *fcont.next_img_ref_mut() = next_image;
+            fcont.schedule_image(next_image);
 
             // if next image time is more than 6 minutes ahead -> switch to charge
             if fcont
@@ -225,27 +246,20 @@ async fn execute_main_loop(console_endpoint: &Arc<ConsoleEndpoint>) -> Result<()
                 .await?;
             camera_controller.export_bin(BIN_FILEPATH).await?;
 
-            let radius = CONST_ANGLE.get_square_radius() as i32;
-            let c_pos = fcont.get_current_pos().wrap_around_map();
-            let c_pos = Vec2D::new(c_pos.x() as i32, c_pos.y() as i32);
-            let encoded_thumbnail = camera_controller.export_thumbnail_png(c_pos, radius as u32).await?;
-            let offset = Vec2D::new(c_pos.x() - radius, c_pos.y() - radius).wrap_around_map();
-            console_endpoint.send_downstream(melvin_messages::DownstreamContent::Image(melvin_messages::Image {
-                height: (radius * 2) / MapImage::THUMBNAIL_SCALE_FACTOR as i32,
-                width: (radius * 2) / MapImage::THUMBNAIL_SCALE_FACTOR as i32,
-                offset_x: offset.x() / MapImage::THUMBNAIL_SCALE_FACTOR as i32,
-                offset_y: offset.y() / MapImage::THUMBNAIL_SCALE_FACTOR as i32,
-                data: encoded_thumbnail,
-            }));
+            let size = CONST_ANGLE.get_square_side_length() as u32;
+            let offset = CameraController::center_pos_to_offset(fcont.current_pos(), CONST_ANGLE);
+            let encoded_thumbnail = camera_controller.export_thumbnail_png(offset, size).await?;
+            console_endpoint.send_downstream(melvin_messages::DownstreamContent::Image(
+                melvin_messages::Image {
+                    height: (size / MapImageThumbnail::THUMBNAIL_SCALE_FACTOR) as i32,
+                    width: (size / MapImageThumbnail::THUMBNAIL_SCALE_FACTOR) as i32,
+                    offset_x: (offset.x() / MapImageThumbnail::THUMBNAIL_SCALE_FACTOR) as i32,
+                    offset_y: (offset.y() / MapImageThumbnail::THUMBNAIL_SCALE_FACTOR) as i32,
+                    data: encoded_thumbnail,
+                },
+            ));
 
-            orbit_coverage.set_region(
-                Vec2D::new(
-                    fcont.current_pos().x(),
-                    fcont.current_pos().y(),
-                ),
-                CONST_ANGLE,
-                false,
-            );
+            orbit_coverage.set_region(offset, size, false);
             fcont.remove_next_image();
         }
 
@@ -274,8 +288,11 @@ fn next_image_dt(
     let mut current_pos = init_pos;
 
     while current_calculation_time_delta < TimeDelta::seconds(20000) {
-        if map.has_sufficient_set_bits(current_pos, CONST_ANGLE, min_px)
-            && time_del.get_start() + current_calculation_time_delta > Utc::now() + base_delay
+        if map.has_sufficient_set_bits(
+            CameraController::center_pos_to_offset(current_pos, CONST_ANGLE),
+            CONST_ANGLE.get_square_side_length() as u32,
+            min_px,
+        ) && time_del.get_start() + current_calculation_time_delta > Utc::now() + base_delay
         {
             time_del.set_delay(current_calculation_time_delta);
             let time_left = time_del.time_left();
@@ -288,8 +305,9 @@ fn next_image_dt(
             return time_del;
         }
         current_calculation_time_delta += TimeDelta::seconds(1);
-        current_pos = cont.pos_in_dt(current_calculation_time_delta);
-        current_pos.wrap_around_map();
+        current_pos = cont
+            .pos_in_dt(current_calculation_time_delta)
+            .wrap_around_map();
     }
     println!("[WARN] No possible image time found!");
     PinnedTimeDelay::new(TimeDelta::seconds(-100))
@@ -299,8 +317,7 @@ fn calculate_orbit_coverage_map(cont: &FlightComputer, map: &mut Bitmap, max_dt:
     println!("[INFO] Calculating Orbit Coverage!");
     let mut dt = 0; // TODO: should be higher than 0 to account for spent time during calculation
     loop {
-        let mut next_pos = cont.pos_in_dt(TimeDelta::seconds(dt));
-        next_pos.wrap_around_map();
+        let next_pos = cont.pos_in_dt(TimeDelta::seconds(dt)).wrap_around_map();
         if dt > max_dt {
             println!(
                 "[LOG] Coverage Percentage of current Orbit: {}",
@@ -309,8 +326,8 @@ fn calculate_orbit_coverage_map(cont: &FlightComputer, map: &mut Bitmap, max_dt:
             break;
         }
         map.set_region(
-            Vec2D::new(next_pos.x() as f32, next_pos.y() as f32),
-            CONST_ANGLE,
+            CameraController::center_pos_to_offset(next_pos, CONST_ANGLE),
+            CONST_ANGLE.get_square_side_length() as u32,
             true,
         );
         dt += 1;

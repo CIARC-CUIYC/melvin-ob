@@ -13,21 +13,21 @@ use crate::http_handler::{
     },
 };
 use chrono::TimeDelta;
-use std::{cmp::min, time::Duration};
 use std::collections::VecDeque;
+use std::{cmp::min, time::Duration};
 use tokio::time::sleep;
 
-/// Represents the core flight computer for satellite control. 
-/// It manages operations such as state changes, velocity updates, 
+/// Represents the core flight computer for satellite control.
+/// It manages operations such as state changes, velocity updates,
 /// battery charging, and fast-forward simulation.
 ///
-/// This system interfaces with an external HTTP-based control system to 
-/// send requests for managing the satellite’s behavior (e.g., velocity updates, 
-/// state transitions). Additionally, the file schedules satellite-related 
-/// activities like image captures and ensures the system stays updated 
+/// This system interfaces with an external HTTP-based control system to
+/// send requests for managing the satellite’s behavior (e.g., velocity updates,
+/// state transitions). Additionally, the file schedules satellite-related
+/// activities like image captures and ensures the system stays updated
 /// using observations.
 ///
-/// Key methods allow high-level control, including fast-forward simulations, 
+/// Key methods allow high-level control, including fast-forward simulations,
 /// state transitions, camera angle adjustments, and battery-related tasks.
 ///
 /// # Fields
@@ -54,7 +54,7 @@ pub struct FlightComputer<'a> {
     /// Current battery level of the satellite.
     current_battery: f32,
     /// Maximum battery capacity of the satellite.
-    max_battery: f32,     // this is an artifact caused by dumb_main
+    max_battery: f32, // this is an artifact caused by dumb_main
     /// Remaining fuel level for the satellite operations.
     fuel_left: f32,
     /// Timestamp marking the last observation update from the satellite.
@@ -98,36 +98,46 @@ impl<'a> FlightComputer<'a> {
     }
 
     /// Retrieves the current position of the satellite.
-    /// 
+    ///
     /// # Returns
     /// A `Vec2D` representing the current satellite position.
-    pub fn current_pos(&self) -> Vec2D<f32> { self.current_pos }
+    pub fn current_pos(&self) -> Vec2D<f32> {
+        self.current_pos
+    }
 
     /// Retrieves the current position of the velocity.
     ///
     /// # Returns
     /// A `Vec2D` representing the current satellite velocity.
-    pub fn current_vel(&self) -> Vec2D<f32> { self.current_vel }
+    pub fn current_vel(&self) -> Vec2D<f32> {
+        self.current_vel
+    }
 
     /// Retrieves the maximum battery capacity of the satellite.
     ///
-    /// This value fluctuates only due to battery depletion safe mode events. 
+    /// This value fluctuates only due to battery depletion safe mode events.
     ///
     /// # Returns
     /// - A `f32` value representing the maximum battery charge.
-    pub fn max_battery(&self) -> f32 { self.max_battery }
+    pub fn max_battery(&self) -> f32 {
+        self.max_battery
+    }
 
     /// Retrieves the current battery charge level of the satellite.
     ///
     /// # Returns
     /// - A `f32` value denoting the battery's current charge level.
-    pub fn current_battery(&self) -> f32 { self.current_battery }
+    pub fn current_battery(&self) -> f32 {
+        self.current_battery
+    }
 
     /// Retrieves the remaining fuel level of the satellite.
     ///
     /// # Returns
     /// - A `f32` value representing the remaining percentage of fuel.
-    pub fn fuel_left(&self) -> f32 { self.fuel_left }
+    pub fn fuel_left(&self) -> f32 {
+        self.fuel_left
+    }
 
     /// Retrieves the current operational state of the satellite.
     ///
@@ -136,13 +146,17 @@ impl<'a> FlightComputer<'a> {
     ///
     /// # Returns
     /// - A `FlightState` enum denoting the active operational state.
-    pub fn state(&self) -> FlightState { self.current_state }
+    pub fn state(&self) -> FlightState {
+        self.current_state
+    }
 
     /// Adds a new image capture task to the scheduling system.
     ///
     /// # Arguments
     /// - `dt`: A `PinnedTimeDelay` value indicating the delay before the next capture.
-    pub fn schedule_image(&mut self, dt: PinnedTimeDelay) { self.next_image_schedule.push_back(dt); }
+    pub fn schedule_image(&mut self, dt: PinnedTimeDelay) {
+        self.next_image_schedule.push_back(dt);
+    }
 
     /// Provides a reference to the next scheduled image capture.
     ///
@@ -151,24 +165,19 @@ impl<'a> FlightComputer<'a> {
     ///
     /// # Returns
     /// - A reference to the first `PinnedTimeDelay` in the schedule.
-    pub fn next_img_ref(&self) -> &PinnedTimeDelay { &self.next_image_schedule[0] }
-
-    /// Provides a mutable reference to the next scheduled image capture.
-    ///
-    /// # Panics
-    /// - This function panics if there are no scheduled images.
-    ///
-    /// # Returns
-    /// - A reference to the first `PinnedTimeDelay` in the schedule.
-    pub fn next_img_ref_mut(&mut self) -> &mut PinnedTimeDelay { &mut self.next_image_schedule[0] }
+    pub fn next_img_ref(&self) -> &PinnedTimeDelay {
+        self.next_image_schedule.front().unwrap()
+    }
 
     /// Removes the next scheduled image capture from the schedule.
-    pub fn remove_next_image(&mut self) { self.next_image_schedule.pop_front(); }
+    pub fn remove_next_image(&mut self) {
+        self.next_image_schedule.pop_front();
+    }
 
     /// Fast-forwards the simulation or waits for a specified duration.
     ///
     /// Adjusts delays for all scheduled images in `next_image_schedule` after waiting.
-    /// 
+    ///
     /// # Arguments
     /// - `sleep`: The duration for which the system should wait or fast-forward.
     pub async fn make_ff_call(&mut self, sleep: Duration) {
@@ -198,7 +207,7 @@ impl<'a> FlightComputer<'a> {
     /// Handles fast-forwarding for the simulation using optimal multipliers.
     ///
     /// Chooses the optimal speed multiplier depending on the duration.
-    /// 
+    ///
     /// # Arguments
     /// - `duration`: The total time duration to simulate.
     ///
@@ -260,7 +269,7 @@ impl<'a> FlightComputer<'a> {
     ///
     /// Calculates the charging duration based on the charge rate, executes the charging process and
     /// restores the previous `FlightState` afterward.
-    /// 
+    ///
     /// # Arguments
     /// - `target_battery`: The desired target battery level (percentage).
     pub async fn charge_until(&mut self, target_battery: f32) {
@@ -354,7 +363,8 @@ impl<'a> FlightComputer<'a> {
             };
             match req.send_request(self.request_client).await {
                 Ok(_) => {
-                    self.make_ff_call(Duration::from_secs_f32(sleep_time + 1.0)).await;
+                    self.make_ff_call(Duration::from_secs_f32(sleep_time + 1.0))
+                        .await;
                     self.update_observation().await;
                     break;
                 }
@@ -424,9 +434,11 @@ impl<'a> FlightComputer<'a> {
     /// - `angle_degrees`: The angle (in degrees) by which to rotate the velocity vector.
     /// - `accel_factor`: A scalar factor to apply to accelerate the satellite.
     pub async fn rotate_vel(&mut self, angle_degrees: f32, accel_factor: f32) {
-        let mut current_vel = self.current_vel;
-        current_vel.rotate_by(angle_degrees);
-        self.set_vel(current_vel * (1.0 + accel_factor), true).await;
+        self.set_vel(
+            self.current_vel.rotate_by(angle_degrees) * (1.0 + accel_factor),
+            true,
+        )
+        .await;
     }
 
     /// Predicts the satellite’s position after a specified time interval.
@@ -437,8 +449,6 @@ impl<'a> FlightComputer<'a> {
     /// # Returns
     /// - A `Vec2D<f32>` representing the satellite’s predicted position.
     pub fn pos_in_dt(&self, time_delta: TimeDelta) -> Vec2D<f32> {
-        let mut pos = self.current_pos + (self.current_vel * time_delta.num_seconds());
-        pos.wrap_around_map();
-        pos
+        self.current_pos + (self.current_vel * time_delta.num_seconds()).wrap_around_map()
     }
 }

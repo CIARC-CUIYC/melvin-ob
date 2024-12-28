@@ -2,7 +2,7 @@ use super::response_common::{HTTPResponseType, ResponseError};
 use crate::http_handler::http_client::HTTPClient;
 use crate::http_handler::HTTPError;
 use std::collections::HashMap;
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 use std::io::ErrorKind;
 use strum_macros::Display;
 
@@ -116,8 +116,12 @@ pub(crate) trait HTTPRequestType {
     type Response: HTTPResponseType;
     fn endpoint(&self) -> &str;
     fn request_method(&self) -> HTTPRequestMethod;
-    fn header_params(&self) -> reqwest::header::HeaderMap { reqwest::header::HeaderMap::default() }
-    fn query_params(&self) -> HashMap<&str, String> { HashMap::new() }
+    fn header_params(&self) -> reqwest::header::HeaderMap {
+        reqwest::header::HeaderMap::default()
+    }
+    fn query_params(&self) -> HashMap<&str, String> {
+        HashMap::new()
+    }
     fn get_request_base(&self, client: &HTTPClient) -> reqwest::RequestBuilder {
         let compound_url = format!("{}{}", client.url(), self.endpoint());
         match self.request_method() {
