@@ -12,6 +12,11 @@ pub struct PixelData {
 
 /// A 2D raster buffer to store pixel data. Each pixel is represented by an RGB triplet.
 ///
+/// # Fields
+/// - `width`: A `u32` representing the 2D image width.
+/// - `height`: A `u32` representing the 2D image height.
+/// - `data`: A `Vec` storing the actual RGB data.
+/// 
 /// This structure provides methods for creating a buffer, saving pixels, and computing
 /// the 1D index of pixels based on their 2D coordinates.
 #[derive(serde::Serialize, serde::Deserialize, Clone)]

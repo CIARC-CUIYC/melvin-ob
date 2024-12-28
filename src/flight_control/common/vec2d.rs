@@ -3,6 +3,10 @@ use num_traits::{Num, NumAssignOps, NumCast, real::Real};
 
 /// A 2D vector generic over any numeric type.
 ///
+/// # Fields
+/// - `x`: The x-coordinate of the `Vec2D` as a `T`.
+/// - `y`: The y-coordinate of the `Vec2D` as a `T`.
+/// 
 /// This struct represents a 2D point or vector in space and provides common
 /// mathematical operations such as addition, normalization, rotation, and distance calculations.
 ///
