@@ -102,7 +102,7 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>> {
             let mut delay: TimeDelta = TimeDelta::seconds(185 + adaptable_tolerance); // TODO: fix adaptable tolerance
             adaptable_tolerance -= 1;
             let min_pixel = min(
-                (CONST_ANGLE.get_square_unit_length() as usize - 50).pow(2),
+                (CONST_ANGLE.get_square_side_length() as usize - 50).pow(2),
                 (orbit_coverage.len() as f32 * MIN_PX_LEFT_FACTOR * covered_perc).round() as usize,
             );
             if fcont.get_state() == FlightState::Acquisition {

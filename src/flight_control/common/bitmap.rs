@@ -180,7 +180,7 @@ impl Bitmap {
     /// # Panics
     /// This can panic due to conversion errors or bugs left.
     pub fn get_region_slice_indices(&self, x: i32, y: i32, angle: CameraAngle) -> Vec<(u32, u32)> {
-        let angle_const = i32::from(angle.get_square_radius());
+        let angle_const = i32::from(angle.get_square_side_length()/2);
         let mut slices = Vec::new();
         let max_height = i32::try_from(self.height).expect("[FATAL] Cast to i32 failed!");
         let max_width = i32::try_from(self.width).expect("[FATAL] Cast to i32 failed!");

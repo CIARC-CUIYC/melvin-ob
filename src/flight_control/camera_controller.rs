@@ -126,7 +126,7 @@ impl CameraController {
         let position = controller.get_current_pos();
         let pos_x = position.x().round() as i32;
         let pos_y = position.y().round() as i32;
-        let angle_const = i32::from(angle.get_square_radius());
+        let angle_const = i32::from(angle.get_square_side_length()/2);
 
         // TODO: maybe this can work in parallel?
         for (i, row) in (pos_x - angle_const..pos_x + angle_const).enumerate() {
@@ -190,7 +190,7 @@ impl CameraController {
             .with_guessed_format()?
             .decode()?
             .to_rgb8();
-        let resized_unit_length = angle.get_square_unit_length();
+        let resized_unit_length = angle.get_square_side_length();
 
         let resized_image = image::imageops::resize(
             &decoded_image,
