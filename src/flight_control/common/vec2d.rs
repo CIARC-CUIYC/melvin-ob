@@ -1,4 +1,4 @@
-use std::ops::{Add, Mul};
+use std::ops::{Add, Deref, Div, Mul};
 use num_traits::{Num, NumAssignOps, NumCast, real::Real};
 
 /// A 2D vector generic over any numeric type.
@@ -14,6 +14,30 @@ pub struct Vec2D<T> {
     x: T,
     /// The y-component of the vector.
     y: T,
+}
+
+pub struct Wrapped2D<T, const X: u32, const Y: u32>(Vec2D<T>);
+
+impl<T, const X: u32, const Y: u32> Wrapped2D<T, X, Y>
+where
+    T: Num + NumCast + Copy,
+{
+    pub fn wrap_around_map(&self) -> Self {
+        Wrapped2D(Vec2D::new(Self::wrap_coordinate(self.0.x, T::from(X).unwrap()), Self::wrap_coordinate(self.0.y, T::from(Y).unwrap())))
+    }
+
+    pub fn wrap_coordinate(value: T, max_value: T) -> T {
+        (value + max_value) % max_value
+    }
+}
+
+
+impl<T, const X: u32, const Y: u32> Deref for Wrapped2D<T, X, Y> {
+    type Target = Vec2D<T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl<T> Vec2D<T>
@@ -192,6 +216,13 @@ impl<T: Num + NumCast + Copy> Vec2D<T> {
     pub fn wrap_coordinate(value: T, max_value: T) -> T {
         (value + max_value) % max_value
     }
+
+    pub fn cast<D: NumCast>(self) -> Vec2D<D> {
+        Vec2D {
+            x: D::from(self.x).unwrap(),
+            y: D::from(self.y).unwrap(),
+        }
+    }
 }
 
 impl<T, TAdd> Add<Vec2D<TAdd>> for Vec2D<T>
@@ -234,6 +265,28 @@ where
         Self::Output {
             x: self.x * T::from(rhs).unwrap(),
             y: self.y * T::from(rhs).unwrap(),
+        }
+    }
+}
+
+impl<T, TMul> Div<TMul> for Vec2D<T>
+where
+    T: Num + NumCast,
+    TMul: Num + NumCast + Copy,
+{
+    type Output = Vec2D<T>;
+
+    /// Implements the `/` operator for a `Vec2D` and a scalar.
+    ///
+    /// # Arguments
+    /// * `rhs` - The scalar value to divide by.
+    ///
+    /// # Returns
+    /// A new scaled vector.
+    fn div(self, rhs: TMul) -> Self::Output {
+        Self::Output {
+            x: self.x / T::from(rhs).unwrap(),
+            y: self.y / T::from(rhs).unwrap(),
         }
     }
 }

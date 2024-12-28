@@ -1,4 +1,3 @@
-use crate::melvin_messages;
 use prost::Message;
 use std::io::{Cursor, ErrorKind};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -6,13 +5,13 @@ use tokio::net::tcp::{ReadHalf, WriteHalf};
 use tokio::net::TcpListener;
 use tokio::sync::broadcast;
 use tokio::sync::oneshot;
-use crate::melvin_messages::{Upstream, UpstreamContent};
+use super::melvin_messages;
 
 #[derive(Debug, Clone)]
 pub enum ConsoleEndpointEvent {
     Connected,
     Disconnected,
-    Message(UpstreamContent),
+    Message(melvin_messages::UpstreamContent),
 }
 
 pub(crate) struct ConsoleEndpoint {
@@ -33,7 +32,7 @@ impl ConsoleEndpoint {
                 .read_exact(&mut buffer)
                 .await?;
 
-            if let Ok(message) = Upstream::decode(&mut Cursor::new(buffer)) {
+            if let Ok(message) = melvin_messages::Upstream::decode(&mut Cursor::new(buffer)) {
                 upstream_event_sender.send(ConsoleEndpointEvent::Message(message.content.unwrap())).unwrap();
             }
         }

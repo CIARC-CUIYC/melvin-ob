@@ -1,3 +1,7 @@
+use crate::console_communication::melvin_messages;
+use crate::flight_control::camera_controller::{CameraController, MapImage};
+use crate::flight_control::common::vec2d::Vec2D;
+
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Upstream {
     #[prost(oneof = "UpstreamContent", tags = "1, 2, 3, 4")]
@@ -32,6 +36,19 @@ pub struct Image {
     #[prost(bytes = "vec", tag = "5")]
     pub data: Vec<u8>,
 }
+
+impl Image {
+    pub(crate) fn new_full_size(encoded_image: Vec<u8>) -> Self {
+        Self {
+            height: Vec2D::<i32>::map_size().y() / MapImage::THUMBNAIL_SCALE_FACTOR as i32,
+            width: Vec2D::<i32>::map_size().x() / MapImage::THUMBNAIL_SCALE_FACTOR as i32,
+            offset_x: 0,
+            offset_y: 0,
+            data: encoded_image,
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct Telemetry {
     #[prost(int64, tag = "1")]
