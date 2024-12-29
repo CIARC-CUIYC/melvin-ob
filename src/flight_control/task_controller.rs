@@ -1,4 +1,4 @@
-use crate::flight_control::common::image_task::{ImageTask, LockedTaskQueue};
+use crate::flight_control::common::{image_task::ImageTask, locked_task_queue::LockedTaskQueue};
 use std::sync::{Arc, Condvar};
 
 #[derive(Debug)]

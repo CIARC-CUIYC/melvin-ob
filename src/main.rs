@@ -55,6 +55,8 @@ async fn watchdog(timeout: Duration, action: impl Fn() + Send + 'static) {
     action();
 }
 
+//TODO: this lint exception is only temporary 
+#[allow(clippy::too_many_lines)]
 async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>> {
     // Spawn the watchdog task
     let timeout = Duration::from_secs(7200);
@@ -112,13 +114,11 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>> {
             );
             if f_cont.state() == FlightState::Acquisition {
                 delay = TimeDelta::seconds(20);
+            }            
+            match next_image_dt(&f_cont, &orbit_coverage, delay, min_pixel) {
+                Some(next_image) => t_cont.schedule_image(next_image),
+                None => break
             }
-            let next_image = next_image_dt(&f_cont, &orbit_coverage, delay, min_pixel);
-            if next_image.get_end() < Utc::now() {
-                break;
-            }
-            t_cont.schedule_image(ImageTask::new(next_image));
-
             // if next image time is more than 6 minutes ahead -> switch to charge
             if t_cont
                 .get_time_to_next_image()
@@ -130,14 +130,12 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>> {
 
             if f_cont.state() == FlightState::Acquisition {
                 // TODO: print detailed here to debug this further
-                let image_dt = t_cont
-                    .get_time_to_next_image()
-                    .unwrap_or(DT_0);
+                let image_dt = t_cont.get_time_to_next_image().unwrap_or(DT_0);
                 let image_dt_std = image_dt.to_std().unwrap_or(Duration::from_secs(0));
                 f_cont.make_ff_call(image_dt_std).await;
             } else {
-                let sleep_duration =
-                    t_cont.get_time_to_next_image().unwrap_or(DT_0) - TimeDelta::seconds(185 - adaptable_tolerance); // tolerance for
+                let sleep_duration = t_cont.get_time_to_next_image().unwrap_or(DT_0)
+                    - TimeDelta::seconds(185 - adaptable_tolerance); // tolerance for
 
                 let sleep_duration_std = sleep_duration.to_std().unwrap_or(DT_0.to_std().unwrap());
                 adaptable_tolerance -= 1;
@@ -146,7 +144,8 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>> {
 
                 // while next image time is more than 3 minutes + tolerance -> wait
                 while t_cont
-                    .get_time_to_next_image().unwrap()
+                    .get_time_to_next_image()
+                    .unwrap()
                     .ge(&TimeDelta::seconds(185 + adaptable_tolerance))
                 {
                     tokio::time::sleep(Duration::from_millis(400)).await;
@@ -156,12 +155,16 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>> {
             }
             f_cont.update_observation().await;
             if f_cont.state() != FlightState::Acquisition {
-                let dt = t_cont.get_time_to_next_image().unwrap_or(TimeDelta::seconds(0));
+                let dt = t_cont
+                    .get_time_to_next_image()
+                    .unwrap_or(TimeDelta::seconds(0));
                 println!("[WARN] Failed to be ready and in acquisition for image in {dt}");
                 continue;
             }
             // skip duration until state transition to acquisition is finished
-            while t_cont.get_time_to_next_image().unwrap_or(DT_0)
+            while t_cont
+                .get_time_to_next_image()
+                .unwrap_or(DT_0)
                 .ge(&TimeDelta::milliseconds(100))
             {
                 tokio::time::sleep(Duration::from_millis(10)).await;
@@ -198,7 +201,7 @@ fn next_image_dt(
     map: &Bitmap,
     base_delay: TimeDelta,
     min_px: usize,
-) -> PinnedTimeDelay {
+) -> Option<ImageTask> {
     let init_pos = cont.pos_in_dt(base_delay);
     let mut time_del = PinnedTimeDelay::new(base_delay);
     let mut current_calculation_time_delta = base_delay;
@@ -216,14 +219,18 @@ fn next_image_dt(
                 time_left.num_minutes() - time_left.num_hours() * 60,
                 time_left.num_seconds() - time_left.num_minutes() * 60
             );
-            return time_del;
+            let planned_pos = Vec2D::new(
+                current_pos.x().round() as u32,
+                current_pos.y().round() as u32,
+            );
+            return Some(ImageTask::new(time_del, planned_pos, CONST_ANGLE));
         }
         current_calculation_time_delta += TimeDelta::seconds(1);
         current_pos = cont.pos_in_dt(current_calculation_time_delta);
         current_pos.wrap_around_map();
     }
     println!("[WARN] No possible image time found!");
-    PinnedTimeDelay::new(TimeDelta::seconds(-100))
+    None
 }
 
 fn calculate_orbit_coverage_map(cont: &FlightComputer, map: &mut Bitmap, max_dt: i64) {

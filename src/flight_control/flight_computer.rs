@@ -1,10 +1,9 @@
 use super::{
     camera_state::CameraAngle,
-    common::vec2d::Vec2D,
+    common::{vec2d::Vec2D, locked_task_queue::LockedTaskQueue},
     flight_state::{FlightState, TRANSITION_DELAY_LOOKUP},
     task_controller::TaskController,
 };
-use crate::flight_control::common::image_task::LockedTaskQueue;
 use crate::http_handler::{
     http_client,
     http_request::{
