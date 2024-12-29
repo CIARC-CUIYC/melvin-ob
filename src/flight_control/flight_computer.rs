@@ -154,7 +154,7 @@ impl<'a> FlightComputer<'a> {
         }
         println!("[INFO] Waiting for {} seconds!", sleep.as_secs());
         let slept_secs = i64::from(self.fast_forward(sleep).await);
-        self.image_schedule.iter_mut(|task| {
+        self.image_schedule.for_each(|task| {
             task.dt_mut().sub_delay(TimeDelta::seconds(slept_secs));
         });
         print!("[INFO] Return from Waiting!");
