@@ -7,12 +7,14 @@ use crate::http_handler::{
     http_client::HTTPClient, http_request::request_common::NoBodyHTTPRequestType,
     http_request::shoot_image_get::ShootImageRequest,
 };
-use futures::StreamExt;
+use futures::{StreamExt, TryStreamExt};
 use image::{imageops::Lanczos3, ImageReader};
+use std::io::Cursor;
 use tokio::{
     fs::File,
     io::{AsyncReadExt, AsyncWriteExt},
 };
+use tokio_util::io::StreamReader;
 
 /// Represents a controller that manages camera operations, including saving images to disk
 /// or a buffer, and updating regions within a bitmap representation.
@@ -37,10 +39,7 @@ impl CameraController {
     pub fn new() -> Self {
         let bitmap = Bitmap::from_map_size();
         let buffer = Buffer::from_map_size();
-        Self {
-            bitmap,
-            buffer,
-        }
+        Self { bitmap, buffer }
     }
 
     /// Creates a `CameraController` instance by deserializing its content from a binary file.
@@ -121,16 +120,13 @@ impl CameraController {
             controller.update_observation(),
             self.fetch_image_data(http_client)
         );
-        let decoded_image = Self::decode_png_data(
-            &collected_png.expect("[ERROR] PNG couldn't be unwrapped"),
-            angle,
-        )?;
+        let collected_png = collected_png?;
+        let decoded_image = Self::decode_and_resize_png(collected_png, angle)?;
         let position = controller.current_pos();
         let pos_x = position.x().round() as i32;
         let pos_y = position.y().round() as i32;
-        let angle_const = i32::from(angle.get_square_side_length()/2);
+        let angle_const = i32::from(angle.get_square_side_length() / 2);
 
-        // TODO: maybe this can work in parallel?
         for (i, row) in (pos_x - angle_const..pos_x + angle_const).enumerate() {
             for (j, col) in (pos_y - angle_const..pos_y + angle_const).enumerate() {
                 let row_u32 = u32::try_from(row).expect("[FATAL] Conversion to u32 failed!");
@@ -138,7 +134,6 @@ impl CameraController {
                 let mut coord2d = Vec2D::new(row_u32, col_u32);
                 coord2d.wrap_around_map();
                 let pixel = decoded_image.get_pixel(i as u32, j as u32);
-
                 self.buffer.save_pixel(coord2d, pixel.0);
             }
         }
@@ -161,15 +156,14 @@ impl CameraController {
         &mut self,
         http_client: &HTTPClient,
     ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        let response_stream = ShootImageRequest {}.send_request(http_client).await?;
+        let stream = ShootImageRequest {}.send_request(http_client).await?;
+        let mapped_stream = stream.map(|result| {
+            result.map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))
+        });
+        let mut reader = StreamReader::new(mapped_stream);
 
         let mut collected_png: Vec<u8> = Vec::new();
-        futures::pin_mut!(response_stream);
-
-        while let Some(Ok(chunk_result)) = response_stream.next().await {
-            collected_png.extend_from_slice(&chunk_result[..]);
-        }
-
+        reader.read_to_end(&mut collected_png).await?;
         Ok(collected_png)
     }
 
@@ -184,24 +178,24 @@ impl CameraController {
     ///
     /// # Returns
     /// A resized RGB image.
-    fn decode_png_data(
-        collected_png: &[u8],
+    fn decode_and_resize_png(
+        png: Vec<u8>,
         angle: CameraAngle,
     ) -> Result<image::RgbImage, Box<dyn std::error::Error>> {
-        let decoded_image = ImageReader::new(std::io::Cursor::new(collected_png))
+        let mut decoded_image = ImageReader::new(Cursor::new(png))
             .with_guessed_format()?
             .decode()?
             .to_rgb8();
-        let resized_unit_length = angle.get_square_side_length();
-
-        let resized_image = image::imageops::resize(
-            &decoded_image,
-            u32::from(resized_unit_length),
-            u32::from(resized_unit_length),
-            Lanczos3,
-        );
-
-        Ok(resized_image)
+        let resized_unit_length = u32::from(angle.get_square_side_length());
+        if resized_unit_length > decoded_image.height() {
+            decoded_image = image::imageops::resize(
+                &decoded_image,
+                resized_unit_length,
+                resized_unit_length,
+                Lanczos3,
+            );
+        }
+        Ok(decoded_image)
     }
 
     /// Exports the current state of the `CameraController` to a binary file.
