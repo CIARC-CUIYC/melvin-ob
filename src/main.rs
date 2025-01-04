@@ -1,15 +1,13 @@
 use std::cmp::min;
-use std::panic;
 use std::time::Duration;
 mod flight_control;
 mod http_handler;
 
-use crate::flight_control::common::image_task::ImageTask;
-use crate::flight_control::task_controller::TaskController;
 use crate::flight_control::{
+    task_controller::TaskController,
     camera_controller::CameraController,
     camera_state::CameraAngle,
-    common::{bitmap::Bitmap, pinned_dt::PinnedTimeDelay, vec2d::Vec2D},
+    common::{bitmap::Bitmap, pinned_dt::PinnedTimeDelay, vec2d::Vec2D, image_task::ImageTask},
     flight_computer::FlightComputer,
     flight_state::FlightState,
 };
@@ -34,7 +32,7 @@ const DT_0: TimeDelta = TimeDelta::seconds(0);
 async fn main() {
     let mut finished = false;
     while !finished {
-        let result = panic::AssertUnwindSafe(execute_main_loop())
+        let result = std::panic::AssertUnwindSafe(execute_main_loop())
             .catch_unwind()
             .await;
         match result {
