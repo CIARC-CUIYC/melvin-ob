@@ -1,12 +1,12 @@
+use num::traits::{real::Real, Num, NumAssignOps, NumCast};
 use std::ops::{Add, Mul, Sub};
-use num_traits::{Num, NumAssignOps, NumCast, real::Real};
 
 /// A 2D vector generic over any numeric type.
 ///
 /// # Fields
 /// - `x`: The x-coordinate of the `Vec2D` as a `T`.
 /// - `y`: The y-coordinate of the `Vec2D` as a `T`.
-/// 
+///
 /// This struct represents a 2D point or vector in space and provides common
 /// mathematical operations such as addition, normalization, rotation, and distance calculations.
 ///
@@ -38,6 +38,16 @@ where T: Real + NumCast + NumAssignOps
     /// A new vector representing the direction from `self` to `other`.
     pub fn to(&self, other: &Vec2D<T>) -> Vec2D<T> {
         Vec2D::new(other.x - self.x, other.y - self.y)
+    }
+
+    /// Rounds all values in a vector to a given number of decimal places.
+    ///
+    /// # Arguments
+    /// * `dec_places` - The number of decimal places.
+    pub fn round_all(&mut self, dec_places: u8) {
+        let multiplier = T::from(10.0).unwrap().powi(dec_places as i32);
+        self.x = (self.x * multiplier).round() / multiplier;
+        self.y = (self.y * multiplier).round() / multiplier;
     }
 
     /// Normalizes the vector to have a magnitude of 1.
@@ -87,7 +97,7 @@ impl<T: Copy> Vec2D<T> {
     /// # Returns
     /// A new `Vec2D` object.
     pub fn new(x: T, y: T) -> Self { Self { x, y } }
-    
+
     /// Returns the x-component of the vector.
     ///
     /// # Returns
@@ -117,8 +127,8 @@ impl<T: Num + NumCast + Copy> Vec2D<T> {
     pub fn dot(self, other: Vec2D<T>) -> T { self.x * other.x + self.y * other.y }
 
     /// Computes the Euclidean distance between the current vector and another vector as an `f64`.
-    /// This enables Euclidean distance calculation for integer type `T`. 
-    /// 
+    /// This enables Euclidean distance calculation for integer type `T`.
+    ///
     /// # Arguments
     /// * `other` - Another `Vec2D` vector to compute the distance to.
     ///
@@ -193,9 +203,7 @@ impl<T: Num + NumCast + Copy> Vec2D<T> {
     ///
     /// # Returns
     /// The wrapped coordinate as type `T`.
-    pub fn wrap_coordinate(value: T, max_value: T) -> T {
-        (value + max_value) % max_value
-    }
+    pub fn wrap_coordinate(value: T, max_value: T) -> T { (value + max_value) % max_value }
 }
 
 impl<T, TAdd> Add<Vec2D<TAdd>> for Vec2D<T>
@@ -239,6 +247,21 @@ where
             x: self.x * T::from(rhs).unwrap(),
             y: self.y * T::from(rhs).unwrap(),
         }
+    }
+}
+
+impl<T, TSub> Sub<Vec2D<TSub>> for Vec2D<T>
+where
+    T: Real + NumCast,
+    TSub: Num + NumCast,
+{
+    type Output = Vec2D<T>;
+
+    fn sub(self, rhs: Vec2D<TSub>) -> Self::Output { 
+        Self::Output {
+            x: self.x - T::from(rhs.x).unwrap(),
+            y: self.y - T::from(rhs.y).unwrap(),
+        } 
     }
 }
 

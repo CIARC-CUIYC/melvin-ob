@@ -1,9 +1,10 @@
 use super::{
     camera_state::CameraAngle,
-    common::{vec2d::Vec2D, locked_task_queue::LockedTaskQueue},
+    common::{locked_task_queue::LockedTaskQueue, vec2d::Vec2D},
     flight_state::{FlightState, TRANSITION_DELAY_LOOKUP},
     task_controller::TaskController,
 };
+use crate::http_handler::http_request::reset_get::ResetRequest;
 use crate::http_handler::{
     http_client,
     http_request::{
@@ -68,10 +69,17 @@ pub struct FlightComputer<'a> {
 impl<'a> FlightComputer<'a> {
     /// Acceleration factor for calculations involving velocity and state transitions.
     const ACCELERATION: f32 = 0.04;
+    const ACCEL_COMP_FACT: f32 = 2.0;
     /// Minimum threshold duration for triggering normal-speed fast-forward operations.
     const FAST_FORWARD_SECONDS_THRESHOLD: Duration = Duration::from_secs(15);
     /// Maximum multiplier allowed during simulation's time speed adjustments.
     const MAX_TIME_SPEED_MULTIPLIER: i32 = 20;
+    /// Maximum decimal places that are used in the observation endpoint for velocity
+    const VEL_BE_MAX_DECIMAL: u8 = 2;
+    /// Constant timeout for the `wait_for_condition`-method
+    const WAIT_FOR_CONDITION_TIMEOUT: u16 = 3000;
+    /// Constant timeout for the `wait_for_condition`-method
+    const WAIT_FOR_CONDITION_POLL_INTERVAL: u16 = 500;
 
     /// Initializes a new `FlightComputer` instance.
     ///
@@ -141,6 +149,14 @@ impl<'a> FlightComputer<'a> {
     /// - A `FlightState` enum denoting the active operational state.
     pub fn state(&self) -> FlightState { self.current_state }
 
+    pub async fn reset(&mut self) {
+        ResetRequest {}
+            .send_request(self.request_client)
+            .await
+            .expect("ERROR: Failed to reset");
+        self.update_observation().await;
+    }
+
     /// Fast-forwards the simulation or waits for a specified duration.
     ///
     /// Adjusts delays for all scheduled images in `next_image_schedule` after waiting.
@@ -169,6 +185,26 @@ impl<'a> FlightComputer<'a> {
                 time_left.num_seconds() - time_left.num_minutes() * 60
             );
         }
+    }
+
+    async fn wait_for_condition<F>(
+        &mut self,
+        condition: F,
+        timeout_millis: u16,
+        poll_interval: u16,
+    ) -> u128
+    where
+        F: Fn(&Self) -> bool,
+    {
+        let start_time = std::time::Instant::now();
+        while start_time.elapsed().as_millis() < u128::from(timeout_millis) {
+            if condition(self) {
+                return start_time.elapsed().as_millis();
+            }
+            self.update_observation().await;
+            tokio::time::sleep(Duration::from_millis(u64::from(poll_interval))).await;
+        }
+        start_time.elapsed().as_millis()
     }
 
     /// Handles fast-forwarding for the simulation using optimal multipliers.
@@ -308,19 +344,19 @@ impl<'a> FlightComputer<'a> {
     }
 
     /// Adjusts the velocity of the satellite and optionally restores the previous state.
+    /// Uses fast-forwarding!
     ///
     /// # Arguments
     /// - `new_vel`: The target velocity vector.
     /// - `switch_back_to_init_state`: Whether to revert to the initial state after adjusting velocity.
-    pub async fn set_vel(&mut self, new_vel: Vec2D<f32>, switch_back_to_init_state: bool) {
+    pub async fn set_vel_ff(&mut self, mut new_vel: Vec2D<f32>, switch_back_to_init_state: bool) {
         let init_state = self.current_state;
         if init_state != FlightState::Acquisition {
             self.state_change_ff(FlightState::Acquisition).await;
         }
         // TODO: there is a http error in this method
-        let dv = new_vel.to(&self.current_vel).abs();
-        let sleep_time = dv / Self::ACCELERATION * 2.0;
-        self.update_observation().await;
+        let dv = new_vel.to(&self.current_vel);
+        let dt = dv.abs() / Self::ACCELERATION * Self::ACCEL_COMP_FACT;
         loop {
             let req = ControlSatelliteRequest {
                 vel_x: new_vel.x(),
@@ -330,8 +366,7 @@ impl<'a> FlightComputer<'a> {
             };
             match req.send_request(self.request_client).await {
                 Ok(_) => {
-                    self.make_ff_call(Duration::from_secs_f32(sleep_time + 1.0))
-                        .await;
+                    self.make_ff_call(Duration::from_secs_f32(dt + 1.0)).await;
                     self.update_observation().await;
                     break;
                 }
@@ -339,9 +374,16 @@ impl<'a> FlightComputer<'a> {
                     println!("[ERROR] Unnoticed HTTP Error in rotate_vel"); /* TODO: log error here */
                 }
             }
-            if switch_back_to_init_state {
-                self.state_change_ff(init_state).await;
-            }
+        }
+        new_vel.round_all(Self::VEL_BE_MAX_DECIMAL);
+        let waited_all = self.wait_for_condition(
+            |cont: &FlightComputer| cont.current_vel == new_vel,
+            Self::WAIT_FOR_CONDITION_TIMEOUT,
+            Self::WAIT_FOR_CONDITION_POLL_INTERVAL,
+        ).await;
+        println!("[LOG] Waited for all conditions: {}", waited_all/1000);
+        if switch_back_to_init_state {
+            self.state_change_ff(init_state).await;
         }
     }
 
@@ -400,10 +442,11 @@ impl<'a> FlightComputer<'a> {
     /// # Arguments
     /// - `angle_degrees`: The angle (in degrees) by which to rotate the velocity vector.
     /// - `accel_factor`: A scalar factor to apply to accelerate the satellite.
-    pub async fn rotate_vel(&mut self, angle_degrees: f32, accel_factor: f32) {
+    pub async fn rotate_vel_ff(&mut self, angle_degrees: f32, accel_factor: f32) {
         let mut current_vel = self.current_vel;
         current_vel.rotate_by(angle_degrees);
-        self.set_vel(current_vel * (1.0 + accel_factor), true).await;
+        self.set_vel_ff(current_vel * (1.0 + accel_factor), true)
+            .await;
     }
 
     /// Predicts the satellite’s position after a specified time interval.

@@ -1,33 +1,69 @@
-use std::cmp::min;
-use std::time::Duration;
 mod flight_control;
 mod http_handler;
 
 use crate::flight_control::{
-    task_controller::TaskController,
     camera_controller::CameraController,
     camera_state::CameraAngle,
-    common::{bitmap::Bitmap, pinned_dt::PinnedTimeDelay, vec2d::Vec2D, image_task::ImageTask},
+    common::{bitmap::Bitmap, image_task::ImageTask, pinned_dt::PinnedTimeDelay, vec2d::Vec2D},
     flight_computer::FlightComputer,
     flight_state::FlightState,
-};
-use crate::http_handler::http_request::{
-    request_common::NoBodyHTTPRequestType, reset_get::ResetRequest,
+    task_controller::TaskController,
 };
 use chrono::{TimeDelta, Utc};
-use futures::FutureExt;
-use rand::Rng;
-use tokio::time;
+use futures::TryFutureExt;
+
+use crate::flight_control::orbit::closed_orbit::Orbit;
+use crate::http_handler::http_client::HTTPClient;
 
 const FUEL_RESET_THRESHOLD: f32 = 20.0;
-const BIN_FILEPATH: &str = "camera_controller_narrow.bin";
 const MIN_PX_LEFT_FACTOR: f32 = 0.05;
-const MIN_BATTERY_THRESHOLD: f32 = 20.0;
-const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 const ACCEL_FACTOR: f32 = 0.6;
 const CHARGE_TIME_THRESHOLD: TimeDelta = TimeDelta::seconds(370);
 const DT_0: TimeDelta = TimeDelta::seconds(0);
 
+
+const STATIC_ORBIT_VEL: (f32, f32) = (5.0, 5.0);
+const MIN_BATTERY_THRESHOLD: f32 = 10.0;
+const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
+const BIN_FILEPATH: &str = "camera_controller_narrow.bin";
+const ACQUISITION_DISCHARGE:f32 = 0.2;
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
+async fn main() {
+    let client = HTTPClient::new("http://localhost:33000");
+    let t_cont = TaskController::new();
+    let mut c_cont = CameraController::from_file(BIN_FILEPATH)
+        .await
+        .unwrap_or_else(|e| {
+            println!("[WARN] Failed to read from binary file: {e}");
+            CameraController::new()
+        });
+    let mut f_cont = FlightComputer::new(&client, &t_cont).await;
+    f_cont.reset().await;
+    f_cont.set_vel_ff(STATIC_ORBIT_VEL.into(), false).await;
+    f_cont.set_angle(CONST_ANGLE).await;
+    let orbit = Orbit::new(f_cont.current_pos(), f_cont.current_vel());
+    let period = orbit
+        .period()
+        .expect("[FATAL] Static orbit is not closed!")
+        .round() as i64;
+    let img_dt = orbit.max_image_dt(CONST_ANGLE).expect("[FATAL] Static orbit is not overlapping enough");
+    
+    // first orbit-behaviour loop
+    while orbit.start_timestamp() + chrono::Duration::seconds(period) > Utc::now() {
+        while f_cont.current_battery() >= MIN_BATTERY_THRESHOLD {
+            c_cont.shoot_image_to_buffer(&client, &mut f_cont, CONST_ANGLE).await.unwrap();
+            let secs_to_min_batt = (f_cont.current_battery() - MIN_BATTERY_THRESHOLD)/ ACQUISITION_DISCHARGE;
+            let sleep_time = (secs_to_min_batt - 0.5).min(img_dt);
+            f_cont.make_ff_call(std::time::Duration::from_secs(sleep_time as u64)).await;
+            f_cont.update_observation().await;
+        }
+        f_cont.charge_until(100.0).await;
+    }
+}
+
+/* // TODO: legacy code
 #[tokio::main]
 async fn main() {
     let mut finished = false;
@@ -53,7 +89,7 @@ async fn watchdog(timeout: Duration, action: impl Fn() + Send + 'static) {
     action();
 }
 
-//TODO: this lint exception is only temporary 
+//TODO: this lint exception is only temporary
 #[allow(clippy::too_many_lines)]
 async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>> {
     // Spawn the watchdog task
@@ -112,10 +148,10 @@ async fn execute_main_loop() -> Result<(), Box<dyn std::error::Error>> {
             );
             if f_cont.state() == FlightState::Acquisition {
                 delay = TimeDelta::seconds(20);
-            }            
+            }
             match next_image_dt(&f_cont, &orbit_coverage, delay, min_pixel) {
                 Some(next_image) => t_cont.schedule_image(next_image),
-                None => break
+                None => break,
             }
             // if next image time is more than 6 minutes ahead -> switch to charge
             if t_cont
@@ -252,3 +288,4 @@ fn calculate_orbit_coverage_map(cont: &FlightComputer, map: &mut Bitmap, max_dt:
         dt += 1;
     }
 }
+*/
