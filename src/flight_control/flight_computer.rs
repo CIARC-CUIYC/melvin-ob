@@ -14,10 +14,10 @@ use crate::http_handler::{
         request_common::{JSONBodyHTTPRequestType, NoBodyHTTPRequestType},
     },
 };
-use chrono::TimeDelta;
-use std::sync::Arc;
-use std::{cmp::min, time::Duration};
+use std::{sync::Arc, time::Duration, cmp::min};
 use tokio::time::sleep;
+use chrono::TimeDelta;
+use crate::CHARGE_CHARGE_PER_S;
 
 /// Represents the core flight computer for satellite control.
 /// It manages operations such as state changes, velocity updates,
@@ -66,10 +66,14 @@ pub struct FlightComputer<'a> {
     image_schedule: Arc<LockedTaskQueue>,
 }
 
+pub enum ChargeCommand{
+    TargetCharge(f32),
+    Duration(chrono::Duration),
+}
+
 impl<'a> FlightComputer<'a> {
     /// Acceleration factor for calculations involving velocity and state transitions.
-    const ACCELERATION: f32 = 0.04;
-    const ACCEL_COMP_FACT: f32 = 2.0;
+    const ACCELERATION: f32 = 0.02;
     /// Minimum threshold duration for triggering normal-speed fast-forward operations.
     const FAST_FORWARD_SECONDS_THRESHOLD: Duration = Duration::from_secs(15);
     /// Maximum multiplier allowed during simulation's time speed adjustments.
@@ -163,15 +167,15 @@ impl<'a> FlightComputer<'a> {
     ///
     /// # Arguments
     /// - `sleep`: The duration for which the system should wait or fast-forward.
-    pub async fn make_ff_call(&mut self, sleep: Duration) {
+    pub async fn make_ff_call(&mut self, sleep: Duration) -> i64 {
         if sleep.as_secs() == 0 {
             println!("[LOG] Wait call rejected! Duration was 0!");
-            return;
+            return 0;
         }
         println!("[INFO] Waiting for {} seconds!", sleep.as_secs());
-        let slept_secs = i64::from(self.fast_forward(sleep).await);
+        let saved_secs = i64::from(self.fast_forward(sleep).await);
         self.image_schedule.for_each(|task| {
-            task.dt_mut().sub_delay(TimeDelta::seconds(slept_secs));
+            task.dt_mut().sub_delay(TimeDelta::seconds(saved_secs));
         });
         print!("[INFO] Return from Waiting!");
         if self.image_schedule.is_empty() {
@@ -185,6 +189,7 @@ impl<'a> FlightComputer<'a> {
                 time_left.num_seconds() - time_left.num_minutes() * 60
             );
         }
+        saved_secs
     }
 
     async fn wait_for_condition<F>(
@@ -275,11 +280,20 @@ impl<'a> FlightComputer<'a> {
     ///
     /// # Arguments
     /// - `target_battery`: The desired target battery level (percentage).
-    pub async fn charge_until(&mut self, target_battery: f32) {
+    pub async fn charge_until(&mut self, command: ChargeCommand) {
+        let initial_state = self.current_state;
+        let target_battery = match command {
+            ChargeCommand::TargetCharge(target) => target,
+            ChargeCommand::Duration(mut dt) => {
+                if initial_state != FlightState::Charge{
+                    dt -= TimeDelta::seconds(2 * 180)
+                }
+                self.current_battery + dt.num_seconds() as f32 * CHARGE_CHARGE_PER_S
+            }
+        };
         let charge_rate: f32 = FlightState::Charge.get_charge_rate();
         let charge_time_s = ((target_battery - self.current_battery) / charge_rate) * 2.0;
         let charge_time = Duration::from_secs_f32(charge_time_s);
-        let initial_state = self.current_state;
         self.state_change_ff(FlightState::Charge).await;
         self.make_ff_call(charge_time).await;
         self.state_change_ff(initial_state).await;
@@ -355,8 +369,7 @@ impl<'a> FlightComputer<'a> {
             self.state_change_ff(FlightState::Acquisition).await;
         }
         // TODO: there is a http error in this method
-        let dv = new_vel.to(&self.current_vel);
-        let dt = dv.abs() / Self::ACCELERATION * Self::ACCEL_COMP_FACT;
+        let dt = new_vel.to(&self.current_vel).abs() / Self::ACCELERATION;
         loop {
             let req = ControlSatelliteRequest {
                 vel_x: new_vel.x(),
