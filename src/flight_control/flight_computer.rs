@@ -281,12 +281,14 @@ impl<'a> FlightComputer<'a> {
     /// # Arguments
     /// - `target_battery`: The desired target battery level (percentage).
     pub async fn charge_until(&mut self, command: ChargeCommand) {
+        // TODO: make this work in parallel (calculation || state_change to charge)
+        self.update_observation().await;
         let initial_state = self.current_state;
         let target_battery = match command {
             ChargeCommand::TargetCharge(target) => target,
             ChargeCommand::Duration(mut dt) => {
                 if initial_state != FlightState::Charge{
-                    dt -= TimeDelta::seconds(2 * 180)
+                    dt -= TimeDelta::seconds(2 * 180);
                 }
                 self.current_battery + dt.num_seconds() as f32 * CHARGE_CHARGE_PER_S
             }

@@ -129,12 +129,12 @@ impl CameraController {
 
         for (i, row) in (pos_x - angle_const..pos_x + angle_const).enumerate() {
             for (j, col) in (pos_y - angle_const..pos_y + angle_const).enumerate() {
-                let row_u32 = u32::try_from(row).expect("[FATAL] Conversion to u32 failed!");
-                let col_u32 = u32::try_from(col).expect("[FATAL] Conversion to u32 failed!");
-                let mut coord2d = Vec2D::new(row_u32, col_u32);
+                let mut coord2d = Vec2D::new(row, col);
                 coord2d.wrap_around_map();
+                let x_u32 = u32::try_from(coord2d.x()).expect("[FATAL] Conversion error!");
+                let y_u32 = u32::try_from(coord2d.y()).expect("[FATAL] Conversion error!");
                 let pixel = decoded_image.get_pixel(i as u32, j as u32);
-                self.buffer.save_pixel(coord2d, pixel.0);
+                self.buffer.save_pixel((x_u32, y_u32).into(), pixel.0);
             }
         }
         self.bitmap

@@ -1,7 +1,6 @@
 mod flight_control;
 mod http_handler;
 
-use std::cmp::min;
 use crate::flight_control::{
     camera_controller::CameraController,
     camera_state::CameraAngle,
@@ -14,6 +13,7 @@ use crate::flight_control::{
 };
 use crate::http_handler::http_client::HTTPClient;
 use chrono::TimeDelta;
+use std::cmp::min;
 
 const FUEL_RESET_THRESHOLD: f32 = 20.0;
 const MIN_PX_LEFT_FACTOR: f32 = 0.05;
@@ -21,7 +21,7 @@ const ACCEL_FACTOR: f32 = 0.6;
 const CHARGE_TIME_THRESHOLD: TimeDelta = TimeDelta::seconds(370);
 const DT_0: TimeDelta = TimeDelta::seconds(0);
 
-const STATIC_ORBIT_VEL: (f32, f32) = (6.4f32, 7.52f32);
+const STATIC_ORBIT_VEL: (f32, f32) = (6.4f32, 7.4f32);
 pub const MIN_BATTERY_THRESHOLD: f32 = 10.0;
 pub const MAX_BATTERY_THRESHOLD: f32 = 100.0;
 const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
@@ -60,27 +60,53 @@ async fn main() {
 
     // first orbit-behaviour loop
     loop {
-        while f_cont.current_battery() >= MIN_BATTERY_THRESHOLD {
+        let mut break_flag = false;
+        loop {
             c_cont
                 .shoot_image_to_buffer(&client, &mut f_cont, CONST_ANGLE)
                 .await
                 .unwrap();
-            
+
+            if break_flag {
+                break;
+            }
+
             let secs_to_min_batt =
                 (f_cont.current_battery() - MIN_BATTERY_THRESHOLD) / ACQUISITION_DISCHARGE_PER_S;
-            let mut sleep_time = (secs_to_min_batt - 0.5).min(img_dt) as u64;
-            sleep_time = min(sleep_time, (orbit_s_end - chrono::Utc::now()).num_seconds() as u64);
-            
-            let skipped_time = f_cont.make_ff_call(std::time::Duration::from_secs(sleep_time)).await;
+            let secs_to_orbit_end = (orbit_s_end - chrono::Utc::now()).num_seconds() as u64;
+            let mut sleep_time = img_dt as u64;
+
+            if secs_to_min_batt < img_dt {
+                sleep_time = secs_to_min_batt as u64;
+                break_flag = true;
+            }
+            if secs_to_orbit_end < sleep_time {
+                sleep_time = secs_to_orbit_end;
+                break_flag = true;
+            }
+
+            let skipped_time = f_cont
+                .make_ff_call(std::time::Duration::from_secs(sleep_time))
+                .await;
             orbit_s_end -= TimeDelta::seconds(skipped_time);
-            
+
             f_cont.update_observation().await;
         }
-        f_cont.charge_until(TargetCharge(MAX_BATTERY_THRESHOLD)).await;
-        if chrono::Utc::now() < orbit_s_end {
-            println!("[LOG] First orbit over, position: {:?}", f_cont.current_pos());
-            break
+
+        if chrono::Utc::now() > orbit_s_end {
+            println!(
+                "[LOG] First orbit over, position: {:?}",
+                f_cont.current_pos()
+            );
+            break;
         };
+
+        tokio::join!(
+            c_cont.export_bin(BIN_FILEPATH),
+            f_cont.charge_until(TargetCharge(MAX_BATTERY_THRESHOLD))
+        )
+        .0
+        .unwrap();
     }
 }
 
