@@ -4,16 +4,14 @@ mod http_handler;
 use crate::flight_control::{
     camera_controller::CameraController,
     camera_state::CameraAngle,
-    common::{bitmap::Bitmap, image_task::ImageTask, pinned_dt::PinnedTimeDelay, vec2d::Vec2D},
     flight_computer::FlightComputer,
     flight_state::FlightState,
     task_controller::TaskController,
+    common::orbit::Orbit
 };
-use chrono::{TimeDelta, Utc};
-use futures::TryFutureExt;
-
-use crate::flight_control::orbit::closed_orbit::Orbit;
 use crate::http_handler::http_client::HTTPClient;
+use chrono::{TimeDelta, Utc};
+
 
 const FUEL_RESET_THRESHOLD: f32 = 20.0;
 const MIN_PX_LEFT_FACTOR: f32 = 0.05;
@@ -21,12 +19,11 @@ const ACCEL_FACTOR: f32 = 0.6;
 const CHARGE_TIME_THRESHOLD: TimeDelta = TimeDelta::seconds(370);
 const DT_0: TimeDelta = TimeDelta::seconds(0);
 
-
 const STATIC_ORBIT_VEL: (f32, f32) = (5.0, 5.0);
 const MIN_BATTERY_THRESHOLD: f32 = 10.0;
 const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 const BIN_FILEPATH: &str = "camera_controller_narrow.bin";
-const ACQUISITION_DISCHARGE:f32 = 0.2;
+const ACQUISITION_DISCHARGE: f32 = 0.2;
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
@@ -43,20 +40,29 @@ async fn main() {
     f_cont.reset().await;
     f_cont.set_vel_ff(STATIC_ORBIT_VEL.into(), false).await;
     f_cont.set_angle(CONST_ANGLE).await;
+    let orbit_init_battery = f_cont.current_battery();
     let orbit = Orbit::new(f_cont.current_pos(), f_cont.current_vel());
     let period = orbit
         .period()
         .expect("[FATAL] Static orbit is not closed!")
         .round() as i64;
-    let img_dt = orbit.max_image_dt(CONST_ANGLE).expect("[FATAL] Static orbit is not overlapping enough");
-    
+    let img_dt = orbit
+        .max_image_dt(CONST_ANGLE)
+        .expect("[FATAL] Static orbit is not overlapping enough");
+
     // first orbit-behaviour loop
     while orbit.start_timestamp() + chrono::Duration::seconds(period) > Utc::now() {
         while f_cont.current_battery() >= MIN_BATTERY_THRESHOLD {
-            c_cont.shoot_image_to_buffer(&client, &mut f_cont, CONST_ANGLE).await.unwrap();
-            let secs_to_min_batt = (f_cont.current_battery() - MIN_BATTERY_THRESHOLD)/ ACQUISITION_DISCHARGE;
+            c_cont
+                .shoot_image_to_buffer(&client, &mut f_cont, CONST_ANGLE)
+                .await
+                .unwrap();
+            let secs_to_min_batt =
+                (f_cont.current_battery() - MIN_BATTERY_THRESHOLD) / ACQUISITION_DISCHARGE;
             let sleep_time = (secs_to_min_batt - 0.5).min(img_dt);
-            f_cont.make_ff_call(std::time::Duration::from_secs(sleep_time as u64)).await;
+            f_cont
+                .make_ff_call(std::time::Duration::from_secs(sleep_time as u64))
+                .await;
             f_cont.update_observation().await;
         }
         f_cont.charge_until(100.0).await;

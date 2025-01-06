@@ -1,5 +1,5 @@
 use crate::flight_control::camera_state::CameraAngle;
-use crate::flight_control::common::modular_arithmetics::{fmod_f32, gcd_f32, lcm_f32};
+use crate::flight_control::common::math::{fmod_f32, gcd_f32, lcm_f32};
 use crate::flight_control::common::vec2d::Vec2D;
 
 pub struct Orbit {
