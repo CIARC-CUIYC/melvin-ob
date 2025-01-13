@@ -12,7 +12,12 @@ use crate::flight_control::{
     task_controller::TaskController,
 };
 use crate::http_handler::http_client::HTTPClient;
+use crate::http_handler::http_request::observation_get::ObservationRequest;
+use crate::http_handler::http_request::request_common::NoBodyHTTPRequestType;
 use chrono::TimeDelta;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::sync::Arc;
 
 const FUEL_RESET_THRESHOLD: f32 = 20.0;
 const MIN_PX_LEFT_FACTOR: f32 = 0.05;
@@ -27,23 +32,31 @@ const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 const BIN_FILEPATH: &str = "camera_controller_narrow.bin";
 const ACQUISITION_DISCHARGE_PER_S: f32 = 0.2;
 const CHARGE_CHARGE_PER_S: f32 = 0.2;
-const JUST_CONVERT: bool = true;
+
+const JUST_CONVERT: bool = false;
+const LOG_POS: bool = true;
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
+    let client = Arc::new(HTTPClient::new("http://localhost:33000"));
+
     if JUST_CONVERT {
         just_convert().await;
         return;
     }
 
-    let client = HTTPClient::new("http://localhost:33000");
+    if LOG_POS {
+        let thread_client = Arc::clone(&client);
+        tokio::spawn(async move {log_pos(thread_client).await});
+    }
+
     let t_cont = TaskController::new();
     let mut c_cont = CameraController::from_file(BIN_FILEPATH).await.unwrap_or_else(|e| {
         println!("[WARN] Failed to read from binary file: {e}");
         CameraController::new()
     });
-    let mut f_cont = FlightComputer::new(&client, &t_cont).await;
+    let mut f_cont = FlightComputer::new(&*client, &t_cont).await;
 
     f_cont.reset().await;
     f_cont.set_vel_ff(STATIC_ORBIT_VEL.into(), false).await;
@@ -102,6 +115,36 @@ async fn main() {
         )
         .0
         .unwrap();
+    }
+}
+
+async fn log_pos(http_handler: Arc<HTTPClient>) {
+    let mut positions: Vec<(i32, i32)> = Vec::new();
+    let mut next_save = chrono::Utc::now() + chrono::Duration::seconds(300);
+    loop {
+        match (ObservationRequest {}.send_request(&http_handler).await) {
+            Ok(obs) => {
+                let pos = (obs.pos_x() as i32, obs.pos_y() as i32);
+                positions.push(pos);
+            }
+            Err(_) => {}
+        }
+        if next_save < chrono::Utc::now() {
+            match OpenOptions::new().create(true).append(true).open("pos.csv") {
+                Ok(mut f) => {
+                    for (x, y) in positions.iter() {
+                        writeln!(f, "{},{}", x, y).unwrap();
+                    }
+                    next_save = chrono::Utc::now() + chrono::Duration::seconds(300);
+                    positions.clear();
+                }
+                Err(_) => {
+                    println!("[WARN] Failed to open pos.csv for writing!");
+                    continue;
+                }
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
 }
 
