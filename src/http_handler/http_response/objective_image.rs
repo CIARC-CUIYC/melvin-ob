@@ -13,6 +13,6 @@ impl HTTPResponseType for ObjectiveImageResponse {
         response: reqwest::Response,
     ) -> Result<Self::ParsedResponseType, ResponseError> {
         let response = Self::unwrap_return_code(response).await?;
-        Ok(Self::parse_json_body(response).await?)
+        Self::parse_json_body(response).await
     }
 }

@@ -123,8 +123,8 @@ impl CameraController {
         let collected_png = collected_png?;
         let decoded_image = Self::decode_and_resize_png(collected_png, angle)?;
         let position = controller.current_pos();
-        let pos_x = position.x().round() as i32;
-        let pos_y = position.y().round() as i32;
+        let pos_x = position.x() as i32;
+        let pos_y = position.y() as i32;
         let angle_const = i32::from(angle.get_square_side_length() / 2);
 
         for (i, row) in (pos_x - angle_const..pos_x + angle_const).enumerate() {

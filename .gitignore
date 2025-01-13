@@ -25,3 +25,5 @@ Cargo.lock
 #Custom
 .idea
 *.bin
+legacy/
+world.png

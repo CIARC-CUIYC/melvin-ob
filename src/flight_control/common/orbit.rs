@@ -51,8 +51,8 @@ impl Orbit {
         } else {
             let gcd_x = gcd_i32(*self.vel_exact.x().numer(), Vec2D::map_size().x());
             let gcd_y = gcd_i32(*self.vel_exact.y().numer(), Vec2D::map_size().y());
-            let t_x = Vec2D::<f64>::map_size().x() / gcd_x as f64;
-            let t_y = Vec2D::<f64>::map_size().y() / gcd_y as f64;
+            let t_x = Vec2D::<f64>::map_size().x() / f64::from(gcd_x);
+            let t_y = Vec2D::<f64>::map_size().y() / f64::from(gcd_y);
             let tts = lcm_f64(
                 t_x * f64::from(*self.vel_exact.x().denom()),
                 t_y * f64::from(*self.vel_exact.y().denom()),
@@ -91,7 +91,7 @@ impl Orbit {
                 let dominant_vel = self.vel.x().max(self.vel.y());
                 let overlap_hor = ver_wrap_hor_dist - (img_side_length / 2.0);
                 let overlap_ver = hor_wrap_ver_dist - (img_side_length / 2.0);
-                if overlap_hor < img_side_length / 2.0 || overlap_ver < img_side_length / 2.0 {
+                if overlap_hor < img_side_length || overlap_ver < img_side_length {
                     if self.vel.x() / Vec2D::<f32>::map_size().x()
                         < self.vel.y() / Vec2D::<f32>::map_size().y()
                     {

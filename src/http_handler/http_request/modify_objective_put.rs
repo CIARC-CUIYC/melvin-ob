@@ -12,7 +12,7 @@ pub struct ModifyObjectiveRequest {
 impl JSONBodyHTTPRequestType for ModifyObjectiveRequest {
     type Body = Self;
     fn body(&self) -> &Self::Body {
-        &self
+        self
     }
 }
 

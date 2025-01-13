@@ -24,7 +24,7 @@ pub struct Buffer {
     /// The height of the buffer (in pixels).
     height: u32,
     /// The 2D buffer data storing RGB values as `[u8; 3]` for each pixel.
-    data: Vec<[u8; 3]>,
+    pub data: Vec<[u8; 3]>,
 }
 
 impl Buffer {

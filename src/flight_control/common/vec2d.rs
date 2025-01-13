@@ -45,7 +45,7 @@ where T: Real + NumCast + NumAssignOps
     /// # Arguments
     /// * `dec_places` - The number of decimal places.
     pub fn round_all(&mut self, dec_places: u8) {
-        let multiplier = T::from(10.0).unwrap().powi(dec_places as i32);
+        let multiplier = T::from(10.0).unwrap().powi(std::convert::From::from(dec_places));
         self.x = (self.x * multiplier).round() / multiplier;
         self.y = (self.y * multiplier).round() / multiplier;
     }

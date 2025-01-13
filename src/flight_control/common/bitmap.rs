@@ -151,8 +151,8 @@ impl Bitmap {
     /// This can panic due to conversion errors or bugs left in `get_region_slice_indices`.
     #[allow(clippy::cast_possible_truncation)]
     pub fn set_region(&mut self, pos: Vec2D<f32>, angle: CameraAngle, set_to: bool) {
-        let x = pos.x().round() as i32;
-        let y = pos.y().round() as i32;
+        let x = pos.x() as i32;
+        let y = pos.y() as i32;
         let slices_vec = self.get_region_slice_indices(x, y, angle);
 
         for mut slice_index in slices_vec {
@@ -229,8 +229,8 @@ impl Bitmap {
     #[allow(clippy::cast_possible_truncation)]
     pub fn has_sufficient_set_bits(&self, pos: Vec2D<f32>, angle: CameraAngle, min: usize) -> bool {
         let mut px = 0;
-        let x = pos.x().round() as i32;
-        let y = pos.y().round() as i32;
+        let x = pos.x() as i32;
+        let y = pos.y() as i32;
         for slice_index in self.get_region_slice_indices(x, y, angle) {
             px += self
                 .data

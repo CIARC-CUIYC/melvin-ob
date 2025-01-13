@@ -13,7 +13,6 @@ use crate::flight_control::{
 };
 use crate::http_handler::http_client::HTTPClient;
 use chrono::TimeDelta;
-use std::cmp::min;
 
 const FUEL_RESET_THRESHOLD: f32 = 20.0;
 const MIN_PX_LEFT_FACTOR: f32 = 0.05;
@@ -28,10 +27,15 @@ const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 const BIN_FILEPATH: &str = "camera_controller_narrow.bin";
 const ACQUISITION_DISCHARGE_PER_S: f32 = 0.2;
 const CHARGE_CHARGE_PER_S: f32 = 0.2;
+const JUST_CONVERT: bool = true;
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
+    if JUST_CONVERT {
+        just_convert().await;
+        return;
+    }
     let client = HTTPClient::new("http://localhost:33000");
     let t_cont = TaskController::new();
     let mut c_cont = CameraController::from_file(BIN_FILEPATH)
@@ -109,6 +113,64 @@ async fn main() {
         .unwrap();
     }
 }
+
+async fn just_convert() {
+    const BIN_PATH: &str = "camera_controller_narrow.bin";
+    const PNG_PATH: &str = "world.png";
+
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let bin_path = cwd.join(BIN_PATH);
+    let png_path = cwd.join(PNG_PATH);
+
+    match CameraController::from_file(bin_path.to_str().unwrap_or("FEHLER")).await {
+        Ok(camera_controller) => {
+            println!("hallo2");
+
+            let recorded_bitmap = camera_controller.bitmap_ref().clone();
+            let recorded_buffer = camera_controller.buffer_ref().clone();
+
+            println!("Rein in die Methode");
+
+            bin_to_png(png_path, recorded_bitmap, recorded_buffer).unwrap();
+        }
+        Err(e) => {
+            eprintln!(
+                "Failed to load camera controller from {}: {}",
+                bin_path.display(),
+                e
+            );
+        }
+    }
+}
+fn bin_to_png(
+        png_path: std::path::PathBuf,
+        bitmap: flight_control::common::bitmap::Bitmap,
+        buffer: flight_control::common::img_buffer::Buffer
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let world_map_width = 21600;
+        let world_map_height = 10800;
+
+        let mut world_map_png = image::RgbImage::new(
+            world_map_width as u32, world_map_height as u32
+        );
+
+        println!("Created new RGB image!");
+
+        for (i, rgb) in buffer.data.iter().enumerate() {
+            let x = (i % world_map_width as usize) as u32;
+            let y = (i / world_map_width as usize) as u32;
+
+            // Write the RGB data directly to the image
+            world_map_png.put_pixel(x, y, image::Rgb(*rgb));
+        }
+
+        println!("Jetz no speichre!");
+
+        world_map_png.save(std::path::Path::new(&png_path))?;
+        println!("World map saved to {:?}", png_path);
+    Ok(())
+}
+
 
 /* // TODO: legacy code
 #[tokio::main]
