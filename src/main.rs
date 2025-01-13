@@ -36,14 +36,13 @@ async fn main() {
         just_convert().await;
         return;
     }
+
     let client = HTTPClient::new("http://localhost:33000");
     let t_cont = TaskController::new();
-    let mut c_cont = CameraController::from_file(BIN_FILEPATH)
-        .await
-        .unwrap_or_else(|e| {
-            println!("[WARN] Failed to read from binary file: {e}");
-            CameraController::new()
-        });
+    let mut c_cont = CameraController::from_file(BIN_FILEPATH).await.unwrap_or_else(|e| {
+        println!("[WARN] Failed to read from binary file: {e}");
+        CameraController::new()
+    });
     let mut f_cont = FlightComputer::new(&client, &t_cont).await;
 
     f_cont.reset().await;
@@ -51,13 +50,9 @@ async fn main() {
     f_cont.set_angle(CONST_ANGLE).await;
 
     let mut orbit = Orbit::new(&f_cont);
-    let period = orbit
-        .period()
-        .expect("[FATAL] Static orbit is not closed!")
-        .round() as i64;
-    let img_dt = orbit
-        .max_image_dt(CONST_ANGLE)
-        .expect("[FATAL] Static orbit is not overlapping enough");
+    let period = orbit.period().expect("[FATAL] Static orbit is not closed!").round() as i64;
+    let img_dt =
+        orbit.max_image_dt(CONST_ANGLE).expect("[FATAL] Static orbit is not overlapping enough");
     let mandatory_state_change = orbit.last_possible_state_change().unwrap();
     let mut orbit_s_end =
         orbit.start_timestamp() + chrono::Duration::seconds(i64::from(mandatory_state_change.0));
@@ -66,10 +61,7 @@ async fn main() {
     loop {
         let mut break_flag = false;
         loop {
-            c_cont
-                .shoot_image_to_buffer(&client, &mut f_cont, CONST_ANGLE)
-                .await
-                .unwrap();
+            c_cont.shoot_image_to_buffer(&client, &mut f_cont, CONST_ANGLE).await.unwrap();
 
             if break_flag {
                 break;
@@ -89,9 +81,8 @@ async fn main() {
                 break_flag = true;
             }
 
-            let skipped_time = f_cont
-                .make_ff_call(std::time::Duration::from_secs(sleep_time))
-                .await;
+            let skipped_time =
+                f_cont.make_ff_call(std::time::Duration::from_secs(sleep_time)).await;
             orbit_s_end -= TimeDelta::seconds(skipped_time);
 
             f_cont.update_observation().await;
@@ -142,35 +133,33 @@ async fn just_convert() {
         }
     }
 }
+
 fn bin_to_png(
-        png_path: std::path::PathBuf,
-        bitmap: flight_control::common::bitmap::Bitmap,
-        buffer: flight_control::common::img_buffer::Buffer
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let world_map_width = 21600;
-        let world_map_height = 10800;
+    png_path: std::path::PathBuf,
+    bitmap: flight_control::common::bitmap::Bitmap,
+    buffer: flight_control::common::img_buffer::Buffer,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let world_map_width = 21600;
+    let world_map_height = 10800;
 
-        let mut world_map_png = image::RgbImage::new(
-            world_map_width as u32, world_map_height as u32
-        );
+    let mut world_map_png = image::RgbImage::new(world_map_width as u32, world_map_height as u32);
 
-        println!("Created new RGB image!");
+    println!("Created new RGB image!");
 
-        for (i, rgb) in buffer.data.iter().enumerate() {
-            let x = (i % world_map_width as usize) as u32;
-            let y = (i / world_map_width as usize) as u32;
+    for (i, rgb) in buffer.data.iter().enumerate() {
+        let x = (i % world_map_width as usize) as u32;
+        let y = (i / world_map_width as usize) as u32;
 
-            // Write the RGB data directly to the image
-            world_map_png.put_pixel(x, y, image::Rgb(*rgb));
-        }
+        // Write the RGB data directly to the image
+        world_map_png.put_pixel(x, y, image::Rgb(*rgb));
+    }
 
-        println!("Jetz no speichre!");
+    println!("Jetz no speichre!");
 
-        world_map_png.save(std::path::Path::new(&png_path))?;
-        println!("World map saved to {:?}", png_path);
+    world_map_png.save(std::path::Path::new(&png_path))?;
+    println!("World map saved to {:?}", png_path);
     Ok(())
 }
-
 
 /* // TODO: legacy code
 #[tokio::main]
