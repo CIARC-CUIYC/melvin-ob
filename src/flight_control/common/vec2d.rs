@@ -1,5 +1,5 @@
-use std::ops::{Add, Deref, Div, Mul};
-use num_traits::{Num, NumAssignOps, NumCast, real::Real};
+use std::ops::{Add, Deref, Div, Mul, Sub};
+use num::traits::{Num, NumAssignOps, NumCast, real::Real};
 
 /// A 2D vector generic over any numeric type.
 ///
@@ -287,6 +287,28 @@ where
         Self::Output {
             x: self.x / T::from(rhs).unwrap(),
             y: self.y / T::from(rhs).unwrap(),
+        }
+    }
+}
+
+impl<T, TSub> Sub<Vec2D<TSub>> for Vec2D<T>
+where
+    T: Real + NumCast,
+    TSub: Num + NumCast,
+{
+    type Output = Vec2D<T>;
+
+    /// Implements the `-` operator for two `Vec2D`.
+    ///
+    /// # Arguments
+    /// * `rhs` - The `Vec2D` to subtract.
+    ///
+    /// # Returns
+    /// A new vector.
+    fn sub(self, rhs: Vec2D<TSub>) -> Self::Output {
+        Self::Output {
+            x: self.x - T::from(rhs.x).unwrap(),
+            y: self.y - T::from(rhs.y).unwrap(),
         }
     }
 }
