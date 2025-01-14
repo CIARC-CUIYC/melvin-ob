@@ -1,11 +1,7 @@
-use num::traits::{real::Real, Num, NumAssignOps, NumCast};
-use std::ops::{Add, Mul, Sub};
+use std::ops::{Add, Deref, Div, Mul};
+use num_traits::{Num, NumAssignOps, NumCast, real::Real};
 
 /// A 2D vector generic over any numeric type.
-///
-/// # Fields
-/// - `x`: The x-coordinate of the `Vec2D` as a `T`.
-/// - `y`: The y-coordinate of the `Vec2D` as a `T`.
 ///
 /// This struct represents a 2D point or vector in space and provides common
 /// mathematical operations such as addition, normalization, rotation, and distance calculations.
@@ -20,8 +16,33 @@ pub struct Vec2D<T> {
     y: T,
 }
 
+pub struct Wrapped2D<T, const X: u32, const Y: u32>(Vec2D<T>);
+
+impl<T, const X: u32, const Y: u32> Wrapped2D<T, X, Y>
+where
+    T: Num + NumCast + Copy,
+{
+    pub fn wrap_around_map(&self) -> Self {
+        Wrapped2D(Vec2D::new(Self::wrap_coordinate(self.0.x, T::from(X).unwrap()), Self::wrap_coordinate(self.0.y, T::from(Y).unwrap())))
+    }
+
+    pub fn wrap_coordinate(value: T, max_value: T) -> T {
+        (value + max_value) % max_value
+    }
+}
+
+
+impl<T, const X: u32, const Y: u32> Deref for Wrapped2D<T, X, Y> {
+    type Target = Vec2D<T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 impl<T> Vec2D<T>
-where T: Real + NumCast + NumAssignOps
+where
+    T: Real + NumCast + NumAssignOps,
 {
     /// Computes the magnitude (absolute value) of the vector.
     ///
@@ -38,16 +59,6 @@ where T: Real + NumCast + NumAssignOps
     /// A new vector representing the direction from `self` to `other`.
     pub fn to(&self, other: &Vec2D<T>) -> Vec2D<T> {
         Vec2D::new(other.x - self.x, other.y - self.y)
-    }
-
-    /// Rounds all values in a vector to a given number of decimal places.
-    ///
-    /// # Arguments
-    /// * `dec_places` - The number of decimal places.
-    pub fn round_all(&mut self, dec_places: u8) {
-        let multiplier = T::from(10.0).unwrap().powi(std::convert::From::from(dec_places));
-        self.x = (self.x * multiplier).round() / multiplier;
-        self.y = (self.y * multiplier).round() / multiplier;
     }
 
     /// Normalizes the vector to have a magnitude of 1.
@@ -96,19 +107,19 @@ impl<T: Copy> Vec2D<T> {
     ///
     /// # Returns
     /// A new `Vec2D` object.
-    pub fn new(x: T, y: T) -> Self { Self { x, y } }
+    pub const fn new(x: T, y: T) -> Self { Self { x, y } }
 
     /// Returns the x-component of the vector.
     ///
     /// # Returns
     /// The `x` value of type `T`.
-    pub fn x(&self) -> T { self.x }
+    pub const fn x(&self) -> T { self.x }
 
     /// Returns the y-component of the vector.
     ///
     /// # Returns
     /// The `y` value of type `T`.
-    pub fn y(&self) -> T { self.y }
+    pub const fn y(&self) -> T { self.y }
 }
 
 impl<T: Num + NumCast + Copy> Vec2D<T> {
@@ -127,7 +138,7 @@ impl<T: Num + NumCast + Copy> Vec2D<T> {
     pub fn dot(self, other: Vec2D<T>) -> T { self.x * other.x + self.y * other.y }
 
     /// Computes the Euclidean distance between the current vector and another vector as an `f64`.
-    /// This enables Euclidean distance calculation for integer type `T`.
+    /// This enables Euclidean distance calculation for integer type `T`. 
     ///
     /// # Arguments
     /// * `other` - Another `Vec2D` vector to compute the distance to.
@@ -187,12 +198,11 @@ impl<T: Num + NumCast + Copy> Vec2D<T> {
     /// This method ensures the vector’s coordinates do not exceed the boundaries
     /// of the map defined by `map_size()`. If coordinates go beyond these boundaries,
     /// they are wrapped to remain within valid values.
-    pub fn wrap_around_map(&mut self) {
+    pub fn wrap_around_map(&self) -> Self {
         let map_size_x = Self::map_size().x();
         let map_size_y = Self::map_size().y();
 
-        self.x = Self::wrap_coordinate(self.x, map_size_x);
-        self.y = Self::wrap_coordinate(self.y, map_size_y);
+        Vec2D::new(Self::wrap_coordinate(self.x, map_size_x), Self::wrap_coordinate(self.y, map_size_y))
     }
 
     /// Wraps a single coordinate around a specific maximum value.
@@ -203,7 +213,16 @@ impl<T: Num + NumCast + Copy> Vec2D<T> {
     ///
     /// # Returns
     /// The wrapped coordinate as type `T`.
-    pub fn wrap_coordinate(value: T, max_value: T) -> T { (value + max_value) % max_value }
+    pub fn wrap_coordinate(value: T, max_value: T) -> T {
+        (value + max_value) % max_value
+    }
+
+    pub fn cast<D: NumCast>(self) -> Vec2D<D> {
+        Vec2D {
+            x: D::from(self.x).unwrap(),
+            y: D::from(self.y).unwrap(),
+        }
+    }
 }
 
 impl<T, TAdd> Add<Vec2D<TAdd>> for Vec2D<T>
@@ -250,18 +269,25 @@ where
     }
 }
 
-impl<T, TSub> Sub<Vec2D<TSub>> for Vec2D<T>
+impl<T, TMul> Div<TMul> for Vec2D<T>
 where
-    T: Real + NumCast,
-    TSub: Num + NumCast,
+    T: Num + NumCast,
+    TMul: Num + NumCast + Copy,
 {
     type Output = Vec2D<T>;
 
-    fn sub(self, rhs: Vec2D<TSub>) -> Self::Output { 
+    /// Implements the `/` operator for a `Vec2D` and a scalar.
+    ///
+    /// # Arguments
+    /// * `rhs` - The scalar value to divide by.
+    ///
+    /// # Returns
+    /// A new scaled vector.
+    fn div(self, rhs: TMul) -> Self::Output {
         Self::Output {
-            x: self.x - T::from(rhs.x).unwrap(),
-            y: self.y - T::from(rhs.y).unwrap(),
-        } 
+            x: self.x / T::from(rhs).unwrap(),
+            y: self.y / T::from(rhs).unwrap(),
+        }
     }
 }
 

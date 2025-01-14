@@ -1,3 +1,5 @@
+use std::ops::{Deref, DerefMut};
+use image::{GenericImage, GenericImageView, ImageBuffer, Pixel};
 use super::vec2d::Vec2D;
 
 // TODO: this could be useful as soon as metadata for pixels is necessary
@@ -73,7 +75,7 @@ impl Buffer {
     ///
     /// # Returns
     /// The 1D index as `u32`.
-    /// 
+    ///
     /// # Example
     /// ```rust
     /// let buffer = Buffer::new(4, 4);
@@ -82,5 +84,76 @@ impl Buffer {
     /// ```
     pub fn get_buffer_index(&self, x: u32, y: u32) -> u32 {
         y * self.width + x
+    }
+
+    pub fn view(&self, offset: Vec2D<u32>, size: Vec2D<u32>) -> SubBuffer<&Buffer> {
+        SubBuffer {
+            buffer: self,
+            buffer_size: Vec2D::map_size(),
+            offset,
+            size,
+        }
+    }
+}
+
+impl GenericImageView for Buffer {
+    type Pixel = image::Rgb<u8>;
+
+    fn dimensions(&self) -> (u32, u32) {
+        (self.width, self.height)
+    }
+
+    fn get_pixel(&self, x: u32, y: u32) -> Self::Pixel {
+        image::Rgb(self.data[(y * self.width + x) as usize])
+    }
+}
+
+pub struct SubBuffer<T> {
+    pub(crate) buffer: T,
+    pub(crate) buffer_size: Vec2D<u32>,
+    pub(crate) offset: Vec2D<u32>,
+    pub(crate) size: Vec2D<u32>,
+}
+
+impl<T, C> GenericImageView for SubBuffer<T>
+where
+    T: Deref<Target=C>,
+    C: GenericImageView + Sized,
+{
+    type Pixel = C::Pixel;
+
+    fn dimensions(&self) -> (u32, u32) {
+        (self.size.x(), self.size.y())
+    }
+
+    fn get_pixel(&self, x: u32, y: u32) -> Self::Pixel {
+        let x = (x + self.offset.x()) % self.buffer_size.x();
+        let y = (y + self.offset.y()) % self.buffer_size.y();
+        self.buffer.get_pixel(x, y)
+    }
+}
+
+impl<T> GenericImage for SubBuffer<T>
+where
+    T: DerefMut,
+    T::Target: GenericImage + Sized,
+{
+    fn get_pixel_mut(&mut self, x: u32, y: u32) -> &mut Self::Pixel {
+        let x = (x + self.offset.x()) % self.buffer_size.x();
+        let y = (y + self.offset.y()) % self.buffer_size.y();
+        self.buffer.get_pixel_mut(x, y)
+    }
+
+    fn put_pixel(&mut self, x: u32, y: u32, pixel: Self::Pixel) {
+        let x = (x + self.offset.x()) % self.buffer_size.x();
+        let y = (y + self.offset.y()) % self.buffer_size.y();
+        self.buffer.put_pixel(x, y, pixel)
+    }
+
+
+    fn blend_pixel(&mut self, x: u32, y: u32, pixel: Self::Pixel) {
+        let x = (x + self.offset.x()) % self.buffer_size.x();
+        let y = (y + self.offset.y()) % self.buffer_size.y();
+        self.buffer.blend_pixel(x, y, pixel)
     }
 }
