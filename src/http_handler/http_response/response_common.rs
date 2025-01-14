@@ -1,11 +1,14 @@
-use reqwest::Response;
+use strum_macros::Display;
 
 pub(crate) trait JSONBodyHTTPResponseType: HTTPResponseType {
-    async fn parse_json_body(response: reqwest::Response)
-                             -> Result<Self::ParsedResponseType, ResponseError>
+    async fn parse_json_body(
+        response: reqwest::Response,
+    ) -> Result<Self::ParsedResponseType, ResponseError>
     where
         Self::ParsedResponseType: for<'de> serde::Deserialize<'de>,
-    { Ok(response.json::<Self::ParsedResponseType>().await?) }
+    {
+        Ok(response.json::<Self::ParsedResponseType>().await?)
+    }
 }
 
 pub(crate) trait SerdeJSONBodyHTTPResponseType {}
@@ -14,7 +17,8 @@ impl<T> JSONBodyHTTPResponseType for T
 where
     T: SerdeJSONBodyHTTPResponseType,
     for<'de> T: serde::Deserialize<'de>,
-{}
+{
+}
 
 impl<T> HTTPResponseType for T
 where
@@ -23,36 +27,39 @@ where
 {
     type ParsedResponseType = T;
 
-    async fn read_response(response: Response) -> Result<Self::ParsedResponseType, ResponseError> {
+    async fn read_response(
+        response: reqwest::Response,
+    ) -> Result<Self::ParsedResponseType, ResponseError> {
         let response = Self::unwrap_return_code(response).await?;
-        Ok(Self::parse_json_body(response).await?)
+        Self::parse_json_body(response).await
     }
 }
 
-
 pub(crate) trait ByteStreamResponseType: HTTPResponseType {}
-
 
 pub(crate) trait HTTPResponseType {
     type ParsedResponseType;
-    async fn read_response(response: reqwest::Response)
-                           -> Result<Self::ParsedResponseType, ResponseError>;
+    async fn read_response(
+        response: reqwest::Response,
+    ) -> Result<Self::ParsedResponseType, ResponseError>;
 
-    async fn unwrap_return_code(response: reqwest::Response) -> Result<reqwest::Response, ResponseError> {
+    async fn unwrap_return_code(
+        response: reqwest::Response,
+    ) -> Result<reqwest::Response, ResponseError> {
         if response.status().is_success() {
             Ok(response)
         } else if response.status().is_server_error() {
-            Err(ResponseError::InternalServerError)
+            Err(ResponseError::InternalServer)
         } else if response.status().is_client_error() {
             Err(ResponseError::BadRequest(response.json().await?))
         } else {
-            Err(ResponseError::UnknownError)
+            Err(ResponseError::Unknown)
         }
     }
 }
 
 #[derive(Debug, serde::Deserialize)]
-struct BadRequestReturn {
+pub struct BadRequestReturn {
     detail: Vec<BadRequestDetail>,
 }
 
@@ -70,23 +77,26 @@ struct BadRequestDetailContext {
     expected: String,
 }
 
+#[derive(Debug, Display)]
 pub enum ResponseError {
-    InternalServerError,
+    InternalServer,
     BadRequest(BadRequestReturn),
-    NoConnectionError,
-    UnknownError,
+    NoConnection,
+    Unknown,
 }
 
+impl std::error::Error for ResponseError {}
 impl From<reqwest::Error> for ResponseError {
     fn from(value: reqwest::Error) -> Self {
         if value.is_request() {
-            ResponseError::BadRequest(BadRequestReturn { detail: vec![] })
+            
+            ResponseError::BadRequest(BadRequestReturn { detail: vec![]})
         } else if value.is_timeout() || value.is_redirect() {
-            ResponseError::InternalServerError
+            ResponseError::InternalServer
         } else if value.is_connect() {
-            ResponseError::NoConnectionError
+            ResponseError::NoConnection
         } else {
-            ResponseError::UnknownError
+            ResponseError::Unknown
         }
     }
 }

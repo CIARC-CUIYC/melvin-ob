@@ -8,7 +8,11 @@ impl NoBodyHTTPRequestType for ShootImageRequest {}
 
 impl HTTPRequestType for ShootImageRequest {
     type Response = ShootImageResponse;
-    fn endpoint(&self) -> &str { "/image" }
+    fn endpoint(&self) -> &str {
+        "/image"
+    }
 
-    fn request_method(&self) -> HTTPRequestMethod { HTTPRequestMethod::Get }
+    fn request_method(&self) -> HTTPRequestMethod {
+        HTTPRequestMethod::Get
+    }
 }

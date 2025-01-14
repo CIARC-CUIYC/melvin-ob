@@ -1,9 +1,9 @@
-use crate::http_handler::http_handler_common::{ZonedObjective, BeaconObjective};
+use super::modify_objective;
 use super::request_common::{HTTPRequestMethod, HTTPRequestType, JSONBodyHTTPRequestType};
-use super::modify_objective::ModifyObjectiveResponse;
+use crate::http_handler::http_handler_common::{BeaconObjective, ZonedObjective};
 
-#[cfg(debug_assertions)]
 #[derive(serde::Serialize, Debug)]
+#[cfg(debug_assertions)]
 pub struct ModifyObjectiveRequest {
     pub zoned_objectives: Vec<ZonedObjective>,
     pub beacon_objectives: Vec<BeaconObjective>,
@@ -11,11 +11,17 @@ pub struct ModifyObjectiveRequest {
 
 impl JSONBodyHTTPRequestType for ModifyObjectiveRequest {
     type Body = Self;
-    fn body(&self) -> &Self::Body { &self }
+    fn body(&self) -> &Self::Body {
+        self
+    }
 }
 
 impl HTTPRequestType for ModifyObjectiveRequest {
-    type Response = ModifyObjectiveResponse;
-    fn endpoint(&self) -> &str { "/objective" }
-    fn request_method(&self) -> HTTPRequestMethod { HTTPRequestMethod::Put }
+    type Response = modify_objective::ModifyObjectiveResponse;
+    fn endpoint(&self) -> &str {
+        "/objective"
+    }
+    fn request_method(&self) -> HTTPRequestMethod {
+        HTTPRequestMethod::Put
+    }
 }

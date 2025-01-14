@@ -1,14 +1,18 @@
 use super::request_common::{HTTPRequestMethod, HTTPRequestType, NoBodyHTTPRequestType};
-use super::reset::ResetResponse;
+use super::reset;
 
-#[cfg(debug_assertions)]
 #[derive(Debug)]
+#[cfg(debug_assertions)]
 pub struct ResetRequest {}
 
 impl NoBodyHTTPRequestType for ResetRequest {}
 
 impl HTTPRequestType for ResetRequest {
-    type Response = ResetResponse;
-    fn endpoint(&self) -> &str { "/reset" }
-    fn request_method(&self) -> HTTPRequestMethod { HTTPRequestMethod::Get }
+    type Response = reset::ResetResponse;
+    fn endpoint(&self) -> &str {
+        "/reset"
+    }
+    fn request_method(&self) -> HTTPRequestMethod {
+        HTTPRequestMethod::Get
+    }
 }
