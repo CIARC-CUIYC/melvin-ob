@@ -383,7 +383,7 @@ impl<'a> FlightComputer<'a> {
                     break;
                 }
                 Err(_) => {
-                    println!("[ERROR] Unnoticed HTTP Error in rotate_vel"); /* TODO: log error here */
+                    println!("[ERROR] Unnoticed HTTP Error in set_vel_ff"); /* TODO: log error here */
                 }
             }
         }
