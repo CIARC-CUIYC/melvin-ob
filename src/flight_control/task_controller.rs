@@ -140,19 +140,16 @@ impl TaskController {
         println!("[INFO] Optimal Orbit Calculation complete after {dt_calc:.2}");
         let mut dt = dt_calc.ceil() as usize;
 
-        let batt = f_cont.current_battery();
+        let batt_f32 = f_cont.current_battery();
         let mut state: usize = match f_cont.state() {
             FlightState::Acquisition => 1,
             FlightState::Charge => 0,
             state => panic!("[FATAL] Unexpected flight state: {state}"),
         };
         let (min_batt, max_batt) = (MIN_BATTERY_THRESHOLD, MAX_BATTERY_THRESHOLD);
-        let (min_mapped, max_mapped) = (
-            0,
-            (max_batt / Self::BATTERY_RESOLUTION - min_batt / Self::BATTERY_RESOLUTION).round() as i32,
-        );
-        let mut batt = (batt - min_batt * (max_mapped - min_mapped) as f32 / (max_batt - min_batt)
-            + min_mapped as f32) as usize;
+        let max_mapped = (max_batt / Self::BATTERY_RESOLUTION - min_batt / Self::BATTERY_RESOLUTION)
+            .round() as i32;
+        let mut batt = ((batt_f32 - min_batt) / Self::BATTERY_RESOLUTION) as usize;
 
         let pred_secs = Self::MAX_ORBIT_PREDICTION_SECS.min(orbit.period().0 as u32) as usize;
         let mut decision_list: Vec<AtomicDecision> = Vec::new();
