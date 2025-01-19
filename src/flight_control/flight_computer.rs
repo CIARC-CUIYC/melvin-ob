@@ -1,22 +1,22 @@
 use super::{
     camera_state::CameraAngle,
-    common::{locked_task_queue::LockedTaskQueue, vec2d::Vec2D},
+    common::vec2d::Vec2D,
+    task::locked_task_queue::LockedTaskQueue,
     flight_state::{FlightState, TRANSITION_DELAY_LOOKUP},
     task_controller::TaskController,
 };
-use crate::http_handler::http_request::reset_get::ResetRequest;
 use crate::http_handler::{
     http_client,
     http_request::{
         configure_simulation_put::ConfigureSimulationRequest,
         control_put::*,
         observation_get::*,
+        reset_get::ResetRequest,
         request_common::{JSONBodyHTTPRequestType, NoBodyHTTPRequestType},
     },
 };
 use crate::CHARGE_CHARGE_PER_S;
 use chrono::TimeDelta;
-use num::range;
 use std::{cmp::min, sync::Arc, time::Duration};
 use tokio::time::sleep;
 
@@ -64,7 +64,7 @@ pub struct FlightComputer<'a> {
     /// HTTP client for sending requests for satellite operations.
     request_client: &'a http_client::HTTPClient,
     /// Arc Reference to the Task scheduler.
-    image_schedule: Arc<LockedTaskQueue>,
+    task_schedule: Arc<LockedTaskQueue>,
 }
 
 pub enum ChargeCommand {
@@ -106,7 +106,7 @@ impl<'a> FlightComputer<'a> {
             max_battery: 0.0,
             fuel_left: 0.0,
             last_observation_timestamp: chrono::Utc::now(),
-            image_schedule: task_controller.sched_arc(),
+            task_schedule: task_controller.sched_arc(),
             request_client,
         };
         return_controller.update_observation().await;
@@ -172,14 +172,14 @@ impl<'a> FlightComputer<'a> {
         }
         println!("[INFO] Waiting for {} seconds!", sleep.as_secs());
         let saved_secs = i64::from(self.fast_forward(sleep).await);
-        self.image_schedule.for_each(|task| {
+        self.task_schedule.for_each(|task| {
             task.dt_mut().sub_delay(TimeDelta::seconds(saved_secs));
         });
         print!("[INFO] Return from Waiting!");
-        if self.image_schedule.is_empty() {
+        if self.task_schedule.is_empty() {
             println!();
         } else {
-            let time_left = self.image_schedule.copy_front().unwrap().dt().time_left();
+            let time_left = self.task_schedule.copy_front().unwrap().dt().time_left();
             println!(
                 " Next Image in {:02}:{:02}:{:02}",
                 time_left.num_hours(),

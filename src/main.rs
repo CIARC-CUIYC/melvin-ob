@@ -69,7 +69,7 @@ async fn main() {
     let mut orbit_s_end =
         c_orbit.base_orbit_ref().start_timestamp() + chrono::Duration::seconds(c_orbit.period().0 as i64);
 
-    t_cont.calculate_optimal_orbit_schedule(&c_orbit, f_cont.current_pos());
+    t_cont.schedule_optimal_orbit(&c_orbit, &mut f_cont);
 
     // first orbit-behaviour loop
     loop {
