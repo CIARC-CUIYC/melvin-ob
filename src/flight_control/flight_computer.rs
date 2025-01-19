@@ -8,16 +8,17 @@ use crate::http_handler::http_request::reset_get::ResetRequest;
 use crate::http_handler::{
     http_client,
     http_request::{
+        configure_simulation_put::ConfigureSimulationRequest,
         control_put::*,
         observation_get::*,
         request_common::{JSONBodyHTTPRequestType, NoBodyHTTPRequestType},
-        configure_simulation_put::ConfigureSimulationRequest,
     },
 };
-use std::{sync::Arc, time::Duration, cmp::min};
-use tokio::time::sleep;
-use chrono::TimeDelta;
 use crate::CHARGE_CHARGE_PER_S;
+use chrono::TimeDelta;
+use num::range;
+use std::{cmp::min, sync::Arc, time::Duration};
+use tokio::time::sleep;
 
 /// Represents the core flight computer for satellite control.
 /// It manages operations such as state changes, velocity updates,
@@ -66,7 +67,7 @@ pub struct FlightComputer<'a> {
     image_schedule: Arc<LockedTaskQueue>,
 }
 
-pub enum ChargeCommand{
+pub enum ChargeCommand {
     TargetCharge(f32),
     Duration(chrono::Duration),
 }
@@ -154,10 +155,7 @@ impl<'a> FlightComputer<'a> {
     pub fn state(&self) -> FlightState { self.current_state }
 
     pub async fn reset(&mut self) {
-        ResetRequest {}
-            .send_request(self.request_client)
-            .await
-            .expect("ERROR: Failed to reset");
+        ResetRequest {}.send_request(self.request_client).await.expect("ERROR: Failed to reset");
         self.update_observation().await;
     }
 
@@ -287,7 +285,7 @@ impl<'a> FlightComputer<'a> {
         let target_battery = match command {
             ChargeCommand::TargetCharge(target) => target,
             ChargeCommand::Duration(mut dt) => {
-                if initial_state != FlightState::Charge{
+                if initial_state != FlightState::Charge {
                     dt -= TimeDelta::seconds(2 * 180);
                 }
                 self.current_battery + dt.num_seconds() as f32 * CHARGE_CHARGE_PER_S
@@ -319,9 +317,8 @@ impl<'a> FlightComputer<'a> {
         }
         let init_state = self.current_state;
         self.set_state(new_state).await;
-        let transition_t = TRANSITION_DELAY_LOOKUP
-            .get(&(init_state, new_state))
-            .unwrap_or_else(|| {
+        let transition_t =
+            TRANSITION_DELAY_LOOKUP.get(&(init_state, new_state)).unwrap_or_else(|| {
                 panic!("[FATAL] ({init_state}, {new_state}) not in TRANSITION_DELAY_LOOKUP")
             });
         self.make_ff_call(*transition_t).await;
@@ -391,12 +388,14 @@ impl<'a> FlightComputer<'a> {
             }
         }
         //new_vel.round_all(Self::VEL_BE_MAX_DECIMAL);
-        let waited_all = self.wait_for_condition(
-            |cont: &FlightComputer| cont.current_vel == new_vel,
-            Self::WAIT_FOR_CONDITION_TIMEOUT,
-            Self::WAIT_FOR_CONDITION_POLL_INTERVAL,
-        ).await;
-        println!("[LOG] Waited for all conditions: {}", waited_all/1000);
+        let waited_all = self
+            .wait_for_condition(
+                |cont: &FlightComputer| cont.current_vel == new_vel,
+                Self::WAIT_FOR_CONDITION_TIMEOUT,
+                Self::WAIT_FOR_CONDITION_POLL_INTERVAL,
+            )
+            .await;
+        println!("[LOG] Waited for all conditions: {}", waited_all / 1000);
         if switch_back_to_init_state {
             self.state_change_ff(init_state).await;
         }
@@ -405,10 +404,7 @@ impl<'a> FlightComputer<'a> {
     /// Updates the satellite's internal fields with the latest observation data.
     pub async fn update_observation(&mut self) {
         loop {
-            match (ObservationRequest {}
-                .send_request(self.request_client)
-                .await)
-            {
+            match (ObservationRequest {}.send_request(self.request_client).await) {
                 Ok(obs) => {
                     self.current_pos =
                         Vec2D::from((f32::from(obs.pos_x()), f32::from(obs.pos_y())));
@@ -460,8 +456,7 @@ impl<'a> FlightComputer<'a> {
     pub async fn rotate_vel_ff(&mut self, angle_degrees: f32, accel_factor: f32) {
         let mut current_vel = self.current_vel;
         current_vel.rotate_by(angle_degrees);
-        self.set_vel_ff(current_vel * (1.0 + accel_factor), true)
-            .await;
+        self.set_vel_ff(current_vel * (1.0 + accel_factor), true).await;
     }
 
     /// Predicts the satellite’s position after a specified time interval.
