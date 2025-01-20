@@ -44,7 +44,7 @@ use tokio::time::sleep;
 /// - `last_observation_timestamp`: Indicates the time of the last system update.
 /// - `request_client`: A reference to the HTTP client to send flight control requests.
 #[derive(Debug)]
-pub struct FlightComputer<'a> {
+pub struct FlightComputer {
     /// Current position of the satellite in 2D space.
     current_pos: Vec2D<f32>,
     /// Current velocity of the satellite in 2D space.
@@ -62,7 +62,7 @@ pub struct FlightComputer<'a> {
     /// Timestamp marking the last observation update from the satellite.
     last_observation_timestamp: chrono::DateTime<chrono::Utc>,
     /// HTTP client for sending requests for satellite operations.
-    request_client: &'a http_client::HTTPClient,
+    request_client: Arc<http_client::HTTPClient>,
     /// Arc Reference to the Task scheduler.
     task_schedule: Arc<LockedTaskQueue>,
 }
@@ -72,7 +72,7 @@ pub enum ChargeCommand {
     Duration(chrono::Duration),
 }
 
-impl<'a> FlightComputer<'a> {
+impl FlightComputer {
     /// Acceleration factor for calculations involving velocity and state transitions.
     const ACCELERATION: f32 = 0.02;
     /// Minimum threshold duration for triggering normal-speed fast-forward operations.
@@ -94,9 +94,9 @@ impl<'a> FlightComputer<'a> {
     /// # Returns
     /// A fully initialized `FlightComputer` with up-to-date field values.
     pub async fn new(
-        request_client: &'a http_client::HTTPClient,
+        request_client: Arc<http_client::HTTPClient>,
         task_controller: &TaskController,
-    ) -> FlightComputer<'a> {
+    ) -> FlightComputer {
         let mut return_controller = FlightComputer {
             current_pos: Vec2D::new(0.0, 0.0),
             current_vel: Vec2D::new(0.0, 0.0),
@@ -153,9 +153,14 @@ impl<'a> FlightComputer<'a> {
     /// # Returns
     /// - A `FlightState` enum denoting the active operational state.
     pub fn state(&self) -> FlightState { self.current_state }
+    
+    pub fn client(&self) -> Arc<http_client::HTTPClient> {
+        Arc::clone(&self.request_client)
+    } 
+    
 
     pub async fn reset(&mut self) {
-        ResetRequest {}.send_request(self.request_client).await.expect("ERROR: Failed to reset");
+        ResetRequest {}.send_request(&*self.request_client).await.expect("ERROR: Failed to reset");
         self.update_observation().await;
     }
 
@@ -246,7 +251,7 @@ impl<'a> FlightComputer<'a> {
                 is_network_simulation: false,
                 user_speed_multiplier: selected_factor,
             }
-            .send_request(self.request_client)
+            .send_request(&*self.request_client)
             .await;
             match resp {
                 Ok(..) => break,
@@ -260,7 +265,7 @@ impl<'a> FlightComputer<'a> {
                 is_network_simulation: false,
                 user_speed_multiplier: 1,
             }
-            .send_request(self.request_client)
+            .send_request(&*self.request_client)
             .await;
             match resp {
                 Ok(..) => break,
@@ -345,7 +350,7 @@ impl<'a> FlightComputer<'a> {
             camera_angle: new_angle.into(),
             state: self.current_state.into(),
         };
-        match req.send_request(self.request_client).await {
+        match req.send_request(&*self.request_client).await {
             Ok(_) => {
                 self.current_angle = new_angle;
             }
@@ -376,7 +381,7 @@ impl<'a> FlightComputer<'a> {
                 camera_angle: self.current_angle.into(),
                 state: self.current_state.into(),
             };
-            match req.send_request(self.request_client).await {
+            match req.send_request(&*self.request_client).await {
                 Ok(_) => {
                     self.make_ff_call(Duration::from_secs_f32(dt + 1.0)).await;
                     self.update_observation().await;
@@ -404,7 +409,7 @@ impl<'a> FlightComputer<'a> {
     /// Updates the satellite's internal fields with the latest observation data.
     pub async fn update_observation(&mut self) {
         loop {
-            match (ObservationRequest {}.send_request(self.request_client).await) {
+            match (ObservationRequest {}.send_request(&*self.request_client).await) {
                 Ok(obs) => {
                     self.current_pos =
                         Vec2D::from((f32::from(obs.pos_x()), f32::from(obs.pos_y())));
@@ -436,7 +441,7 @@ impl<'a> FlightComputer<'a> {
             state: new_state.into(),
         };
         loop {
-            match req.send_request(self.request_client).await {
+            match req.send_request(&*self.request_client).await {
                 Ok(_) => {
                     return;
                 }
