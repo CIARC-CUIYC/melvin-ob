@@ -11,7 +11,9 @@ use strum_macros::EnumIter;
 ///
 /// These angles are associated with a specific square side length
 /// for image processing purposes, available in a pre-computed lookup table.
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, EnumIter)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, PartialEq, Eq, Clone, Copy, Hash, EnumIter,
+)]
 pub enum CameraAngle {
     Narrow,
     Normal,
@@ -36,14 +38,14 @@ impl From<&str> for CameraAngle {
     /// - `value`: A string slice representing the camera angle (`"narrow"`, `"normal"` or `"wide"`).
     ///
     /// # Returns
-    /// A `CameraAngle` converted from the input string. 
+    /// A `CameraAngle` converted from the input string.
     /// If the input is an unknown string this defaults to `normal` and logs the error.
     fn from(value: &str) -> Self {
         match value.to_lowercase().as_str() {
             "narrow" => CameraAngle::Narrow,
             "wide" => CameraAngle::Wide,
             "normal" => CameraAngle::Normal,
-            _ => panic!("Couldn't convert camera_angle string")// TODO: conversion error should be logged
+            _ => panic!("Couldn't convert camera_angle string"), // TODO: conversion error should be logged
         }
     }
 }

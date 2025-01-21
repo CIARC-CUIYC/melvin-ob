@@ -10,3 +10,12 @@ pub struct ObjectiveListResponse {
 }
 
 impl SerdeJSONBodyHTTPResponseType for ObjectiveListResponse {}
+
+impl ObjectiveListResponse {
+    pub fn zoned_objectives(&self) -> &Vec<ZonedObjective> {
+        &self.zoned_objectives
+    }
+    pub fn beacon_objectives(&self) -> &Vec<BeaconObjective> {
+        &self.beacon_objectives
+    }
+}
