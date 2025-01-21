@@ -1,8 +1,10 @@
 use super::http_request::request_common::RequestError;
 use super::http_response::response_common::ResponseError;
+use crate::flight_control::camera_state::CameraAngle;
+use chrono::Duration;
 use strum_macros::Display;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct ZonedObjective {
     id: usize,
     name: String,
@@ -12,7 +14,7 @@ pub struct ZonedObjective {
     enabled: bool,
     zone: [i32; 4],
     // TODO: make an enum out of optic_required
-    optic_required: String,
+    optic_required: CameraAngle,
     coverage_required: usize,
     description: String,
     sprite: String,
@@ -20,7 +22,7 @@ pub struct ZonedObjective {
 }
 
 impl ZonedObjective {
-    fn id(&self) -> usize {
+    pub fn id(&self) -> usize {
         self.id
     }
     fn name(&self) -> &str {
@@ -32,13 +34,13 @@ impl ZonedObjective {
     fn is_enabled(&self) -> bool {
         self.enabled
     }
-    fn zone(&self) -> &[i32; 4] {
+    pub fn zone(&self) -> &[i32; 4] {
         &self.zone
     }
-    fn optic_required(&self) -> &str {
+    pub fn optic_required(&self) -> &CameraAngle {
         &self.optic_required
     }
-    fn coverage_required(&self) -> usize {
+    pub fn coverage_required(&self) -> usize {
         self.coverage_required
     }
     fn sprite(&self) -> &str {
@@ -141,7 +143,7 @@ impl Achievement {
     }
 }
 
-trait Timed {
+pub trait Timed {
     fn start(&self) -> chrono::DateTime<chrono::Utc>;
     fn end(&self) -> chrono::DateTime<chrono::Utc>;
 
@@ -165,6 +167,12 @@ trait Timed {
 
     fn is_in_time_window(&self) -> bool {
         chrono::Utc::now() >= self.start() && chrono::Utc::now() <= self.end()
+    }
+
+    fn is_in_future_time_window(&self, time_in_future: i64) -> bool {
+        let time_in_future = chrono::Utc::now() + Duration::seconds(time_in_future);
+
+        time_in_future >= self.start() && time_in_future <= self.end()
     }
 }
 
