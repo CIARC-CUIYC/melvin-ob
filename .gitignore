@@ -27,3 +27,4 @@ Cargo.lock
 *.bin
 legacy/
 world.png
+*.DS_Store
