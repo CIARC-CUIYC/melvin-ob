@@ -42,7 +42,9 @@ impl Orbit {
         }
     }
 
-    pub fn start_timestamp(&self) -> chrono::DateTime<chrono::Utc> { self.init_timestamp }
+    pub fn start_timestamp(&self) -> chrono::DateTime<chrono::Utc> {
+        self.init_timestamp
+    }
 
     #[allow(clippy::cast_possible_truncation)]
     pub fn period(&mut self) -> Option<f32> {
@@ -61,7 +63,7 @@ impl Orbit {
             let disp_y = (self.vel_exact.y() * tts as i32).to_f32().unwrap();
             let disp = Vec2D::new(disp_x, disp_y);
 
-            let mut resulting_point = self.fp + disp;
+            let resulting_point = self.fp + disp;
             resulting_point.wrap_around_map();
             let resulting_dist = resulting_point - self.fp;
             if resulting_dist.x().abs() < f32::EPSILON && resulting_dist.y().abs() < f32::EPSILON {
@@ -114,7 +116,7 @@ impl Orbit {
 
     //pub fn is_closed(&self) -> bool { self.period().is_some() }
 
-    pub fn will_visit(&self, pos: Vec2D<f32>) -> bool {
+    pub fn will_visit(&self, pos: Vec2D<f32>) -> Option<f32> {
         let pos_dist = pos - self.fp;
         let map_x = Vec2D::<f32>::map_size().x();
         let map_y = Vec2D::<f32>::map_size().y();
@@ -127,10 +129,12 @@ impl Orbit {
             let tx = delta_x / self.vel.x();
             let ty = delta_y / self.vel.y();
             // Check if the times align within tolerance
-            ((tx % map_x) - (ty % map_y)).abs() < f32::EPSILON
-        } else {
-            false
+            if ((tx % map_x) - (ty % map_y)).abs() < f32::EPSILON {
+                let scaled_time = (tx + ty) / 2.0;
+                return Some(scaled_time);
+            }
         }
+        None
     }
 
     #[allow(clippy::cast_possible_truncation)]
