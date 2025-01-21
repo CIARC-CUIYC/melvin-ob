@@ -2,10 +2,12 @@ mod console_communication;
 mod flight_control;
 mod http_handler;
 
-use crate::console_communication::console_endpoint::{ConsoleEndpoint, ConsoleEndpointEvent};
-use crate::console_communication::melvin_messages;
-use crate::flight_control::orbit::{closed_orbit::{ClosedOrbit, OrbitUsabilityError}, orbit_base::OrbitBase};
-use crate::flight_control::flight_computer::ChargeCommand::TargetCharge;
+use crate::console_communication::console_endpoint::ConsoleEndpoint;
+use crate::flight_control::flight_state::FlightState;
+use crate::flight_control::orbit::{
+    closed_orbit::{ClosedOrbit, OrbitUsabilityError},
+    orbit_base::OrbitBase,
+};
 use crate::flight_control::task_controller::TaskController;
 use crate::flight_control::{
     camera_controller::CameraController, camera_state::CameraAngle, flight_computer::FlightComputer,
@@ -13,10 +15,12 @@ use crate::flight_control::{
 use crate::http_handler::http_client::HTTPClient;
 use crate::http_handler::http_request::observation_get::ObservationRequest;
 use crate::http_handler::http_request::request_common::NoBodyHTTPRequestType;
-use chrono::TimeDelta;
+use chrono::{DateTime, TimeDelta};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::sync::Arc;
+use tokio::sync::{Mutex, Notify};
+use tokio::task::JoinHandle;
 
 const FUEL_RESET_THRESHOLD: f32 = 20.0;
 const MIN_PX_LEFT_FACTOR: f32 = 0.05;
@@ -29,8 +33,6 @@ pub const MIN_BATTERY_THRESHOLD: f32 = 10.0;
 pub const MAX_BATTERY_THRESHOLD: f32 = 100.0;
 const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 const BIN_FILEPATH: &str = "camera_controller_narrow.bin";
-const ACQUISITION_DISCHARGE_PER_S: f32 = 0.1;
-const CHARGE_CHARGE_PER_S: f32 = 0.1;
 
 const LOG_POS: bool = true;
 
@@ -44,79 +46,103 @@ async fn main() {
         tokio::spawn(async move { log_pos(thread_client).await });
     }
 
-    let mut t_cont = TaskController::new();
-    let mut c_cont = CameraController::from_file(BIN_FILEPATH).await.unwrap_or_else(|e| {
+    let t_cont = TaskController::new();
+    let c_cont = CameraController::from_file(BIN_FILEPATH).await.unwrap_or_else(|e| {
         println!("[WARN] Failed to read from binary file: {e}");
         CameraController::new()
     });
-    let mut f_cont = FlightComputer::new(&*client, &t_cont).await;
+    let c_cont_locked = Arc::new(Mutex::new(c_cont));
+    let mut f_cont = FlightComputer::new(Arc::clone(&client), &t_cont).await;
 
-    f_cont.reset().await;
-    f_cont.set_vel_ff(STATIC_ORBIT_VEL.into(), false).await;
-    f_cont.set_angle(CONST_ANGLE).await;
-
-    let c_orbit = match ClosedOrbit::new(OrbitBase::new(&f_cont), CameraAngle::Wide) {
-        Ok(orbit) => orbit,
-        Err(e) => match e {
+    let c_orbit: ClosedOrbit = {
+        f_cont.reset().await;
+        f_cont.set_vel_ff(STATIC_ORBIT_VEL.into(), false).await;
+        f_cont.set_angle(CONST_ANGLE).await;
+        ClosedOrbit::new(OrbitBase::new(&f_cont), CameraAngle::Wide).unwrap_or_else(|e| match e {
             OrbitUsabilityError::OrbitNotClosed => panic!("[FATAL] Static orbit is not closed"),
             OrbitUsabilityError::OrbitNotEnoughOverlap => {
                 panic!("[FATAL] Static orbit is not overlapping enough")
             }
-        },
+        })
     };
+    let f_cont_locked = Arc::new(Mutex::new(f_cont));
 
     let img_dt = c_orbit.max_image_dt();
-    let mut orbit_s_end =
-        c_orbit.base_orbit_ref().start_timestamp() + chrono::Duration::seconds(c_orbit.period().0 as i64);
+    let orbit_s_end = c_orbit.base_orbit_ref().start_timestamp()
+        + chrono::Duration::seconds(c_orbit.period().0 as i64);
 
-    t_cont.schedule_optimal_orbit(&c_orbit, &mut f_cont);
+    let c_orbit_arc = Arc::new(c_orbit);
+    let t_cont_locked = Arc::new(Mutex::new(t_cont));
 
-    // first orbit-behaviour loop
+    // orbit
     loop {
-        let mut break_flag = false;
-        loop {
-            c_cont.shoot_image_to_buffer(&client, &mut f_cont, CONST_ANGLE).await.unwrap();
-
-            if break_flag {
-                break;
-            }
-
-            let secs_to_min_batt =
-                (f_cont.current_battery() - MIN_BATTERY_THRESHOLD) / ACQUISITION_DISCHARGE_PER_S;
-            let secs_to_orbit_end = (orbit_s_end - chrono::Utc::now()).num_seconds() as u64;
-            let mut sleep_time = img_dt as u64;
-
-            if secs_to_min_batt < img_dt {
-                sleep_time = secs_to_min_batt as u64;
-                break_flag = true;
-            }
-            if secs_to_orbit_end < sleep_time {
-                sleep_time = secs_to_orbit_end;
-                break_flag = true;
-            }
-
-            let skipped_time =
-                f_cont.make_ff_call(std::time::Duration::from_secs(sleep_time)).await;
-            orbit_s_end -= TimeDelta::seconds(skipped_time);
-
+        let f_cont_clone = Arc::clone(&f_cont_locked);
+        let c_orbit_arc_clone = Arc::clone(&c_orbit_arc);
+        let t_cont_clone = Arc::clone(&t_cont_locked);
+        let schedule_join_handle = tokio::spawn(async move {
+            let mut t_cont = t_cont_clone.lock().await;
+            t_cont.schedule_optimal_orbit(&c_orbit_arc_clone, f_cont_clone).await;
+        });
+        let current_state = {
+            let mut f_cont = f_cont_locked.lock().await;
             f_cont.update_observation().await;
+            f_cont.state()
+        };
+        let acq_phase = if current_state == FlightState::Acquisition {
+            let end_time = chrono::Utc::now() + chrono::Duration::seconds(10000);
+            Some(handle_acquisition(&f_cont_locked, &c_cont_locked, end_time, img_dt, CONST_ANGLE))
+        } else {
+            None
+        };
+        
+        schedule_join_handle.await.ok();
+        if let Some(h) = acq_phase {
+            h.1.notify_one();
+            h.0.await.ok();
         }
 
-        if chrono::Utc::now() > orbit_s_end {
-            println!(
-                "[LOG] First orbit over, position: {:?}",
-                f_cont.current_pos()
-            );
-            break;
-        };
-
-        tokio::join!(
-            c_cont.save_png_to(BIN_FILEPATH),
-            f_cont.charge_until(TargetCharge(MAX_BATTERY_THRESHOLD))
-        )
-        .0
-        .unwrap();
+        let tot_ff_dt = TimeDelta::seconds(0);
+        while let Some(task) = t_cont_locked.lock().await.sched_arc().copy_front() {
+            
+            // TODO: perform optimal orbit until objective notification
+        }
     }
+
+    /* if chrono::Utc::now() > orbit_s_end {
+        println!(
+            "[LOG] First orbit over, position: {:?}",
+            f_cont.current_pos()
+        );
+        break;
+    }*/
+
+    //c_cont.save_png_to(BIN_FILEPATH).await.unwrap();
+}
+
+fn handle_acquisition(
+    f_cont_locked: &Arc<Mutex<FlightComputer>>,
+    c_cont_locked: &Arc<Mutex<CameraController>>,
+    end_time: DateTime<chrono::Utc>,
+    img_dt: f32,
+    angle: CameraAngle) -> (JoinHandle<()>, Arc<Notify>, Arc<Mutex<DateTime<chrono::Utc>>>) {
+    let f_cont_locked_arc_clone = Arc::clone(f_cont_locked);
+    let end_time_locked = Arc::new(Mutex::new(end_time));
+    let end_time_cloned = Arc::clone(&end_time_locked);
+    let c_cont_cloned = Arc::clone(c_cont_locked);
+    let last_image_notify = Arc::new(Notify::new());
+    let last_image_notify_cloned = Arc::clone(&last_image_notify);
+
+    let handle = tokio::spawn(async move {
+        CameraController::execute_acquisition_cycle(
+            c_cont_cloned,
+            f_cont_locked_arc_clone,
+            end_time_cloned,
+            last_image_notify_cloned,
+            img_dt,
+            angle,
+        ).await;
+    });
+    (handle, last_image_notify, end_time_locked)
 }
 
 async fn log_pos(http_handler: Arc<HTTPClient>) {
@@ -129,8 +155,8 @@ async fn log_pos(http_handler: Arc<HTTPClient>) {
         }
         if next_save < chrono::Utc::now() {
             if let Ok(mut f) = OpenOptions::new().create(true).append(true).open("pos.csv") {
-                for (x, y) in positions.iter() {
-                    writeln!(f, "{},{}", x, y).unwrap();
+                for (x, y) in &positions {
+                    writeln!(f, "{x},{y}").unwrap();
                 }
                 next_save = chrono::Utc::now() + chrono::Duration::seconds(300);
                 positions.clear();

@@ -1,5 +1,5 @@
 use std::ops::{Deref, DerefMut};
-use image::{GenericImage, GenericImageView, ImageBuffer, Pixel};
+use image::{GenericImage, GenericImageView};
 use super::vec2d::Vec2D;
 
 // TODO: this could be useful as soon as metadata for pixels is necessary
@@ -115,12 +115,12 @@ pub struct SubBuffer<T> {
     pub(crate) size: Vec2D<u32>,
 }
 
-impl<T, C> GenericImageView for SubBuffer<T>
+impl<T> GenericImageView for SubBuffer<T>
 where
-    T: Deref<Target=C>,
-    C: GenericImageView + Sized,
+    T: Deref,
+    T::Target: GenericImageView + Sized,
 {
-    type Pixel = C::Pixel;
+    type Pixel = <<T as Deref>::Target as GenericImageView>::Pixel;
 
     fn dimensions(&self) -> (u32, u32) {
         (self.size.x(), self.size.y())
@@ -147,13 +147,12 @@ where
     fn put_pixel(&mut self, x: u32, y: u32, pixel: Self::Pixel) {
         let x = (x + self.offset.x()) % self.buffer_size.x();
         let y = (y + self.offset.y()) % self.buffer_size.y();
-        self.buffer.put_pixel(x, y, pixel)
+        self.buffer.put_pixel(x, y, pixel);
     }
-
-
+    
     fn blend_pixel(&mut self, x: u32, y: u32, pixel: Self::Pixel) {
         let x = (x + self.offset.x()) % self.buffer_size.x();
         let y = (y + self.offset.y()) % self.buffer_size.y();
-        self.buffer.blend_pixel(x, y, pixel)
+        self.buffer.blend_pixel(x, y, pixel);
     }
 }

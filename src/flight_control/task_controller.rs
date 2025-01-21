@@ -9,9 +9,8 @@ use crate::flight_control::{
 };
 use crate::{MAX_BATTERY_THRESHOLD, MIN_BATTERY_THRESHOLD};
 use chrono::Duration;
-use std::cmp::max;
-use std::fmt::Pointer;
 use std::sync::{Arc, Condvar};
+use tokio::sync::Mutex;
 
 /// `TaskController` manages and schedules image capture tasks for a satellite.
 /// It leverages a thread-safe task queue and notifies waiting threads when
@@ -37,9 +36,17 @@ enum AtomicDecision {
     SwitchToAcquisition,
 }
 
+type AtomicDecisionBox = Box<[AtomicDecision]>; // A layer of AtomicDecision
+type AtomicDecisionGrid = Box<[AtomicDecisionBox]>; // A "2D" grid of AtomicDecision
+type AtomicDecisionCube = Box<[AtomicDecisionGrid]>;
+
+type CoverageGrid = Box<[Box<[u16]>]>;
+
+
+
 struct OptimalOrbitResult {
-    pub decisions: Box<[Box<[Box<[AtomicDecision]>]>]>,
-    pub coverage_slice: LinkedBox<Box<[Box<[u16]>]>>,
+    pub decisions: AtomicDecisionCube,
+    pub coverage_slice: LinkedBox<CoverageGrid>,
 }
 
 impl TaskController {
@@ -60,12 +67,9 @@ impl TaskController {
 
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn calculate_optimal_orbit_schedule(
-        &self,
         orbit: &ClosedOrbit,
         current_pos: Vec2D<f32>,
     ) -> OptimalOrbitResult {
-        type CoverageDoubleBox = Box<[Box<[u16]>]>;
-
         let states = [FlightState::Charge, FlightState::Acquisition];
         let usable_batt_range = MAX_BATTERY_THRESHOLD - MIN_BATTERY_THRESHOLD;
         let max_battery = (usable_batt_range / Self::BATTERY_RESOLUTION).round() as usize;
@@ -84,7 +88,7 @@ impl TaskController {
             ]
             .into_boxed_slice();
         // initiate fixed-length double linked list with first value
-        let mut max_cov_buffer: LinkedBox<CoverageDoubleBox> = LinkedBox::new(180);
+        let mut max_cov_buffer: LinkedBox<CoverageGrid> = LinkedBox::new(180);
         max_cov_buffer.push(cov_dt_temp.clone());
         for t in (0..prediction_secs).rev() {
             let mut cov_dt = cov_dt_temp.clone();
@@ -132,16 +136,22 @@ impl TaskController {
     }
 
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
-    pub fn schedule_optimal_orbit(&mut self, orbit: &ClosedOrbit, f_cont: &mut FlightComputer) {
+    pub async fn schedule_optimal_orbit(&mut self, orbit: &ClosedOrbit, f_cont_lock: Arc<Mutex<FlightComputer>>) {
         let computation_start = chrono::Utc::now();
         println!("[INFO] Calculating optimal orbit schedule...");
-        let decisions = self.calculate_optimal_orbit_schedule(orbit, f_cont.current_pos());
+        let decisions: OptimalOrbitResult = {
+            let f_cont = f_cont_lock.lock().await;
+            Self::calculate_optimal_orbit_schedule(orbit, f_cont.current_pos())
+        };
         let dt_calc = (chrono::Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
         println!("[INFO] Optimal Orbit Calculation complete after {dt_calc:.2}");
         let mut dt = dt_calc.ceil() as usize;
-
-        let batt_f32 = f_cont.current_battery();
-        let mut state: usize = match f_cont.state() {
+        
+        let batt_f32: f32 = {
+            let f_cont = f_cont_lock.lock().await;
+            f_cont.current_battery()
+        };
+        let mut state: usize = match f_cont_lock.lock().await.state() {
             FlightState::Acquisition => 1,
             FlightState::Charge => 0,
             state => panic!("[FATAL] Unexpected flight state: {state}"),
@@ -153,7 +163,7 @@ impl TaskController {
 
         let pred_secs = Self::MAX_ORBIT_PREDICTION_SECS.min(orbit.period().0 as u32) as usize;
         let mut decision_list: Vec<AtomicDecision> = Vec::new();
-        while dt < pred_secs {
+        while dt < pred_secs  {
             let decision = decisions.decisions[dt][batt][state];
             decision_list.push(decision);
             match decision {
@@ -180,15 +190,6 @@ impl TaskController {
                     dt = (dt + 180).min(pred_secs);
                 }
             }
-        }
-        let dt_sched = (chrono::Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
-        println!("[INFO] Scheduled all events after {dt_sched:.2}");
-        let now = chrono::Utc::now().format("%d %H:%M:%S").to_string();
-        println!("Current time: {now}");
-        for i in 0..self.task_schedule.len() {
-            let task = self.task_schedule.copy_front().unwrap();
-            println!("Schedule item {i}: {}", task);
-            self.task_schedule.pop();
         }
     }
 

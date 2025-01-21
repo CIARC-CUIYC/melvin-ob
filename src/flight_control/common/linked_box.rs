@@ -1,7 +1,7 @@
-use std::collections::LinkedList;
+use std::collections::VecDeque;
 
 pub struct LinkedBox<T> {
-    list: LinkedList<T>,
+    list: VecDeque<T>,
     max_size: usize,
 }
 
@@ -9,7 +9,7 @@ impl<T> LinkedBox<T> {
     /// Creates a new fixed-size linked list with a maximum size.
     pub fn new(max_size: usize) -> Self {
         Self {
-            list: LinkedList::new(),
+            list: VecDeque::new(),
             max_size,
         }
     }

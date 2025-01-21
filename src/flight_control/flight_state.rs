@@ -39,8 +39,8 @@ impl FlightState {
         match self {
             FlightState::Deployment => {-0.025}
             FlightState::Transition => {0.0}
-            FlightState::Acquisition => {-0.2}
-            FlightState::Charge => {0.2}
+            FlightState::Acquisition => {-0.1}
+            FlightState::Charge => {0.1}
             FlightState::Comms => {-0.016}
             FlightState::Safe => {0.05}
         }

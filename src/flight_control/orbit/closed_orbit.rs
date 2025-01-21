@@ -19,6 +19,8 @@ pub enum OrbitUsabilityError {
 }
 
 impl ClosedOrbit {
+
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
     pub fn new(try_orbit: OrbitBase, lens: CameraAngle) -> Result<Self, OrbitUsabilityError> {
         match try_orbit.period() {
             None => Err(OrbitUsabilityError::OrbitNotClosed),

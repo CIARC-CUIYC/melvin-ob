@@ -1,5 +1,4 @@
 use crate::flight_control::camera_state::CameraAngle;
-use crate::flight_control::common::pinned_dt::PinnedTimeDelay;
 use crate::flight_control::common::vec2d::Vec2D;
 
 /// Represents the status of an image capture task.

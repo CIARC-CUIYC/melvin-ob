@@ -9,13 +9,12 @@ use crate::http_handler::{
     http_client,
     http_request::{
         configure_simulation_put::ConfigureSimulationRequest,
-        control_put::*,
-        observation_get::*,
+        control_put::ControlSatelliteRequest,
+        observation_get::ObservationRequest,
         reset_get::ResetRequest,
         request_common::{JSONBodyHTTPRequestType, NoBodyHTTPRequestType},
     },
 };
-use crate::CHARGE_CHARGE_PER_S;
 use chrono::TimeDelta;
 use std::{cmp::min, sync::Arc, time::Duration};
 use tokio::time::sleep;
@@ -160,7 +159,7 @@ impl FlightComputer {
     
 
     pub async fn reset(&mut self) {
-        ResetRequest {}.send_request(&*self.request_client).await.expect("ERROR: Failed to reset");
+        ResetRequest {}.send_request(&self.request_client).await.expect("ERROR: Failed to reset");
         self.update_observation().await;
     }
 
@@ -251,7 +250,7 @@ impl FlightComputer {
                 is_network_simulation: false,
                 user_speed_multiplier: selected_factor,
             }
-            .send_request(&*self.request_client)
+            .send_request(&self.request_client)
             .await;
             match resp {
                 Ok(..) => break,
@@ -265,7 +264,7 @@ impl FlightComputer {
                 is_network_simulation: false,
                 user_speed_multiplier: 1,
             }
-            .send_request(&*self.request_client)
+            .send_request(&self.request_client)
             .await;
             match resp {
                 Ok(..) => break,
@@ -283,6 +282,7 @@ impl FlightComputer {
     ///
     /// # Arguments
     /// - `target_battery`: The desired target battery level (percentage).
+    #[allow(clippy::cast_precision_loss)]
     pub async fn charge_until(&mut self, command: ChargeCommand) {
         // TODO: make this work in parallel (calculation || state_change to charge)
         self.update_observation().await;
@@ -293,7 +293,7 @@ impl FlightComputer {
                 if initial_state != FlightState::Charge {
                     dt -= TimeDelta::seconds(2 * 180);
                 }
-                self.current_battery + dt.num_seconds() as f32 * CHARGE_CHARGE_PER_S
+                self.current_battery + dt.num_seconds() as f32 * FlightState::Charge.get_charge_rate()
             }
         };
         let charge_rate: f32 = FlightState::Charge.get_charge_rate();
@@ -350,7 +350,7 @@ impl FlightComputer {
             camera_angle: new_angle.into(),
             state: self.current_state.into(),
         };
-        match req.send_request(&*self.request_client).await {
+        match req.send_request(&self.request_client).await {
             Ok(_) => {
                 self.current_angle = new_angle;
             }
@@ -367,7 +367,7 @@ impl FlightComputer {
     /// # Arguments
     /// - `new_vel`: The target velocity vector.
     /// - `switch_back_to_init_state`: Whether to revert to the initial state after adjusting velocity.
-    pub async fn set_vel_ff(&mut self, mut new_vel: Vec2D<f32>, switch_back_to_init_state: bool) {
+    pub async fn set_vel_ff(&mut self, new_vel: Vec2D<f32>, switch_back_to_init_state: bool) {
         let init_state = self.current_state;
         if init_state != FlightState::Acquisition {
             self.state_change_ff(FlightState::Acquisition).await;
@@ -381,7 +381,7 @@ impl FlightComputer {
                 camera_angle: self.current_angle.into(),
                 state: self.current_state.into(),
             };
-            match req.send_request(&*self.request_client).await {
+            match req.send_request(&self.request_client).await {
                 Ok(_) => {
                     self.make_ff_call(Duration::from_secs_f32(dt + 1.0)).await;
                     self.update_observation().await;
@@ -409,7 +409,7 @@ impl FlightComputer {
     /// Updates the satellite's internal fields with the latest observation data.
     pub async fn update_observation(&mut self) {
         loop {
-            match (ObservationRequest {}.send_request(&*self.request_client).await) {
+            match (ObservationRequest {}.send_request(&self.request_client).await) {
                 Ok(obs) => {
                     self.current_pos =
                         Vec2D::from((f32::from(obs.pos_x()), f32::from(obs.pos_y())));
@@ -441,7 +441,7 @@ impl FlightComputer {
             state: new_state.into(),
         };
         loop {
-            match req.send_request(&*self.request_client).await {
+            match req.send_request(&self.request_client).await {
                 Ok(_) => {
                     return;
                 }
@@ -472,7 +472,7 @@ impl FlightComputer {
     /// # Returns
     /// - A `Vec2D<f32>` representing the satellite’s predicted position.
     pub fn pos_in_dt(&self, time_delta: TimeDelta) -> Vec2D<f32> {
-        let mut pos = self.current_pos + (self.current_vel * time_delta.num_seconds());
+        let pos = self.current_pos + (self.current_vel * time_delta.num_seconds());
         pos.wrap_around_map();
         pos
     }

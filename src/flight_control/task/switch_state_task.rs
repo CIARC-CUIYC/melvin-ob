@@ -1,4 +1,3 @@
-use crate::flight_control::common::pinned_dt::PinnedTimeDelay;
 use crate::flight_control::flight_state::FlightState;
 
 #[derive(Debug, Copy, Clone)]
@@ -17,5 +16,5 @@ impl SwitchStateTask {
         }
     }
     
-    pub fn target_state(&self) -> FlightState { self.target_state }
+    pub fn target_state(self) -> FlightState { self.target_state }
 }

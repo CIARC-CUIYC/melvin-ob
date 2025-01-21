@@ -12,13 +12,12 @@ use bitvec::boxed::BitBox;
 use futures::StreamExt;
 use image::codecs::png::{CompressionType, FilterType, PngDecoder, PngEncoder};
 use image::{
-    imageops::Lanczos3, DynamicImage, GenericImage, GenericImageView, ImageBuffer, ImageDecoder,
+    imageops::Lanczos3, DynamicImage, GenericImage, GenericImageView, ImageBuffer,
     ImageReader, Pixel, Rgb, RgbImage, Rgba, RgbaImage,
 };
-use num::traits::Float;
 use std::io::Cursor;
 use std::sync::Arc;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{Mutex, Notify, RwLock};
 use tokio::{
     fs::File,
     io::{AsyncReadExt, AsyncWriteExt},
@@ -54,7 +53,7 @@ impl MapImage {
 
     pub fn fullsize_view(&self, offset: Vec2D<u32>, size: Vec2D<u32>) -> SubBuffer<&MapImage> {
         SubBuffer {
-            buffer: &self,
+            buffer: self,
             buffer_size: Vec2D::map_size(),
             offset,
             size,
@@ -161,15 +160,7 @@ impl CameraController {
         self.map_image.read().await.coverage.data.clone()
     }
 
-    /*
-    pub async fn export_bin(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
-        //let encoded = bincode::serialize(&self)?;
-        //let mut bin_file = File::create(path).await?;
-        //bin_file.write_all(&encoded).await?;
-        //bin_file.flush().await?;
-        Ok(())
-    }*/
-
+    #[allow(clippy::cast_sign_loss)]
     fn score_offset(
         decoded_image: &RgbImage,
         base: &MapImage,
@@ -193,9 +184,7 @@ impl CameraController {
                     .pixels()
                     .zip(decoded_image.pixels())
                     .map(|((_, _, existing_pixel), new_pixel)| {
-                        if existing_pixel.0[3] == 0 {
-                            0
-                        } else if existing_pixel.to_rgb() == new_pixel.to_rgb() {
+                        if existing_pixel.0[3] == 0 || existing_pixel.to_rgb() == new_pixel.to_rgb() {
                             0
                         } else {
                             -1
@@ -213,27 +202,27 @@ impl CameraController {
         best_additional_offset
     }
 
-    #[allow(clippy::cast_possible_truncation)]
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     pub async fn shoot_image_to_buffer(
         &mut self,
         f_cont_locked: Arc<Mutex<FlightComputer>>,
         angle: CameraAngle,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let (position, collected_png) = {
             let mut f_cont = f_cont_locked.lock().await;
             let client = f_cont.client();
             let ((), collected_png) =
-                tokio::join!(f_cont.update_observation(), self.fetch_image_data(&*client));
+                tokio::join!(f_cont.update_observation(), self.fetch_image_data(&client));
             (f_cont.current_pos(), collected_png)
         };
-        let decoded_image = self.decode_png_data(
+        let decoded_image = Self::decode_png_data(
             &collected_png.unwrap_or_else(|e| panic!("[ERROR] PNG couldn't be unwrapped: {e}")),
             angle,
         )?;
         let angle_const = angle.get_square_side_length() / 2;
         let pos: Vec2D<i32> = Vec2D::new(
-            position.x().round() as i32 - angle_const as i32,
-            position.y().round() as i32 - angle_const as i32,
+            position.x().round() as i32 - i32::from(angle_const),
+            position.y().round() as i32 - i32::from(angle_const),
         )
         .wrap_around_map();
 
@@ -252,7 +241,7 @@ impl CameraController {
         )
         .wrap_around_map()
         .cast();
-        let size = angle_const as u32 * 2 + MapImage::THUMBNAIL_SCALE_FACTOR * 4;
+        let size = u32::from(angle_const) * 2 + MapImage::THUMBNAIL_SCALE_FACTOR * 4;
         let map_image_view = map_image.fullsize_view(pos, Vec2D::new(size, size));
 
         let resized_image = image::imageops::thumbnail(
@@ -271,7 +260,7 @@ impl CameraController {
     async fn fetch_image_data(
         &mut self,
         httpclient: &HTTPClient,
-    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
         let response_stream = ShootImageRequest {}.send_request(httpclient).await?;
 
         let mut collected_png: Vec<u8> = Vec::new();
@@ -285,10 +274,9 @@ impl CameraController {
     }
 
     fn decode_png_data(
-        &mut self,
         collected_png: &[u8],
         angle: CameraAngle,
-    ) -> Result<RgbImage, Box<dyn std::error::Error>> {
+    ) -> Result<RgbImage, Box<dyn std::error::Error + Send + Sync>> {
         let decoded_image =
             ImageReader::new(Cursor::new(collected_png)).with_guessed_format()?.decode()?.to_rgb8();
         let resized_unit_length = angle.get_square_side_length();
@@ -315,9 +303,10 @@ impl CameraController {
     pub(crate) async fn save_png_to(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
         let mut file = File::create(path).await.unwrap();
         let image = self.export_full_thumbnail_png().await?;
-        file.write_all(&*image).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+        file.write_all(&image).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
     }
 
+    #[allow(clippy::cast_sign_loss)]
     pub(crate) async fn export_thumbnail_png(
         &self,
         position: Vec2D<i32>,
@@ -391,27 +380,43 @@ impl CameraController {
         }
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     pub async fn execute_acquisition_cycle(
-        &mut self,
+        this: Arc<Mutex<Self>>,
         f_cont_locked: Arc<Mutex<FlightComputer>>,
-        end_time: chrono::DateTime<chrono::Utc>,
+        end_time_locked: Arc<Mutex<chrono::DateTime<chrono::Utc>>>,
+        last_img_kill: Arc<Notify>,
         image_max_dt: f32,
         lens: CameraAngle,
     ) {
         let mut last_image_flag = false;
         loop {
-            match self.shoot_image_to_buffer(Arc::clone(&f_cont_locked), lens).await {
-                Ok(()) => println!("[INFO] Took picture at {}", chrono::Utc::now()),
-                Err(e) => println!("[ERROR] Couldn't take picture: {e}")
+            {
+                let mut c_cont = this.lock().await;
+                match c_cont.shoot_image_to_buffer(Arc::clone(&f_cont_locked), lens).await {
+                    Ok(()) => println!("[INFO] Took picture at {}", chrono::Utc::now()),
+                    Err(e) => println!("[ERROR] Couldn't take picture: {e}"),
+                };
             }
-            if last_image_flag {return;}
-            if chrono::Utc::now() + chrono::TimeDelta::seconds(image_max_dt as i64) > end_time {
-                let sleep_time = end_time - chrono::Utc::now() - chrono::TimeDelta::seconds(1);
-                last_image_flag = true;
-                tokio::time::sleep(sleep_time.to_std().unwrap()).await;
-            } else {
-                let sleep_time = std::time::Duration::from_secs_f32(image_max_dt.floor());
-                tokio::time::sleep(sleep_time).await;
+            if last_image_flag {
+                return;
+            }
+            let sleep_time = {
+                let end_time = end_time_locked.lock().await;
+                if chrono::Utc::now() + chrono::TimeDelta::seconds(image_max_dt as i64) > *end_time {
+                    last_image_flag = true;
+                    (*end_time - chrono::Utc::now() - chrono::TimeDelta::seconds(1))
+                        .to_std()
+                        .unwrap()
+                } else {
+                    std::time::Duration::from_secs_f32(image_max_dt.floor())
+                }
+            };
+            tokio::select! {
+                () = tokio::time::sleep(sleep_time) => {}
+                () = last_img_kill.notified() => {
+                    last_image_flag = true;
+                }
             }
         }
     }
