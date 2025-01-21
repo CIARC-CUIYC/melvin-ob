@@ -50,12 +50,12 @@ impl LockedTaskQueue {
     ///
     /// # Returns
     /// - `Some<ImageTask>` containing the first task, or `None` if the queue is empty.
-    pub fn copy_front(&self) -> Option<Task> {
+    pub fn peek(&self) -> Option<Task> {
         let locked_queue = self.lock_queue();
         let first_ref = locked_queue.front();
         first_ref.copied()
     }
-
+    
     /// Returns the length of the task queue.
     ///
     /// # Returns

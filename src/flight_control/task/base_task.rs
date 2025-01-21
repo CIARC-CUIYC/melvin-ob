@@ -1,10 +1,10 @@
-use std::fmt::{Display, Formatter};
-use crate::flight_control::camera_state::CameraAngle;
 use super::image_task::ImageTask;
 use super::switch_state_task::SwitchStateTask;
+use crate::flight_control::camera_state::CameraAngle;
 use crate::flight_control::common::pinned_dt::PinnedTimeDelay;
 use crate::flight_control::common::vec2d::Vec2D;
 use crate::flight_control::flight_state::FlightState;
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug, Copy, Clone)]
 pub struct Task {
@@ -13,7 +13,7 @@ pub struct Task {
 }
 
 #[derive(Debug, Copy, Clone)]
-enum BaseTask {
+pub enum BaseTask {
     TASKImageTask(ImageTask),
     TASKSwitchState(SwitchStateTask),
 }
@@ -22,11 +22,10 @@ impl Display for Task {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let task_type_str = match &self.task_type {
             BaseTask::TASKImageTask(_) => "Image Task",
-            BaseTask::TASKSwitchState(task) => &*format!("Switch to {}", task.target_state())
+            BaseTask::TASKSwitchState(task) => &*format!("Switch to {}", task.target_state()),
         };
         let end = self.dt.get_end().format("%d %H:%M:%S").to_string();
         write!(f, "Due: {end}, Task: {task_type_str}")
-
     }
 }
 
@@ -42,14 +41,9 @@ impl Task {
     }
 
     pub fn image_task(planned_pos: Vec2D<u32>, lens: CameraAngle, dt: PinnedTimeDelay) -> Self {
-        Self{
-            task_type: BaseTask::TASKImageTask(
-                ImageTask::new(
-                    planned_pos,
-                    lens
-                )
-            ),
-            dt
+        Self {
+            task_type: BaseTask::TASKImageTask(ImageTask::new(planned_pos, lens)),
+            dt,
         }
     }
 
@@ -64,4 +58,6 @@ impl Task {
     /// # Returns
     /// - An immutable reference to `PinnedTimeDelay`.
     pub fn dt(&self) -> &PinnedTimeDelay { &self.dt }
+
+    pub fn task_type(&self) -> BaseTask { self.task_type }
 }

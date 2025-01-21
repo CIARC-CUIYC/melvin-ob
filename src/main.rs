@@ -8,6 +8,7 @@ use crate::flight_control::orbit::{
     closed_orbit::{ClosedOrbit, OrbitUsabilityError},
     orbit_base::OrbitBase,
 };
+use crate::flight_control::task::base_task::BaseTask;
 use crate::flight_control::task_controller::TaskController;
 use crate::flight_control::{
     camera_controller::CameraController, camera_state::CameraAngle, flight_computer::FlightComputer,
@@ -90,20 +91,63 @@ async fn main() {
         };
         let acq_phase = if current_state == FlightState::Acquisition {
             let end_time = chrono::Utc::now() + chrono::Duration::seconds(10000);
-            Some(handle_acquisition(&f_cont_locked, &c_cont_locked, end_time, img_dt, CONST_ANGLE))
+            Some(handle_acquisition(
+                &f_cont_locked,
+                &c_cont_locked,
+                end_time,
+                img_dt,
+                CONST_ANGLE,
+            ))
         } else {
             None
         };
-        
+
         schedule_join_handle.await.ok();
         if let Some(h) = acq_phase {
             h.1.notify_one();
             h.0.await.ok();
         }
 
-        let tot_ff_dt = TimeDelta::seconds(0);
-        while let Some(task) = t_cont_locked.lock().await.sched_arc().copy_front() {
-            
+        while let Some(task) = t_cont_locked.lock().await.sched_arc().pop() {
+            let task_type = task.task_type();
+            let due_time = task.dt().time_left();
+            if due_time > DT_0 {
+                let mut f_cont = f_cont_locked.lock().await;
+                f_cont.make_ff_call(due_time.to_std().unwrap()).await;
+            }
+            match task_type {
+                BaseTask::TASKImageTask(_) => {
+                    todo!()
+                }
+                BaseTask::TASKSwitchState(switch) => match switch.target_state() {
+                    FlightState::Acquisition => {
+                        let mut f_cont = f_cont_locked.lock().await;
+                        f_cont.state_change_ff(FlightState::Acquisition).await;
+                        if let Some(next) = t_cont_locked.lock().await.sched_arc().peek() {
+                            let task_due = next.dt().time_left();
+                            let acq_phase = handle_acquisition(
+                                &f_cont_locked,
+                                &c_cont_locked,
+                                next.dt().get_end(),
+                                img_dt,
+                                CONST_ANGLE,
+                            );
+                            tokio::time::sleep(task_due.to_std().unwrap()).await;
+                            acq_phase.1.notify_one();
+                            acq_phase.0.await.ok();
+                            // TODO: export png here
+                        }
+                    }
+                    FlightState::Charge => {
+                        let mut f_cont = f_cont_locked.lock().await;
+                        f_cont.state_change_ff(FlightState::Charge).await;
+                    }
+                    FlightState::Comms => {}
+                    _ => {
+                        panic!("[FATAL] Illegal target state!")
+                    }
+                },
+            }
             // TODO: perform optimal orbit until objective notification
         }
     }
@@ -124,7 +168,12 @@ fn handle_acquisition(
     c_cont_locked: &Arc<Mutex<CameraController>>,
     end_time: DateTime<chrono::Utc>,
     img_dt: f32,
-    angle: CameraAngle) -> (JoinHandle<()>, Arc<Notify>, Arc<Mutex<DateTime<chrono::Utc>>>) {
+    angle: CameraAngle,
+) -> (
+    JoinHandle<()>,
+    Arc<Notify>,
+    Arc<Mutex<DateTime<chrono::Utc>>>,
+) {
     let f_cont_locked_arc_clone = Arc::clone(f_cont_locked);
     let end_time_locked = Arc::new(Mutex::new(end_time));
     let end_time_cloned = Arc::clone(&end_time_locked);
@@ -140,7 +189,8 @@ fn handle_acquisition(
             last_image_notify_cloned,
             img_dt,
             angle,
-        ).await;
+        )
+        .await;
     });
     (handle, last_image_notify, end_time_locked)
 }
