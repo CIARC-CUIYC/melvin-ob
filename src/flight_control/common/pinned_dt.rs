@@ -1,4 +1,4 @@
-use chrono::{DateTime, TimeDelta, Utc};
+use chrono::{DateTime, Local, TimeDelta, Utc};
 
 /// A structure that represents a delay tied to a specific start time.
 /// This is useful for managing time-based operations where a delay is computed
@@ -30,6 +30,13 @@ impl PinnedTimeDelay {
         Self {
             start_time: Utc::now(),
             delay: delta,
+        }
+    }
+    
+    pub fn from_end(end: DateTime<Utc>) -> Self {
+        Self {
+            start_time: Utc::now(),
+            delay: end - Utc::now(),
         }
     }
 

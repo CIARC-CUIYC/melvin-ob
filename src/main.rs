@@ -1,24 +1,22 @@
+mod console_communication;
 mod flight_control;
 mod http_handler;
-mod console_communication;
 
-use std::fs::OpenOptions;
 use crate::console_communication::console_endpoint::{ConsoleEndpoint, ConsoleEndpointEvent};
 use crate::console_communication::melvin_messages;
-use crate::flight_control::{
-    camera_controller::CameraController,
-    camera_state::CameraAngle,
-    flight_computer::FlightComputer,
-};
-use crate::http_handler::http_request::request_common::NoBodyHTTPRequestType;
-use std::sync::Arc;
-use std::io::Write;
-use chrono::TimeDelta;
-use crate::flight_control::common::orbit::Orbit;
+use crate::flight_control::orbit::{closed_orbit::{ClosedOrbit, OrbitUsabilityError}, orbit_base::OrbitBase};
 use crate::flight_control::flight_computer::ChargeCommand::TargetCharge;
 use crate::flight_control::task_controller::TaskController;
+use crate::flight_control::{
+    camera_controller::CameraController, camera_state::CameraAngle, flight_computer::FlightComputer,
+};
 use crate::http_handler::http_client::HTTPClient;
 use crate::http_handler::http_request::observation_get::ObservationRequest;
+use crate::http_handler::http_request::request_common::NoBodyHTTPRequestType;
+use chrono::TimeDelta;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::sync::Arc;
 
 const FUEL_RESET_THRESHOLD: f32 = 20.0;
 const MIN_PX_LEFT_FACTOR: f32 = 0.05;
@@ -31,8 +29,8 @@ pub const MIN_BATTERY_THRESHOLD: f32 = 10.0;
 pub const MAX_BATTERY_THRESHOLD: f32 = 100.0;
 const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 const BIN_FILEPATH: &str = "camera_controller_narrow.bin";
-const ACQUISITION_DISCHARGE_PER_S: f32 = 0.2;
-const CHARGE_CHARGE_PER_S: f32 = 0.2;
+const ACQUISITION_DISCHARGE_PER_S: f32 = 0.1;
+const CHARGE_CHARGE_PER_S: f32 = 0.1;
 
 const LOG_POS: bool = true;
 
@@ -43,10 +41,10 @@ async fn main() {
     let console_endpoint = Arc::new(ConsoleEndpoint::start());
     if LOG_POS {
         let thread_client = Arc::clone(&client);
-        tokio::spawn(async move {log_pos(thread_client).await});
+        tokio::spawn(async move { log_pos(thread_client).await });
     }
 
-    let t_cont = TaskController::new();
+    let mut t_cont = TaskController::new();
     let mut c_cont = CameraController::from_file(BIN_FILEPATH).await.unwrap_or_else(|e| {
         println!("[WARN] Failed to read from binary file: {e}");
         CameraController::new()
@@ -57,13 +55,21 @@ async fn main() {
     f_cont.set_vel_ff(STATIC_ORBIT_VEL.into(), false).await;
     f_cont.set_angle(CONST_ANGLE).await;
 
-    let mut orbit = Orbit::new(&f_cont);
-    let period = orbit.period().expect("[FATAL] Static orbit is not closed!").round() as i64;
-    let img_dt =
-        orbit.max_image_dt(CONST_ANGLE).expect("[FATAL] Static orbit is not overlapping enough");
-    let mandatory_state_change = orbit.last_possible_state_change().unwrap();
+    let c_orbit = match ClosedOrbit::new(OrbitBase::new(&f_cont), CameraAngle::Wide) {
+        Ok(orbit) => orbit,
+        Err(e) => match e {
+            OrbitUsabilityError::OrbitNotClosed => panic!("[FATAL] Static orbit is not closed"),
+            OrbitUsabilityError::OrbitNotEnoughOverlap => {
+                panic!("[FATAL] Static orbit is not overlapping enough")
+            }
+        },
+    };
+
+    let img_dt = c_orbit.max_image_dt();
     let mut orbit_s_end =
-        orbit.start_timestamp() + chrono::Duration::seconds(i64::from(mandatory_state_change.0));
+        c_orbit.base_orbit_ref().start_timestamp() + chrono::Duration::seconds(c_orbit.period().0 as i64);
+
+    t_cont.schedule_optimal_orbit(&c_orbit, &mut f_cont);
 
     // first orbit-behaviour loop
     loop {

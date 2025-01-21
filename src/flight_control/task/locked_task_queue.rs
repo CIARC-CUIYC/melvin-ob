@@ -1,4 +1,4 @@
-use crate::flight_control::common::image_task::ImageTask;
+use super::base_task::Task;
 use std::collections::VecDeque;
 use std::sync::Mutex;
 
@@ -7,7 +7,7 @@ use std::sync::Mutex;
 #[derive(Debug)]
 pub(crate) struct LockedTaskQueue {
     /// The queue storing image capture tasks.
-    queue: Mutex<VecDeque<ImageTask>>,
+    queue: Mutex<VecDeque<Task>>,
 }
 
 impl LockedTaskQueue {
@@ -28,7 +28,7 @@ impl LockedTaskQueue {
     ///
     /// # Panics
     /// - If the Mutex is poisoned.
-    pub fn lock_queue(&self) -> std::sync::MutexGuard<VecDeque<ImageTask>> {
+    pub fn lock_queue(&self) -> std::sync::MutexGuard<VecDeque<Task>> {
         self.queue
             .lock()
             .expect("[FATAL] Mutex poisoned: Failed to acquire lock")
@@ -38,19 +38,19 @@ impl LockedTaskQueue {
     ///
     /// # Arguments
     /// - `task`: The `ImageTask` to add.
-    pub fn push(&self, task: ImageTask) { self.lock_queue().push_back(task) }
+    pub fn push(&self, task: Task) { self.lock_queue().push_back(task) }
 
     /// Removes and returns the task at the front of the queue.
     ///
     /// # Returns
     /// - An `Option<ImageTask>` containing the removed task, or `None` if the queue is empty.
-    pub fn pop(&self) -> Option<ImageTask> { self.lock_queue().pop_front() }
+    pub fn pop(&self) -> Option<Task> { self.lock_queue().pop_front() }
 
     /// Returns a copy of the task at the front of the queue without removing it.
     ///
     /// # Returns
     /// - `Some<ImageTask>` containing the first task, or `None` if the queue is empty.
-    pub fn copy_front(&self) -> Option<ImageTask> {
+    pub fn copy_front(&self) -> Option<Task> {
         let locked_queue = self.lock_queue();
         let first_ref = locked_queue.front();
         first_ref.copied()
@@ -76,7 +76,7 @@ impl LockedTaskQueue {
     /// # Arguments
     /// - `func`: A closure to apply to each task in the queue.
     pub fn for_each<F>(&self, func: F)
-    where F: FnMut(&mut ImageTask) {
+    where F: FnMut(&mut Task) {
         self.lock_queue().iter_mut().for_each(func);
     }
 }

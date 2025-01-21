@@ -20,8 +20,6 @@ enum ImageTaskStatus {
 /// and lens configuration.
 #[derive(Debug, Copy, Clone)]
 pub struct ImageTask {
-    /// The planned time delay before the task is executed.
-    dt: PinnedTimeDelay,
     /// The current status of the task (e.g., `Planned` or `Done`).
     image_status: ImageTaskStatus,
     /// The target position for the image capture.
@@ -40,26 +38,13 @@ impl ImageTask {
     ///
     /// # Returns
     /// - A new `ImageTask` instance with the given parameters.
-    pub fn new(dt: PinnedTimeDelay, planned_pos: Vec2D<u32>, lens: CameraAngle) -> Self { 
+    pub fn new(planned_pos: Vec2D<u32>, lens: CameraAngle) -> Self {
         Self {
             image_status: ImageTaskStatus::Planned,
             planned_pos,
-            dt,
             lens
-        } 
+        }
     }
-
-    /// Returns a mutable reference to the task's time delay.
-    ///
-    /// # Returns
-    /// - A mutable reference to `PinnedTimeDelay`.
-    pub fn dt_mut(&mut self) -> &mut PinnedTimeDelay { &mut self.dt }
-
-    /// Returns an immutable reference to the task's time delay.
-    ///
-    /// # Returns
-    /// - An immutable reference to `PinnedTimeDelay`.
-    pub fn dt(&self) -> &PinnedTimeDelay { &self.dt }
 
     /// Marks the task as completed and records the actual capture position.
     ///

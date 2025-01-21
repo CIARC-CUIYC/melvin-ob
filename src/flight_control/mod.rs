@@ -5,3 +5,5 @@ pub mod flight_computer;
 pub mod flight_state;
 pub(crate) mod objective_scheduler;
 pub mod task_controller;
+pub mod orbit;
+mod task;

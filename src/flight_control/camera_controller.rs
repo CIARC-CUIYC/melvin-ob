@@ -18,7 +18,7 @@ use image::{
 use num::traits::Float;
 use std::io::Cursor;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tokio::{
     fs::File,
     io::{AsyncReadExt, AsyncWriteExt},
@@ -216,19 +216,20 @@ impl CameraController {
     #[allow(clippy::cast_possible_truncation)]
     pub async fn shoot_image_to_buffer(
         &mut self,
-        httpclient: &HTTPClient,
-        controller: &mut FlightComputer<'_>,
+        f_cont_locked: Arc<Mutex<FlightComputer>>,
         angle: CameraAngle,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let ((), collected_png) = tokio::join!(
-            controller.update_observation(),
-            self.fetch_image_data(httpclient)
-        );
+        let (position, collected_png) = {
+            let mut f_cont = f_cont_locked.lock().await;
+            let client = f_cont.client();
+            let ((), collected_png) =
+                tokio::join!(f_cont.update_observation(), self.fetch_image_data(&*client));
+            (f_cont.current_pos(), collected_png)
+        };
         let decoded_image = self.decode_png_data(
             &collected_png.unwrap_or_else(|e| panic!("[ERROR] PNG couldn't be unwrapped: {e}")),
             angle,
         )?;
-        let position = controller.current_pos();
         let angle_const = angle.get_square_side_length() / 2;
         let pos: Vec2D<i32> = Vec2D::new(
             position.x().round() as i32 - angle_const as i32,
@@ -387,6 +388,31 @@ impl CameraController {
             Ok(diff_encoded)
         } else {
             self.export_full_thumbnail_png().await
+        }
+    }
+
+    pub async fn execute_acquisition_cycle(
+        &mut self,
+        f_cont_locked: Arc<Mutex<FlightComputer>>,
+        end_time: chrono::DateTime<chrono::Utc>,
+        image_max_dt: f32,
+        lens: CameraAngle,
+    ) {
+        let mut last_image_flag = false;
+        loop {
+            match self.shoot_image_to_buffer(Arc::clone(&f_cont_locked), lens).await {
+                Ok(()) => println!("[INFO] Took picture at {}", chrono::Utc::now()),
+                Err(e) => println!("[ERROR] Couldn't take picture: {e}")
+            }
+            if last_image_flag {return;}
+            if chrono::Utc::now() + chrono::TimeDelta::seconds(image_max_dt as i64) > end_time {
+                let sleep_time = end_time - chrono::Utc::now() - chrono::TimeDelta::seconds(1);
+                last_image_flag = true;
+                tokio::time::sleep(sleep_time.to_std().unwrap()).await;
+            } else {
+                let sleep_time = std::time::Duration::from_secs_f32(image_max_dt.floor());
+                tokio::time::sleep(sleep_time).await;
+            }
         }
     }
 }
