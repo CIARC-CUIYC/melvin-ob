@@ -12,16 +12,18 @@ use bitvec::boxed::BitBox;
 use futures::StreamExt;
 use image::codecs::png::{CompressionType, FilterType, PngDecoder, PngEncoder};
 use image::{
-    imageops::Lanczos3, DynamicImage, GenericImage, GenericImageView, ImageBuffer,
-    ImageReader, Pixel, Rgb, RgbImage, Rgba, RgbaImage,
+    imageops::Lanczos3, DynamicImage, GenericImage, GenericImageView, ImageBuffer, ImageReader,
+    Pixel, Rgb, RgbImage, Rgba, RgbaImage,
 };
 use std::io::Cursor;
 use std::sync::Arc;
+use chrono::TimeDelta;
 use tokio::sync::{Mutex, Notify, RwLock};
 use tokio::{
     fs::File,
     io::{AsyncReadExt, AsyncWriteExt},
 };
+use crate::flight_control::flight_computer::ChargeCommand::Duration;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct MapImageStorage {
@@ -184,7 +186,8 @@ impl CameraController {
                     .pixels()
                     .zip(decoded_image.pixels())
                     .map(|((_, _, existing_pixel), new_pixel)| {
-                        if existing_pixel.0[3] == 0 || existing_pixel.to_rgb() == new_pixel.to_rgb() {
+                        if existing_pixel.0[3] == 0 || existing_pixel.to_rgb() == new_pixel.to_rgb()
+                        {
                             0
                         } else {
                             -1
@@ -300,12 +303,6 @@ impl CameraController {
         Ok(writer.into_inner())
     }
 
-    pub(crate) async fn save_png_to(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let mut file = File::create(path).await.unwrap();
-        let image = self.export_full_thumbnail_png().await?;
-        file.write_all(&image).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
-    }
-
     #[allow(clippy::cast_sign_loss)]
     pub(crate) async fn export_thumbnail_png(
         &self,
@@ -330,7 +327,6 @@ impl CameraController {
         let mut thumbnail_image = RgbaImage::new(thumbnail.width(), thumbnail.width());
         thumbnail_image.copy_from(&thumbnail, 0, 0).unwrap();
         let mut writer = Cursor::new(Vec::<u8>::new());
-        //let thumbnail_image: RgbImage = thumbnail_image.convert();
         thumbnail_image.write_with_encoder(PngEncoder::new(&mut writer))?;
 
         Ok(writer.into_inner())
@@ -388,8 +384,10 @@ impl CameraController {
         last_img_kill: Arc<Notify>,
         image_max_dt: f32,
         lens: CameraAngle,
+        ff_allowed: bool,
     ) {
         let mut last_image_flag = false;
+
         loop {
             {
                 let mut c_cont = this.lock().await;
@@ -403,7 +401,8 @@ impl CameraController {
             }
             let sleep_time = {
                 let end_time = end_time_locked.lock().await;
-                if chrono::Utc::now() + chrono::TimeDelta::seconds(image_max_dt as i64) > *end_time {
+                if chrono::Utc::now() + chrono::TimeDelta::seconds(image_max_dt as i64) > *end_time
+                {
                     last_image_flag = true;
                     (*end_time - chrono::Utc::now() - chrono::TimeDelta::seconds(1))
                         .to_std()
@@ -412,8 +411,19 @@ impl CameraController {
                     std::time::Duration::from_secs_f32(image_max_dt.floor())
                 }
             };
+            let f_cont_locked_clone = Arc::clone(&f_cont_locked);
             tokio::select! {
-                () = tokio::time::sleep(sleep_time) => {}
+                saved_time = async move {
+                    if ff_allowed{
+                        f_cont_locked_clone.lock().await.make_ff_call(sleep_time).await
+                    } else {
+                        tokio::time::sleep(sleep_time).await;
+                        0
+                    }
+                } => {
+                    let mut end = end_time_locked.lock().await;
+                    *end -= TimeDelta::seconds(saved_time);
+                }
                 () = last_img_kill.notified() => {
                     last_image_flag = true;
                 }

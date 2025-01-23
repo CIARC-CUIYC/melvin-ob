@@ -37,7 +37,7 @@ const BIN_FILEPATH: &str = "camera_controller_narrow.bin";
 
 const LOG_POS: bool = true;
 
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::too_many_lines)]
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
     let client = Arc::new(HTTPClient::new("http://localhost:33000"));
@@ -97,6 +97,7 @@ async fn main() {
                 end_time,
                 img_dt,
                 CONST_ANGLE,
+                false
             ))
         } else {
             None
@@ -131,9 +132,8 @@ async fn main() {
                                 next.dt().get_end(),
                                 img_dt,
                                 CONST_ANGLE,
+                                true
                             );
-                            tokio::time::sleep(task_due.to_std().unwrap()).await;
-                            acq_phase.1.notify_one();
                             acq_phase.0.await.ok();
                             // TODO: export png here
                         }
@@ -169,6 +169,7 @@ fn handle_acquisition(
     end_time: DateTime<chrono::Utc>,
     img_dt: f32,
     angle: CameraAngle,
+    ff_allowed: bool,
 ) -> (
     JoinHandle<()>,
     Arc<Notify>,
@@ -189,6 +190,7 @@ fn handle_acquisition(
             last_image_notify_cloned,
             img_dt,
             angle,
+            ff_allowed
         )
         .await;
     });

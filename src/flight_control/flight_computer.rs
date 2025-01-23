@@ -183,9 +183,9 @@ impl FlightComputer {
         if self.task_schedule.is_empty() {
             println!();
         } else {
-            let time_left = self.task_schedule.copy_front().unwrap().dt().time_left();
+            let time_left = self.task_schedule.peek().unwrap().dt().time_left();
             println!(
-                " Next Image in {:02}:{:02}:{:02}",
+                " Next scheduled task in {:02}:{:02}:{:02}",
                 time_left.num_hours(),
                 time_left.num_minutes() - time_left.num_hours() * 60,
                 time_left.num_seconds() - time_left.num_minutes() * 60
