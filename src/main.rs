@@ -35,18 +35,11 @@ pub const MAX_BATTERY_THRESHOLD: f32 = 100.0;
 const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 const BIN_FILEPATH: &str = "camera_controller_narrow.bin";
 
-const LOG_POS: bool = false;
-
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::too_many_lines)]
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
     let client = Arc::new(HTTPClient::new("http://localhost:33000"));
     let console_endpoint = Arc::new(ConsoleEndpoint::start());
-
-    if LOG_POS {
-        let thread_client = Arc::clone(&client);
-        tokio::spawn(async move { log_pos(thread_client).await });
-    }
 
     let t_cont = TaskController::new();
     let c_cont = CameraController::from_file(BIN_FILEPATH).await.unwrap_or_else(|e| {
