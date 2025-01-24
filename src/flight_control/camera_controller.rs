@@ -397,8 +397,9 @@ impl CameraController {
         let mut pic_count = 0;
 
         loop {
-            {
-                let mut c_cont = this.lock().await;
+            let this_lock_clone = Arc::clone(&this);
+            let img_handle = tokio::spawn(async move {
+                let mut c_cont = this_lock_clone.lock().await;
                 match c_cont.shoot_image_to_buffer(Arc::clone(&f_cont_locked), lens).await {
                     Ok(()) => {
                         pic_count += 1;
@@ -409,21 +410,22 @@ impl CameraController {
                     }
                     Err(e) => println!("[ERROR] Couldn't take picture: {e}"),
                 };
-            }
+            });
             if last_image_flag {
                 return;
             }
-            let sleep_time = {
-                if chrono::Utc::now() + chrono::TimeDelta::seconds(image_max_dt as i64) > end_time
-                {
+            let next_img_due = {
+                if chrono::Utc::now() + chrono::TimeDelta::seconds(image_max_dt as i64) > end_time {
                     last_image_flag = true;
-                    time::Duration::from_secs((end_time - chrono::Utc::now()).num_seconds() as u64)
+                    end_time
                 } else {
-                    time::Duration::from_secs_f32(image_max_dt.floor())
+                    end_time + chrono::TimeDelta::seconds(image_max_dt.floor() as i64)
                 }
             };
+            img_handle.await;
+            let sleep_time = next_img_due - chrono::Utc::now();
             tokio::select! {
-                () = tokio::time::sleep(sleep_time) => {},
+                () = tokio::time::sleep(sleep_time.to_std().unwrap()) => {},
                 () = last_img_kill.notified() => {
                     last_image_flag = true;
                 }
