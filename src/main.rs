@@ -40,13 +40,15 @@ const LOG_POS: bool = true;
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
-    let client = Arc::new(HTTPClient::new(env::var("DRS_BASE_URL")
+    let base_url_var = env::var("DRS_BASE_URL");
+    let base_url = base_url_var
         .as_ref()
-        .map_or("http://localhost:33000", |v|v.as_str())));
+        .map_or("http://localhost:33000", |v| v.as_str());
+    let client = Arc::new(HTTPClient::new(base_url));
     let console_endpoint = Arc::new(ConsoleEndpoint::start());
     if LOG_POS {
         let thread_client = Arc::clone(&client);
-        tokio::spawn(async move {log_pos(thread_client).await});
+        tokio::spawn(async move { log_pos(thread_client).await });
     }
 
     let t_cont = TaskController::new();
@@ -111,9 +113,10 @@ async fn main() {
             c_cont.save_png_to(BIN_FILEPATH),
             f_cont.charge_until(TargetCharge(MAX_BATTERY_THRESHOLD))
         )
-        .0
-        .unwrap();
+            .0
+            .unwrap();
     }
+    drop(console_endpoint);
 }
 
 async fn log_pos(http_handler: Arc<HTTPClient>) {
