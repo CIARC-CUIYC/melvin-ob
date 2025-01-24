@@ -286,6 +286,7 @@ impl FlightComputer {
                         Vec2D::from((f32::from(obs.pos_x()), f32::from(obs.pos_y())));
                     self.current_vel = Vec2D::from((obs.vel_x(), obs.vel_y()));
                     self.current_state = FlightState::from(obs.state());
+                    self.current_angle = CameraAngle::from(obs.angle());
                     self.last_observation_timestamp = obs.timestamp();
                     self.current_battery = obs.battery();
                     self.max_battery = obs.max_battery();

@@ -302,13 +302,6 @@ impl CameraController {
         Ok(writer.into_inner())
     }
 
-    pub(crate) async fn export_full_view_png(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        let map_image = self.map_image.read().await;
-        let mut writer = Cursor::new(Vec::<u8>::new());
-        map_image.fullsize_buffer.write_with_encoder(PngEncoder::new(&mut writer))?;
-        Ok(writer.into_inner())
-    }
-
     #[allow(clippy::cast_sign_loss)]
     pub(crate) async fn export_thumbnail_png(
         &self,
@@ -339,18 +332,14 @@ impl CameraController {
     }
 
     pub(crate) async fn create_snapshot_thumb(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let image = self.export_full_thumbnail_png().await?;
-        let mut file = File::create("snapshot.png").await?;
-        file.write_all(&image).await?;
+        self.map_image.read().await.thumbnail_buffer.save("snapshot_thumb.png")?;
         Ok(())
     }
 
     pub(crate) async fn create_snapshot_full(&self) -> Result<(), Box<dyn std::error::Error>> {
         println!("[INFO] Exporting Full-View PNG...");
         let start_time = chrono::Utc::now();
-        let image = self.export_full_view_png().await?;
-        let mut file = File::create("snapshot.png").await?;
-        file.write_all(&image).await?;
+        self.map_image.read().await.fullsize_buffer.save("snapshot.png")?;
         println!(
             "[INFO] Exported Full-View PNG in {} s!",
             (chrono::Utc::now() - start_time).num_seconds()
