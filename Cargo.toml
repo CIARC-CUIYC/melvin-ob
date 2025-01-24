@@ -34,8 +34,6 @@ perf = "warn"
 style = "warn"
 complexity = "warn"
 pedantic = "warn"
-dead_code = "deny"
-unused_variables = "deny"
 
 [profile.release]
 opt-level = 3

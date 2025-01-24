@@ -346,9 +346,15 @@ impl CameraController {
     }
 
     pub(crate) async fn create_snapshot_full(&self) -> Result<(), Box<dyn std::error::Error>> {
+        println!("[INFO] Exporting Full-View PNG...");
+        let start_time = chrono::Utc::now();
         let image = self.export_full_view_png().await?;
         let mut file = File::create("snapshot.png").await?;
         file.write_all(&image).await?;
+        println!(
+            "[INFO] Exported Full-View PNG in {} s!",
+            (chrono::Utc::now() - start_time).num_seconds()
+        );
         Ok(())
     }
 

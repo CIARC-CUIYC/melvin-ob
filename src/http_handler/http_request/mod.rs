@@ -1,4 +1,9 @@
-use super::http_response::*;
+use super::http_response::{
+    achievements, annoucements, available_slots, beacon_position, configure_simulation,
+    control_satellite, create_backup, daily_map, delete_objective, modify_objective, modify_slot,
+    objective_image, objective_list, observation, reset, response_common, restore_backup,
+    shoot_image,
+};
 
 pub mod achievements_get;
 pub mod announcements_get;

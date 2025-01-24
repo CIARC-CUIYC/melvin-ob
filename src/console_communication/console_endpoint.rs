@@ -79,7 +79,7 @@ impl ConsoleEndpoint {
 
                         let result = tokio::select! {
                             res = ConsoleEndpoint::handle_connection_tx(&mut tx_socket, &mut downstream_receiver) => res,
-                            res = ConsoleEndpoint::handle_connection_rx(&mut rx_socket, &mut upstream_event_sender_local) => res
+                            res = ConsoleEndpoint::handle_connection_rx(&mut rx_socket, &upstream_event_sender_local) => res
                         };
 
                         upstream_event_sender_local
@@ -94,7 +94,7 @@ impl ConsoleEndpoint {
                                 return;
                             }
                             Err(e) => {
-                                eprintln!("[WARN]: Closing connection to console due to {:?}", e)
+                                eprintln!("[WARN]: Closing connection to console due to {e:?}");
                             }
                             _ => {}
                         };

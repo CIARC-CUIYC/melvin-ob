@@ -19,7 +19,7 @@ impl MultipartBodyHTTPRequestType for DailyMapRequest {
 
 impl HTTPRequestType for DailyMapRequest {
     type Response = DailyMapResponse;
-    fn endpoint(&self) -> &str {
+    fn endpoint(&self) -> &'static str {
         "/dailyMap"
     }
     fn request_method(&self) -> HTTPRequestMethod {

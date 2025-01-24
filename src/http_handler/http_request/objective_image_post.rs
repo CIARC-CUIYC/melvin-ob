@@ -21,7 +21,7 @@ impl MultipartBodyHTTPRequestType for ObjectiveImageRequest {
 
 impl HTTPRequestType for ObjectiveImageRequest {
     type Response = ObjectiveImageResponse;
-    fn endpoint(&self) -> &str {
+    fn endpoint(&self) -> &'static str {
         "/image"
     }
     fn request_method(&self) -> HTTPRequestMethod {

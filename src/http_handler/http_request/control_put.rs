@@ -18,7 +18,7 @@ impl JSONBodyHTTPRequestType for ControlSatelliteRequest {
 
 impl HTTPRequestType for ControlSatelliteRequest {
     type Response = ControlSatelliteResponse;
-    fn endpoint(&self) -> &str {
+    fn endpoint(&self) -> &'static str {
         "/control"
     }
     fn request_method(&self) -> HTTPRequestMethod {

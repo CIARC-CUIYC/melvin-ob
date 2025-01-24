@@ -201,7 +201,7 @@ impl FlightComputer {
     /// - `locked_self`: A `RwLock<Self>` reference to the active flight computer.
     /// - `new_state`: The target operational state.
     pub async fn set_state_wait(locked_self: &RwLock<Self>, new_state: FlightState) {
-        let init_state = locked_self.read().await.current_state;
+        let init_state = {locked_self.read().await.current_state};
         if new_state == init_state {
             println!("[LOG] State already set to {new_state}");
             // return; // TODO: here an error should be returned or logged maybe???
@@ -314,6 +314,7 @@ impl FlightComputer {
         loop {
             match req.send_request(&self.request_client).await {
                 Ok(_) => {
+                    println!("[LOG] State change started to {new_state}");
                     return;
                 }
                 Err(_) => {
@@ -338,6 +339,7 @@ impl FlightComputer {
         loop {
             match req.send_request(&self.request_client).await {
                 Ok(_) => {
+                    println!("Velocity change commanded to [{}, {}]", new_vel.x(), new_vel.y());
                     return;
                 }
                 Err(_) => {
@@ -362,6 +364,7 @@ impl FlightComputer {
         loop {
             match req.send_request(&self.request_client).await {
                 Ok(_) => {
+                    println!("[LOG] Angle change commanded to {new_angle}");
                     return;
                 }
                 Err(_) => {

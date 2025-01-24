@@ -8,7 +8,7 @@ impl NoBodyHTTPRequestType for ShootImageRequest {}
 
 impl HTTPRequestType for ShootImageRequest {
     type Response = ShootImageResponse;
-    fn endpoint(&self) -> &str {
+    fn endpoint(&self) -> &'static str {
         "/image"
     }
 

@@ -8,7 +8,7 @@ impl NoBodyHTTPRequestType for AnnouncementsRequest {}
 
 impl HTTPRequestType for AnnouncementsRequest {
     type Response = AnnouncementsResponse;
-    fn endpoint(&self) -> &str {
+    fn endpoint(&self) -> &'static str {
         "/annoucements"
     }
     fn request_method(&self) -> HTTPRequestMethod {

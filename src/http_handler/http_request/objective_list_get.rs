@@ -8,7 +8,7 @@ impl NoBodyHTTPRequestType for ObjectiveListRequest {}
 
 impl HTTPRequestType for ObjectiveListRequest {
     type Response = ObjectiveListResponse;
-    fn endpoint(&self) -> &str {
+    fn endpoint(&self) -> &'static str {
         "/objective"
     }
     fn request_method(&self) -> HTTPRequestMethod {

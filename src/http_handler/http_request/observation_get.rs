@@ -8,7 +8,7 @@ impl NoBodyHTTPRequestType for ObservationRequest {}
 
 impl HTTPRequestType for ObservationRequest {
     type Response = ObservationResponse;
-    fn endpoint(&self) -> &str {
+    fn endpoint(&self) -> &'static str {
         "/observation"
     }
     fn request_method(&self) -> HTTPRequestMethod {

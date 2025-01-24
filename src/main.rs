@@ -1,3 +1,4 @@
+#![allow(dead_code, unused)]
 mod console_communication;
 mod flight_control;
 mod http_handler;
@@ -58,7 +59,10 @@ async fn main() {
     let f_cont_lock_clone = Arc::clone(&f_cont_lock);
     tokio::spawn(async move {
         loop {
-            f_cont_lock_clone.write().await.update_observation().await;
+            {
+                let mut f_cont = f_cont_lock_clone.write().await;
+                (*f_cont).update_observation().await;
+            };
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
     });
@@ -118,15 +122,10 @@ async fn main() {
         let mut phases = 0;
 
         while let Some(task) = {
-            println!("[INFO] Trying to acquire task lock");
             let start = chrono::Utc::now();
             let t_cont = t_cont_lock.lock().await;
             let sched = t_cont.sched_arc();
             let mut sched_lock = sched.lock().await;
-            println!(
-                "[INFO] Releasing task lock after {}",
-                (chrono::Utc::now() - start).num_seconds()
-            );
             sched_lock.pop_front()
         } {
             phases += 1;
@@ -137,7 +136,7 @@ async fn main() {
                 due_time.num_seconds()
             );
 
-            let current_state = f_cont_lock.read().await.state();
+            let current_state = { f_cont_lock.read().await.state() };
             if current_state == FlightState::Acquisition && due_time > DT_0 {
                 let acq_phase = handle_acquisition(
                     &f_cont_lock,
@@ -164,29 +163,16 @@ async fn main() {
                             .await;
                     }
                     FlightState::Charge => {
-                        tokio::join!(
-                            async {
-                                FlightComputer::set_state_wait(
-                                    &f_cont_lock,
-                                    FlightState::Charge,
-                                )
-                                .await;
-                                println!("[INFO] State Change done! Hopefully export is also done!");
-                            },
-                            async {
-                                let start_time = chrono::Utc::now();
-                                c_cont_lock
-                                    .lock()
-                                    .await
-                                    .create_snapshot_full()
-                                    .await
-                                    .expect("[WARN] Error while exporting full view!");
-                                println!(
-                                    "[INFO] Exported Full-View PNG in {} s!",
-                                    (chrono::Utc::now() - start_time).num_seconds()
-                                );
-                            }
-                        );
+                        let join_handle = async {
+                            FlightComputer::set_state_wait(&f_cont_lock, FlightState::Charge).await;
+                            println!("[INFO] State Change done! Hopefully export is also done!");
+                        };
+                        let c_cont_lock_clone = Arc::clone(&c_cont_lock);
+                        let handle = tokio::spawn(async move {
+                            let c_cont = c_cont_lock_clone.lock().await;
+                            c_cont.create_snapshot_full().await.expect("[WARN] Export failed!");
+                        });
+                        tokio::join!(join_handle, handle);
                     }
                     FlightState::Comms => {}
                     _ => {
@@ -225,7 +211,7 @@ fn handle_acquisition(
             end_time_cloned,
             last_image_notify_cloned,
             img_dt,
-            angle
+            angle,
         )
         .await;
     });

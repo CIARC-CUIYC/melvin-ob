@@ -14,7 +14,7 @@ impl NoBodyHTTPRequestType for ModifySlotRequest {}
 
 impl HTTPRequestType for ModifySlotRequest {
     type Response = ModifySlotResponse;
-    fn endpoint(&self) -> &str {
+    fn endpoint(&self) -> &'static str {
         "/slots"
     }
     fn request_method(&self) -> HTTPRequestMethod {

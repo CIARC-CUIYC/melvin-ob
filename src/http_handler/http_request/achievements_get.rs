@@ -8,7 +8,7 @@ impl NoBodyHTTPRequestType for AchievementsRequest {}
 
 impl HTTPRequestType for AchievementsRequest {
     type Response = AchievementsResponse;
-    fn endpoint(&self) -> &str {
+    fn endpoint(&self) -> &'static str {
         "/achievements"
     }
     fn request_method(&self) -> HTTPRequestMethod {

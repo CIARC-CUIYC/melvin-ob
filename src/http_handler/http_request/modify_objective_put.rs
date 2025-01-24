@@ -18,7 +18,7 @@ impl JSONBodyHTTPRequestType for ModifyObjectiveRequest {
 
 impl HTTPRequestType for ModifyObjectiveRequest {
     type Response = modify_objective::ModifyObjectiveResponse;
-    fn endpoint(&self) -> &str {
+    fn endpoint(&self) -> &'static str {
         "/objective"
     }
     fn request_method(&self) -> HTTPRequestMethod {
