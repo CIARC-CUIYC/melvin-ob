@@ -397,7 +397,6 @@ impl CameraController {
         last_img_kill: Arc<Notify>,
         image_max_dt: f32,
         lens: CameraAngle,
-        ff_allowed: bool,
     ) {
         let mut last_image_flag = false;
         let mut pic_count = 0;
@@ -430,13 +429,7 @@ impl CameraController {
                 }
             };
             tokio::select! {
-                () = async move {
-                    if ff_allowed{
-                        FlightComputer::wait_for_duration(sleep_time).await;
-                    } else {
-                        tokio::time::sleep(sleep_time).await;
-                    }
-                } => {}
+                () = tokio::time::sleep(sleep_time) => {},
                 () = last_img_kill.notified() => {
                     last_image_flag = true;
                 }

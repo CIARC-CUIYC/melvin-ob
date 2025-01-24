@@ -168,7 +168,7 @@ async fn main() {
                             async {
                                 FlightComputer::set_state_wait(
                                     &f_cont_lock,
-                                    FlightState::Acquisition,
+                                    FlightState::Charge,
                                 )
                                 .await;
                                 println!("[INFO] State Change done! Hopefully export is also done!");
@@ -225,8 +225,7 @@ fn handle_acquisition(
             end_time_cloned,
             last_image_notify_cloned,
             img_dt,
-            angle,
-            ff_allowed,
+            angle
         )
         .await;
     });

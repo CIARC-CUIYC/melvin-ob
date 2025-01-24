@@ -182,7 +182,8 @@ impl FlightComputer {
         println!("[LOG] Waiting for condition: {rationale}");
         let start_time = std::time::Instant::now();
         while start_time.elapsed().as_millis() < u128::from(timeout_millis) {
-            if condition(&*locked_self.read().await) {
+            let cond = {condition(&*locked_self.read().await)};
+            if cond {
                 println!(
                     "[LOG] Condition met after {} ms",
                     start_time.elapsed().as_millis()
