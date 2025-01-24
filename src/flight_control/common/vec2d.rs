@@ -49,6 +49,10 @@ where
     /// # Returns
     /// The magnitude of the vector as a scalar of type `T`.
     pub fn abs(&self) -> T { (self.x.powi(2) + self.y.powi(2)).sqrt() }
+    
+    pub fn round(&self) -> Vec2D<T> {
+        Vec2D::new(self.x.round(), self.y.round())
+    }
 
     /// Creates a vector pointing from the current vector (`self`) to another vector (`other`).
     ///

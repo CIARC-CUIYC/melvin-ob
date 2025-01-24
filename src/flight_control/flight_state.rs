@@ -101,92 +101,91 @@ impl From<FlightState> for &'static str {
 /// - **`TRANSITION_TOLERANCE`**: A small additional delay (in seconds) applied to all state transitions.
 pub static TRANSITION_DELAY_LOOKUP: LazyLock<HashMap<(FlightState, FlightState), Duration>> =
     LazyLock::new(|| {
-        const TRANSITION_TOLERANCE: u64 = 2; // TODO: is this a good way to implement this?
         let mut lookup = HashMap::new();
         let transition_times = vec![
             // Deployment transitions
             (
                 FlightState::Deployment,
                 FlightState::Acquisition,
-                Duration::from_secs(180+TRANSITION_TOLERANCE),
+                Duration::from_secs(180),
             ),
             (
                 FlightState::Deployment,
                 FlightState::Charge,
-                Duration::from_secs(180+TRANSITION_TOLERANCE),
+                Duration::from_secs(180),
             ),
             (
                 FlightState::Deployment,
                 FlightState::Comms,
-                Duration::from_secs(180+TRANSITION_TOLERANCE),
+                Duration::from_secs(180),
             ),
             
             // Acquisition transitions
             (
                 FlightState::Acquisition,
                 FlightState::Deployment,
-                Duration::from_secs(180+TRANSITION_TOLERANCE),
+                Duration::from_secs(180),
             ),
             (
                 FlightState::Acquisition,
                 FlightState::Charge,
-                Duration::from_secs(180+TRANSITION_TOLERANCE),
+                Duration::from_secs(180),
             ),
             (
                 FlightState::Acquisition,
                 FlightState::Comms,
-                Duration::from_secs(180+TRANSITION_TOLERANCE),
+                Duration::from_secs(180),
             ),
             
             // Charge transitions
             (
                 FlightState::Charge,
                 FlightState::Deployment,
-                Duration::from_secs(180+TRANSITION_TOLERANCE),
+                Duration::from_secs(180),
             ),
             (
                 FlightState::Charge,
                 FlightState::Acquisition,
-                Duration::from_secs(180+TRANSITION_TOLERANCE),
+                Duration::from_secs(180),
             ),
             (
                 FlightState::Charge,
                 FlightState::Comms,
-                Duration::from_secs(180+TRANSITION_TOLERANCE),
+                Duration::from_secs(180),
             ),
             
             // Comms transitions
             (
                 FlightState::Comms,
                 FlightState::Deployment,
-                Duration::from_secs(180+TRANSITION_TOLERANCE),
+                Duration::from_secs(180),
             ),
             (
                 FlightState::Comms,
                 FlightState::Acquisition,
-                Duration::from_secs(180+TRANSITION_TOLERANCE),
+                Duration::from_secs(180),
             ),
             (
                 FlightState::Comms,
                 FlightState::Charge,
-                Duration::from_secs(180+TRANSITION_TOLERANCE),
+                Duration::from_secs(180),
             ),
             
             // Safe transitions
             (
                 FlightState::Safe,
                 FlightState::Deployment,
-                Duration::from_secs(1200+TRANSITION_TOLERANCE),
+                Duration::from_secs(1200),
             ),
             (
                 FlightState::Safe,
                 FlightState::Acquisition,
-                Duration::from_secs(1200+TRANSITION_TOLERANCE),
+                Duration::from_secs(1200),
             ),
             (
                 FlightState::Safe,
                 FlightState::Charge,
-                Duration::from_secs(1200+TRANSITION_TOLERANCE),
+                Duration::from_secs(1200),
             ),
         ];
 

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::LazyLock;
-use strum_macros::EnumIter;
+use strum_macros::{Display, EnumIter};
 
 /// Represents different camera angles supported by the system.
 ///
@@ -11,7 +11,7 @@ use strum_macros::EnumIter;
 ///
 /// These angles are associated with a specific square side length
 /// for image processing purposes, available in a pre-computed lookup table.
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, EnumIter)]
+#[derive(Debug, Display, PartialEq, Eq, Clone, Copy, Hash, EnumIter)]
 pub enum CameraAngle {
     Narrow,
     Normal,

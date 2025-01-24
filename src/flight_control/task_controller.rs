@@ -10,7 +10,7 @@ use crate::flight_control::{
 use crate::{MAX_BATTERY_THRESHOLD, MIN_BATTERY_THRESHOLD};
 use chrono::Duration;
 use std::sync::{Arc, Condvar};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 
 /// `TaskController` manages and schedules image capture tasks for a satellite.
 /// It leverages a thread-safe task queue and notifies waiting threads when
@@ -136,20 +136,17 @@ impl TaskController {
     }
 
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
-    pub async fn schedule_optimal_orbit(&mut self, orbit: &ClosedOrbit, f_cont_lock: Arc<Mutex<FlightComputer>>) {
+    pub async fn schedule_optimal_orbit(&mut self, orbit: &ClosedOrbit, f_cont_lock: Arc<RwLock<FlightComputer>>) {
         let computation_start = chrono::Utc::now();
         println!("[INFO] Calculating optimal orbit schedule...");
-        let current_pos = {
-            let f_cont = f_cont_lock.lock().await;
-            f_cont.current_pos()
-        };
+        let current_pos = f_cont_lock.read().await.current_pos();
         let decisions: OptimalOrbitResult = Self::calculate_optimal_orbit_schedule(orbit, current_pos);
 
         let dt_calc = (chrono::Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
         println!("[INFO] Optimal Orbit Calculation complete after {dt_calc:.2}");
         let mut dt = dt_calc.ceil() as usize;
         let (batt_f32, mut state) = {
-            let f_cont = f_cont_lock.lock().await;
+            let f_cont = f_cont_lock.read().await;
             let batt: f32 = f_cont.current_battery();
             let st: usize = match f_cont.state() {
                 FlightState::Acquisition => 1,

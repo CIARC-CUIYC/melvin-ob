@@ -7,3 +7,4 @@ brace_style = 'SameLineWhere'
 chain_width = 100
 struct_lit_single_line = true
 where_single_line = true
+condense_wildcard_suffixes = true

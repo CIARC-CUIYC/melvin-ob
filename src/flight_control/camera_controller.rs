@@ -1,8 +1,8 @@
 use crate::flight_control::{
     camera_state::CameraAngle,
+    common::img_buffer::SubBuffer,
     common::{bitmap::Bitmap, vec2d::Vec2D},
     flight_computer::FlightComputer,
-    common::img_buffer::SubBuffer
 };
 use crate::http_handler::{
     http_client::HTTPClient, http_request::request_common::NoBodyHTTPRequestType,
@@ -11,15 +11,16 @@ use crate::http_handler::{
 use bitvec::boxed::BitBox;
 use futures::StreamExt;
 use image::{
-    imageops::Lanczos3, DynamicImage, GenericImage, GenericImageView, ImageBuffer, ImageReader,
-    Pixel, Rgb, RgbImage, Rgba, RgbaImage,
-    codecs::png::{CompressionType, FilterType, PngDecoder, PngEncoder}
+    codecs::png::{CompressionType, FilterType, PngDecoder, PngEncoder},
+    imageops::Lanczos3,
+    DynamicImage, GenericImage, GenericImageView, ImageBuffer, ImageReader, Pixel, Rgb, RgbImage,
+    Rgba, RgbaImage,
 };
-use std::{io::Cursor, sync::Arc};
+use std::{io::Cursor, sync::Arc, time};
 use tokio::{
-    sync::{Mutex, Notify, RwLock},
     fs::File,
     io::{AsyncReadExt, AsyncWriteExt},
+    sync::{Mutex, Notify, RwLock},
 };
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -205,11 +206,12 @@ impl CameraController {
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     pub async fn shoot_image_to_buffer(
         &mut self,
-        f_cont_locked: Arc<Mutex<FlightComputer>>,
+        f_cont_locked: Arc<RwLock<FlightComputer>>,
         angle: CameraAngle,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let (position, collected_png) = {
-            let mut f_cont = f_cont_locked.lock().await;
+            // TODO: it should be tested if this could be a read lock as well (by not calling update_observation, but current_pos())
+            let mut f_cont = f_cont_locked.write().await;
             let client = f_cont.client();
             let ((), collected_png) =
                 tokio::join!(f_cont.update_observation(), self.fetch_image_data(&client));
@@ -300,9 +302,7 @@ impl CameraController {
         Ok(writer.into_inner())
     }
 
-    pub(crate) async fn export_full_view_png(
-        &self,
-    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    pub(crate) async fn export_full_view_png(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let map_image = self.map_image.read().await;
         let mut writer = Cursor::new(Vec::<u8>::new());
         map_image.fullsize_buffer.write_with_encoder(PngEncoder::new(&mut writer))?;
@@ -345,6 +345,13 @@ impl CameraController {
         Ok(())
     }
 
+    pub(crate) async fn create_snapshot_full(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let image = self.export_full_view_png().await?;
+        let mut file = File::create("snapshot.png").await?;
+        file.write_all(&image).await?;
+        Ok(())
+    }
+
     pub(crate) async fn diff_snapshot(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         if let Ok(mut file) = File::open("snapshot.png").await {
             let mut old_snapshot_encoded = Vec::<u8>::new();
@@ -382,10 +389,10 @@ impl CameraController {
         }
     }
 
-    #[allow(clippy::cast_possible_truncation)]
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     pub async fn execute_acquisition_cycle(
         this: Arc<Mutex<Self>>,
-        f_cont_locked: Arc<Mutex<FlightComputer>>,
+        f_cont_locked: Arc<RwLock<FlightComputer>>,
         end_time_locked: Arc<Mutex<chrono::DateTime<chrono::Utc>>>,
         last_img_kill: Arc<Notify>,
         image_max_dt: f32,
@@ -401,8 +408,11 @@ impl CameraController {
                 match c_cont.shoot_image_to_buffer(Arc::clone(&f_cont_locked), lens).await {
                     Ok(()) => {
                         pic_count += 1;
-                        println!("[INFO] Took {pic_count}. picture in cycle at {}", chrono::Utc::now());
-                    },
+                        println!(
+                            "[INFO] Took {pic_count}. picture in cycle at {}",
+                            chrono::Utc::now()
+                        );
+                    }
                     Err(e) => println!("[ERROR] Couldn't take picture: {e}"),
                 };
             }
@@ -414,26 +424,19 @@ impl CameraController {
                 if chrono::Utc::now() + chrono::TimeDelta::seconds(image_max_dt as i64) > *end_time
                 {
                     last_image_flag = true;
-                    (*end_time - chrono::Utc::now() - chrono::TimeDelta::seconds(1))
-                        .to_std()
-                        .unwrap()
+                    time::Duration::from_secs((*end_time - chrono::Utc::now()).num_seconds() as u64)
                 } else {
-                    std::time::Duration::from_secs_f32(image_max_dt.floor())
+                    time::Duration::from_secs_f32(image_max_dt.floor())
                 }
             };
-            let f_cont_locked_clone = Arc::clone(&f_cont_locked);
             tokio::select! {
-                saved_time = async move {
+                () = async move {
                     if ff_allowed{
-                        f_cont_locked_clone.lock().await.make_ff_call(sleep_time).await
+                        FlightComputer::wait_for_duration(sleep_time).await;
                     } else {
                         tokio::time::sleep(sleep_time).await;
-                        0
                     }
-                } => {
-                    let mut end = end_time_locked.lock().await;
-                    *end -= chrono::TimeDelta::seconds(saved_time);
-                }
+                } => {}
                 () = last_img_kill.notified() => {
                     last_image_flag = true;
                 }
