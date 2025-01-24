@@ -2,6 +2,7 @@ mod flight_control;
 mod http_handler;
 mod console_communication;
 
+use std::env;
 use std::fs::OpenOptions;
 use crate::console_communication::console_endpoint::{ConsoleEndpoint, ConsoleEndpointEvent};
 use crate::console_communication::melvin_messages;
@@ -39,7 +40,9 @@ const LOG_POS: bool = true;
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
-    let client = Arc::new(HTTPClient::new("http://localhost:33000"));
+    let client = Arc::new(HTTPClient::new(env::var("DRS_BASE_URL")
+        .as_ref()
+        .map_or("http://localhost:33000", |v|v.as_str())));
     let console_endpoint = Arc::new(ConsoleEndpoint::start());
     if LOG_POS {
         let thread_client = Arc::clone(&client);
