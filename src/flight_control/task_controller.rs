@@ -148,7 +148,7 @@ impl TaskController {
         println!("[INFO] Calculating optimal orbit schedule...");
         let (decisions, orbit_period) = {
             let orbit = orbit_lock.lock().await;
-            (Self::calculate_optimal_orbit_schedule(&*orbit, p_t_shift), orbit.period())
+            (Self::calculate_optimal_orbit_schedule(&orbit, p_t_shift), orbit.period())
             
         };
         let dt_calc = (chrono::Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;

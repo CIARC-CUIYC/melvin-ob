@@ -386,8 +386,8 @@ impl CameraController {
 
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     pub async fn execute_acquisition_cycle(
-        this: Arc<Mutex<Self>>,
-        f_cont_locked: Arc<RwLock<FlightComputer>>,
+        this_lock: Arc<Mutex<Self>>,
+        f_cont_lock: Arc<RwLock<FlightComputer>>,
         end_time: chrono::DateTime<chrono::Utc>,
         last_img_kill: Arc<Notify>,
         image_max_dt: f32,
@@ -397,10 +397,11 @@ impl CameraController {
         let mut pic_count = 0;
 
         loop {
-            let this_lock_clone = Arc::clone(&this);
+            let this_lock_clone = Arc::clone(&this_lock);
+            let f_cont_lock_clone = Arc::clone(&f_cont_lock);
             let img_handle = tokio::spawn(async move {
                 let mut c_cont = this_lock_clone.lock().await;
-                match c_cont.shoot_image_to_buffer(Arc::clone(&f_cont_locked), lens).await {
+                match c_cont.shoot_image_to_buffer(Arc::clone(&f_cont_lock_clone), lens).await {
                     Ok(()) => {
                         pic_count += 1;
                         println!(

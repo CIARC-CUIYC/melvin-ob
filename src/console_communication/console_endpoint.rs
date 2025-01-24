@@ -39,6 +39,7 @@ impl ConsoleEndpoint {
         }
     }
     
+    #[allow(clippy::cast_possible_truncation)]
     async fn handle_connection_tx(
         socket: &mut WriteHalf<'_>,
         downstream_receiver: &mut broadcast::Receiver<Option<Vec<u8>>>,

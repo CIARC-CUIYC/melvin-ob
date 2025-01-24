@@ -197,6 +197,7 @@ async fn main() {
     }
 }
 
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 fn handle_acquisition(
     f_cont_locked: &Arc<RwLock<FlightComputer>>,
     c_cont_locked: &Arc<Mutex<CameraController>>,
