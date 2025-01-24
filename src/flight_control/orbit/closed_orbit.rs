@@ -1,9 +1,10 @@
-use bitvec::{bitbox, order::Lsb0, prelude::BitBox};
+use crate::flight_control::{
+    camera_state::CameraAngle, common::vec2d::Vec2D, orbit::orbit_base::OrbitBase,
+};
 use bitvec::slice::Iter;
+use bitvec::{bitbox, order::Lsb0, prelude::BitBox};
+use std::iter::Chain;
 use strum_macros::Display;
-use crate::flight_control::{camera_state::CameraAngle,
-                            common::vec2d::Vec2D,
-                            orbit::orbit_base::OrbitBase};
 
 pub struct ClosedOrbit {
     base_orbit: OrbitBase,
@@ -19,7 +20,6 @@ pub enum OrbitUsabilityError {
 }
 
 impl ClosedOrbit {
-
     #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
     pub fn new(try_orbit: OrbitBase, lens: CameraAngle) -> Result<Self, OrbitUsabilityError> {
         match try_orbit.period() {
@@ -36,13 +36,21 @@ impl ClosedOrbit {
         }
     }
 
-    pub fn get_p_t_reordered(&self, pos: Vec2D<f32>) -> Iter<usize, Lsb0> {
-        self.done.iter()
-        /*
-        match self.base_orbit.will_visit(pos) {
-            true => {}
-            false => {}
-        }*/
+    pub fn get_p_t_reordered(&self, shift: usize) -> Chain<Iter<usize, Lsb0>, Iter<usize, Lsb0>> {
+        assert!(
+            shift < self.done.len(),
+            "[FATAL] Shift is larger than the orbit length"
+        );
+        self.done[shift..].iter().chain(self.done[..shift].iter())
+    }
+
+    pub fn mark_done(&mut self, first_i: usize, last_i: usize) {
+        self.done
+            .as_mut_bitslice()
+            .get_mut(first_i..=last_i)
+            .unwrap()
+            .iter_mut()
+            .for_each(|mut b| *b = true);
     }
 
     pub fn max_image_dt(&self) -> f32 { self.max_image_dt }

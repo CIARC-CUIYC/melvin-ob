@@ -82,24 +82,28 @@ async fn main() {
     };
 
     let img_dt = c_orbit.max_image_dt();
+    let orbit_s_start = c_orbit.base_orbit_ref().start_timestamp();
     let orbit_s_end = c_orbit.base_orbit_ref().start_timestamp()
         + chrono::Duration::seconds(c_orbit.period().0 as i64);
+    let orbit_full_period = c_orbit.period().0 as i64;
 
-    let c_orbit_arc = Arc::new(c_orbit);
+    let c_orbit_lock = Arc::new(Mutex::new(c_orbit));
     let t_cont_lock = Arc::new(Mutex::new(t_cont));
 
     // orbit
     loop {
-        let f_cont_clone = Arc::clone(&f_cont_lock);
-        let c_orbit_arc_clone = Arc::clone(&c_orbit_arc);
-        let t_cont_clone = Arc::clone(&t_cont_lock);
+        let cycle_param = 
+            (chrono::Utc::now(), (chrono::Utc::now() - orbit_s_start).num_seconds() as usize);
+        let f_cont_rw_clone = Arc::clone(&f_cont_lock);
+        let c_orbit_lock_clone = Arc::clone(&c_orbit_lock);
+        let t_cont_lock_clone = Arc::clone(&t_cont_lock);
         let schedule_join_handle = tokio::spawn(async move {
-            let mut t_cont = t_cont_clone.lock().await;
-            t_cont.schedule_optimal_orbit(&c_orbit_arc_clone, f_cont_clone).await;
+            let mut t_cont = t_cont_lock_clone.lock().await;
+            t_cont.schedule_optimal_orbit(c_orbit_lock_clone, f_cont_rw_clone, cycle_param.1).await;
         });
         let current_state = f_cont_lock.read().await.state();
 
-        let acq_phase = if current_state == FlightState::Acquisition {
+        let acq_phase = if current_state == FlightState::Acquisition {            
             let end_time = chrono::Utc::now() + chrono::Duration::seconds(10000);
             Some(handle_acquisition(
                 &f_cont_lock,
@@ -107,7 +111,7 @@ async fn main() {
                 end_time,
                 img_dt,
                 CONST_ANGLE,
-                false,
+                cycle_param
             ))
         } else {
             None
@@ -117,6 +121,14 @@ async fn main() {
         if let Some(h) = acq_phase {
             h.1.notify_one();
             h.0.await.ok();
+            let start_index = h.2.1;
+            let mut end_index = start_index + (chrono::Utc::now() - h.2.0).num_seconds() as usize;
+            end_index = end_index - (end_index % orbit_full_period as usize);
+            let c_orbit_lock_clone = Arc::clone(&c_orbit_lock);
+            tokio::spawn(async move {
+                let mut c_orbit = c_orbit_lock_clone.lock().await;
+                c_orbit.mark_done(start_index, end_index);
+            });
         }
 
         let mut phases = 0;
@@ -144,7 +156,7 @@ async fn main() {
                     task.dt().get_end(),
                     img_dt,
                     CONST_ANGLE,
-                    true,
+                    cycle_param
                 );
                 acq_phase.0.await.ok();
             } else if current_state == FlightState::Charge && due_time > DT_0 {
@@ -191,16 +203,22 @@ fn handle_acquisition(
     end_time: DateTime<chrono::Utc>,
     img_dt: f32,
     angle: CameraAngle,
-    ff_allowed: bool,
+    cycle_param: (DateTime<chrono::Utc>, usize)
 ) -> (
     JoinHandle<()>,
-    Arc<Notify>
+    Arc<Notify>,
+    (DateTime<chrono::Utc>, usize)
 ) {
     let f_cont_lock_arc_clone = Arc::clone(f_cont_locked);
     let c_cont_cloned = Arc::clone(c_cont_locked);
     let last_image_notify = Arc::new(Notify::new());
     let last_image_notify_cloned = Arc::clone(&last_image_notify);
 
+    let cycle_param = (
+        chrono::Utc::now(),
+        cycle_param.1 + (chrono::Utc::now() - cycle_param.0).num_seconds() as usize
+    );
+    
     let handle = tokio::spawn(async move {
         CameraController::execute_acquisition_cycle(
             c_cont_cloned,
@@ -208,11 +226,11 @@ fn handle_acquisition(
             end_time,
             last_image_notify_cloned,
             img_dt,
-            angle,
+            angle
         )
         .await;
     });
-    (handle, last_image_notify)
+    (handle, last_image_notify, cycle_param)
 }
 
 async fn log_pos(http_handler: Arc<HTTPClient>) {

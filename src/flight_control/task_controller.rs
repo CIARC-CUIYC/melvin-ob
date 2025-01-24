@@ -66,14 +66,18 @@ impl TaskController {
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn calculate_optimal_orbit_schedule(
         orbit: &ClosedOrbit,
-        current_pos: Vec2D<f32>,
+        p_t_shift: usize,
     ) -> OptimalOrbitResult {
         let states = [FlightState::Charge, FlightState::Acquisition];
         let usable_batt_range = MAX_BATTERY_THRESHOLD - MIN_BATTERY_THRESHOLD;
         let max_battery = (usable_batt_range / Self::BATTERY_RESOLUTION).round() as usize;
-        let mut p_t_iter = orbit.get_p_t_reordered(current_pos).rev();
 
         let prediction_secs = Self::MAX_ORBIT_PREDICTION_SECS.min(orbit.period().0 as u32) as usize;
+
+        let mut p_t_iter = orbit
+            .get_p_t_reordered(p_t_shift)
+            .rev()
+            .skip(orbit.period().0 as usize - prediction_secs);
 
         // initiate buffers
         let cov_dt_temp =
@@ -136,15 +140,17 @@ impl TaskController {
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
     pub async fn schedule_optimal_orbit(
         &mut self,
-        orbit: &ClosedOrbit,
+        orbit_lock: Arc<Mutex<ClosedOrbit>>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
+        p_t_shift: usize,
     ) {
         let computation_start = chrono::Utc::now();
         println!("[INFO] Calculating optimal orbit schedule...");
-        let current_pos = f_cont_lock.read().await.current_pos();
-        let decisions: OptimalOrbitResult =
-            Self::calculate_optimal_orbit_schedule(orbit, current_pos);
-
+        let (decisions, orbit_period) = {
+            let orbit = orbit_lock.lock().await;
+            (Self::calculate_optimal_orbit_schedule(&*orbit, p_t_shift), orbit.period())
+            
+        };
         let dt_calc = (chrono::Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
         println!("[INFO] Optimal Orbit Calculation complete after {dt_calc:.2}");
         let mut dt = dt_calc.ceil() as usize;
@@ -163,7 +169,7 @@ impl TaskController {
             .round() as i32;
         let mut batt = ((batt_f32 - min_batt) / Self::BATTERY_RESOLUTION) as usize;
 
-        let pred_secs = Self::MAX_ORBIT_PREDICTION_SECS.min(orbit.period().0 as u32) as usize;
+        let pred_secs = Self::MAX_ORBIT_PREDICTION_SECS.min(orbit_period.0 as u32) as usize;
         let mut decision_list: Vec<AtomicDecision> = Vec::new();
         while dt < pred_secs {
             let decision = decisions.decisions[dt][batt][state];

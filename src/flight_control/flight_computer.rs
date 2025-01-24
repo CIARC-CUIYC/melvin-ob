@@ -221,7 +221,7 @@ impl FlightComputer {
 
         Self::wait_for_duration(*transition_t).await;
         let cond = (
-            |cont: &FlightComputer| cont.current_state == new_state,
+            |cont: &FlightComputer| cont.state() == new_state,
             format!("State equals {new_state}"),
         );
         Self::wait_for_condition(locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
@@ -249,7 +249,7 @@ impl FlightComputer {
         Self::wait_for_duration(vel_change_dt).await;
         let comp_new_vel = (new_vel * 100).round();
         let cond = (
-            |cont: &FlightComputer| (cont.current_vel * 100).round() == comp_new_vel,
+            |cont: &FlightComputer| (cont.current_vel() * 100).round() == comp_new_vel,
             format!("Vel equals [{}, {}]", new_vel.x(), new_vel.y()),
         );
         Self::wait_for_condition(locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
@@ -271,8 +271,8 @@ impl FlightComputer {
         
         locked_self.read().await.set_angle(new_angle).await;
         let cond = (
-            |cont: &FlightComputer| cont.current_angle == new_angle,
-            format!("Lens equals {new_angle}"),
+            |cont: &FlightComputer| cont.current_angle() == new_angle,
+            format!("Lens equals {new_angle}")
         );
         Self::wait_for_condition(locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
     }
