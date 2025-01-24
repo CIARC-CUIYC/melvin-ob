@@ -1,7 +1,5 @@
 use crate::http_handler::http_handler_common::{BeaconObjective, ZonedObjective};
-use crate::http_handler::http_response::response_common::{
-    HTTPResponseType, JSONBodyHTTPResponseType, ResponseError, SerdeJSONBodyHTTPResponseType,
-};
+use crate::http_handler::http_response::response_common::SerdeJSONBodyHTTPResponseType;
 
 #[derive(serde::Deserialize, Debug)]
 pub struct ObjectiveListResponse {

@@ -1,6 +1,4 @@
-use crate::http_handler::http_response::response_common::{
-    HTTPResponseType, JSONBodyHTTPResponseType, ResponseError, SerdeJSONBodyHTTPResponseType,
-};
+use crate::http_handler::http_response::response_common::SerdeJSONBodyHTTPResponseType;
 
 // TODO: 422 Response Code: Validation Error -> not implemented
 

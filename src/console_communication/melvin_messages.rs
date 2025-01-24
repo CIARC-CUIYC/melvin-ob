@@ -1,5 +1,4 @@
-use crate::console_communication::melvin_messages;
-use crate::flight_control::camera_controller::{CameraController, MapImage};
+use crate::flight_control::camera_controller::MapImage;
 use crate::flight_control::common::vec2d::Vec2D;
 
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -74,7 +73,7 @@ pub struct Telemetry {
     #[prost(float, tag = "11")]
     pub distance_covered: f32,
 }
-#[derive(Clone, PartialEq, ::prost::Oneof)]
+#[derive(Clone, PartialEq, prost::Oneof)]
 pub enum DownstreamContent {
     #[prost(message, tag = "1")]
     Pong(Pong),
@@ -84,7 +83,7 @@ pub enum DownstreamContent {
     Telemetry(Telemetry),
 }
 
-#[derive(Clone, PartialEq, ::prost::Oneof)]
+#[derive(Clone, PartialEq, prost::Oneof)]
 pub enum UpstreamContent {
     #[prost(message, tag = "1")]
     Ping(Ping),
@@ -95,18 +94,18 @@ pub enum UpstreamContent {
     #[prost(message, tag = "4")]
     CreateSnapshotImage(CreateSnapshotImage),
 }
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, prost::Message)]
 pub struct GetFullImage {}
 
 
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, prost::Message)]
 pub struct GetSnapshotDiffImage {}
 
 
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, prost::Message)]
 pub struct CreateSnapshotImage {}
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, prost::Enumeration)]
 #[repr(i32)]
 pub enum SatelliteState {
     None = 0,
@@ -118,11 +117,11 @@ pub enum SatelliteState {
     Transition = 6,
 }
 impl SatelliteState {
-    /// String value of the enum field names used in the ProtoBuf definition.
+    /// String value of the enum field names used in the `ProtoBuf` definition.
     ///
     /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
+    /// (if the `ProtoBuf` definition does not change) and safe for programmatic use.
+    pub fn as_str_name(self) -> &'static str {
         match self {
             Self::None => "none",
             Self::Deployment => "deployment",
@@ -133,8 +132,8 @@ impl SatelliteState {
             Self::Transition => "transition",
         }
     }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+    /// Creates an enum from field names used in the `ProtoBuf` definition.
+    pub fn from_str_name(value: &str) -> Option<Self> {
         match value {
             "none" => Some(Self::None),
             "deployment" => Some(Self::Deployment),
