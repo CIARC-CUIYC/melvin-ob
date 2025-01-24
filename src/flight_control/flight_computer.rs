@@ -340,7 +340,7 @@ impl FlightComputer {
         loop {
             match req.send_request(&self.request_client).await {
                 Ok(_) => {
-                    println!("Velocity change commanded to [{}, {}]", new_vel.x(), new_vel.y());
+                    println!("[LOG] Velocity change commanded to [{}, {}]", new_vel.x(), new_vel.y());
                     return;
                 }
                 Err(_) => {

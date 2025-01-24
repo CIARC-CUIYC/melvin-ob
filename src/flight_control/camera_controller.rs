@@ -394,36 +394,44 @@ impl CameraController {
         lens: CameraAngle,
     ) {
         let mut last_image_flag = false;
-        let mut pic_count = 0;
+        let pic_count = 0;
+        let pic_count_lock = Arc::new(Mutex::new(pic_count));
 
         loop {
             let this_lock_clone = Arc::clone(&this_lock);
             let f_cont_lock_clone = Arc::clone(&f_cont_lock);
+            let pic_count_lock_clone = Arc::clone(&pic_count_lock);
             let img_handle = tokio::spawn(async move {
                 let mut c_cont = this_lock_clone.lock().await;
                 match c_cont.shoot_image_to_buffer(Arc::clone(&f_cont_lock_clone), lens).await {
                     Ok(()) => {
-                        pic_count += 1;
+                        let pic_num = {
+                            let mut lock = pic_count_lock_clone.lock().await ;
+                            *lock += 1;
+                            *lock
+                        };
                         println!(
-                            "[INFO] Took {pic_count}. picture in cycle at {}",
-                            chrono::Utc::now()
+                            "[INFO] Took {pic_num}. picture in cycle at {}",
+                            chrono::Utc::now().format("%d %H:%M:%S")
                         );
                     }
                     Err(e) => println!("[ERROR] Couldn't take picture: {e}"),
                 };
             });
-            if last_image_flag {
-                return;
-            }
             let next_img_due = {
-                if chrono::Utc::now() + chrono::TimeDelta::seconds(image_max_dt as i64) > end_time {
+                let next_max_dt = 
+                    chrono::Utc::now() + chrono::TimeDelta::seconds(image_max_dt as i64);
+                if  next_max_dt > end_time {
                     last_image_flag = true;
                     end_time
                 } else {
-                    end_time + chrono::TimeDelta::seconds(image_max_dt.floor() as i64)
+                    next_max_dt
                 }
             };
             img_handle.await;
+            if last_image_flag {
+                return;
+            }
             let sleep_time = next_img_due - chrono::Utc::now();
             tokio::select! {
                 () = tokio::time::sleep(sleep_time.to_std().unwrap()) => {},
