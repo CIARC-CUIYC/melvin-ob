@@ -12,9 +12,9 @@ jobs:
           rustflags: '-C target-feature=+crt-static'
           target: x86_64-unknown-linux-gnu
       - name: Build
-        run: cargo build --release --target x86_64-unknown-linux-gnu.2.36
+        run: cargo build --release --target x86_64-unknown-linux-gnu --config target.x86_64-unknown-linux-gnu.linker=\"x86_64-linux-gnu-gcc\"
       - name: Deploy
         run: |
           ssh root@10.100.10.3 'tmux kill-session -t melvin-runner || true'
           scp target/x86_64-unknown-linux-gnu/release/melvin-ob root@10.100.10.3:melvin-ob
-          ssh root@10.100.10.3 'DRS_BASE_URL=http://10.100.10.3:33000/ tmux new-session -d -s melvin-runner ./melvin-ob'
+          ssh root@10.100.10.3 tmux new-session -d -s melvin-runner 'DRS_BASE_URL=http://10.100.10.3:33000/ ./melvin-ob'
