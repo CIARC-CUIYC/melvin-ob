@@ -1,7 +1,6 @@
 use super::{
     camera_state::CameraAngle,
     common::vec2d::Vec2D,
-    task::locked_task_queue::LockedTaskQueue,
     flight_state::{FlightState, TRANSITION_DELAY_LOOKUP},
     task_controller::TaskController,
 };
@@ -17,7 +16,10 @@ use crate::http_handler::{
 };
 use chrono::TimeDelta;
 use std::{cmp::min, sync::Arc, time::Duration};
+use std::collections::VecDeque;
+use tokio::sync::Mutex;
 use tokio::time::sleep;
+use crate::flight_control::task::base_task::Task;
 
 /// Represents the core flight computer for satellite control.
 /// It manages operations such as state changes, velocity updates,
@@ -63,7 +65,7 @@ pub struct FlightComputer {
     /// HTTP client for sending requests for satellite operations.
     request_client: Arc<http_client::HTTPClient>,
     /// Arc Reference to the Task scheduler.
-    task_schedule: Arc<LockedTaskQueue>,
+    task_schedule: Arc<Mutex<VecDeque<Task>>>,
 }
 
 pub enum ChargeCommand {
@@ -176,21 +178,10 @@ impl FlightComputer {
         }
         println!("[INFO] Waiting for {} seconds!", sleep.as_secs());
         let saved_secs = i64::from(self.fast_forward(sleep).await);
-        self.task_schedule.for_each(|task| {
+        let mut sched = self.task_schedule.lock().await;
+        sched.iter_mut().for_each(|task| {
             task.dt_mut().sub_delay(TimeDelta::seconds(saved_secs));
         });
-        print!("[INFO] Return from Waiting!");
-        if self.task_schedule.is_empty() {
-            println!();
-        } else {
-            let time_left = self.task_schedule.peek().unwrap().dt().time_left();
-            println!(
-                " Next scheduled task in {:02}:{:02}:{:02}",
-                time_left.num_hours(),
-                time_left.num_minutes() - time_left.num_hours() * 60,
-                time_left.num_seconds() - time_left.num_minutes() * 60
-            );
-        }
         saved_secs
     }
 
@@ -223,15 +214,16 @@ impl FlightComputer {
     ///
     /// # Returns
     /// - The amount of time (in seconds) saved by fast-forwarding.
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
     async fn fast_forward(&self, duration: Duration) -> u32 {
         if duration <= Self::FAST_FORWARD_SECONDS_THRESHOLD {
             sleep(duration - Duration::from_secs(1)).await;
             return 0;
         }
 
-        let t_normal = 4; // At least 2 second at normal speed
-        let wait_time = u32::try_from(duration.as_secs() - t_normal).unwrap_or(0);
-        let mut selected_factor = 1;
+        let t_normal = 2; // At least 2 second at normal speed
+        let wait_time = duration.as_secs_f32().floor() as u32 - t_normal;
+        let mut selected_factor = 2;
         let mut selected_remainder = 0;
         let mut selected_saved_time = 0;
 

@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use crate::flight_control::common::pinned_dt::PinnedTimeDelay;
 use crate::flight_control::flight_computer::FlightComputer;
 use crate::flight_control::flight_state::FlightState;
@@ -5,7 +6,6 @@ use crate::flight_control::task::base_task::Task;
 use crate::flight_control::{
     common::{linked_box::LinkedBox, vec2d::Vec2D},
     orbit::closed_orbit::ClosedOrbit,
-    task::locked_task_queue::LockedTaskQueue,
 };
 use crate::{MAX_BATTERY_THRESHOLD, MIN_BATTERY_THRESHOLD};
 use chrono::Duration;
@@ -23,7 +23,7 @@ use tokio::sync::Mutex;
 #[derive(Debug)]
 pub struct TaskController {
     /// Schedule for the next images, represented by image tasks.
-    task_schedule: Arc<LockedTaskQueue>,
+    task_schedule: Arc<Mutex<VecDeque<Task>>>,
     /// Notification condition variable to signal changes to the first element in `image_schedule`.
     next_task_notify: Arc<Condvar>,
 }
@@ -60,7 +60,7 @@ impl TaskController {
     /// - A new `TaskController` with an empty task schedule.
     pub fn new() -> Self {
         Self {
-            task_schedule: Arc::new(LockedTaskQueue::new()),
+            task_schedule: Arc::new(Mutex::new(VecDeque::new())),
             next_task_notify: Arc::new(Condvar::new()),
         }
     }
@@ -139,22 +139,24 @@ impl TaskController {
     pub async fn schedule_optimal_orbit(&mut self, orbit: &ClosedOrbit, f_cont_lock: Arc<Mutex<FlightComputer>>) {
         let computation_start = chrono::Utc::now();
         println!("[INFO] Calculating optimal orbit schedule...");
-        let decisions: OptimalOrbitResult = {
+        let current_pos = {
             let f_cont = f_cont_lock.lock().await;
-            Self::calculate_optimal_orbit_schedule(orbit, f_cont.current_pos())
+            f_cont.current_pos()
         };
+        let decisions: OptimalOrbitResult = Self::calculate_optimal_orbit_schedule(orbit, current_pos);
+
         let dt_calc = (chrono::Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
         println!("[INFO] Optimal Orbit Calculation complete after {dt_calc:.2}");
         let mut dt = dt_calc.ceil() as usize;
-        
-        let batt_f32: f32 = {
+        let (batt_f32, mut state) = {
             let f_cont = f_cont_lock.lock().await;
-            f_cont.current_battery()
-        };
-        let mut state: usize = match f_cont_lock.lock().await.state() {
-            FlightState::Acquisition => 1,
-            FlightState::Charge => 0,
-            state => panic!("[FATAL] Unexpected flight state: {state}"),
+            let batt: f32 = f_cont.current_battery();
+            let st: usize = match f_cont.state() {
+                FlightState::Acquisition => 1,
+                FlightState::Charge => 0,
+                state => panic!("[FATAL] Unexpected flight state: {state}"),
+            };
+            (batt, st)
         };
         let (min_batt, max_batt) = (MIN_BATTERY_THRESHOLD, MAX_BATTERY_THRESHOLD);
         let max_mapped = (max_batt / Self::BATTERY_RESOLUTION - min_batt / Self::BATTERY_RESOLUTION)
@@ -174,30 +176,36 @@ impl TaskController {
                 }
                 AtomicDecision::StayInAcquisition => {
                     state = 1;
-                    batt -= 1;
+                    if batt % 150 == 0 {
+                        batt -= 10;
+                    } else {
+                        batt -= 1;
+                    }
                     dt += 1;
+                    
                 }
                 AtomicDecision::SwitchToCharge => {
                     let sched_t = computation_start + Duration::seconds(dt as i64);
-                    self.schedule_switch(FlightState::Charge, sched_t);
+                    self.schedule_switch(FlightState::Charge, sched_t).await;
                     state = 0;
                     dt = (dt + 180).min(pred_secs);
                 }
                 AtomicDecision::SwitchToAcquisition => {
                     let sched_t = computation_start + Duration::seconds(dt as i64);
-                    self.schedule_switch(FlightState::Acquisition, sched_t);
+                    self.schedule_switch(FlightState::Acquisition, sched_t).await;
                     state = 1;
                     dt = (dt + 180).min(pred_secs);
                 }
             }
         }
+        println!("[INFO] Number of tasks after scheduling: {}", self.task_schedule.lock().await.len());
     }
 
     /// Provides a reference to the image task schedule.
     ///
     /// # Returns
     /// - An `Arc` pointing to the `LockedTaskQueue`.
-    pub fn sched_arc(&self) -> Arc<LockedTaskQueue> { Arc::clone(&self.task_schedule) }
+    pub fn sched_arc(&self) -> Arc<Mutex<VecDeque<Task>>> { Arc::clone(&self.task_schedule) }
 
     /// Provides a reference to the `Convar` signaling changes to the first item in `image_schedule`.
     ///
@@ -205,24 +213,23 @@ impl TaskController {
     /// - An `Arc` pointing to the `Condvar`.
     pub fn notify_arc(&self) -> Arc<Condvar> { Arc::clone(&self.next_task_notify) }
 
-    fn schedule_switch(&mut self, target: FlightState, sched_t: chrono::DateTime<chrono::Utc>) {
-        let schedule = &*self.task_schedule;
-        if schedule.is_empty() {
+    async fn schedule_switch(&mut self, target: FlightState, sched_t: chrono::DateTime<chrono::Utc>) {
+        if self.task_schedule.lock().await.is_empty() {
             self.next_task_notify.notify_all();
         }
         let dt = PinnedTimeDelay::from_end(sched_t);
-        schedule.push(Task::switch_target(target, dt));
+        self.task_schedule.lock().await.push_back(Task::switch_target(target, dt));
     }
 
     /// Clears all pending tasks in the schedule.
     ///
     /// # Side Effects
     /// - Notifies all waiting threads if the schedule is cleared.
-    pub fn clear_schedule(&mut self) {
+    pub async fn clear_schedule(&mut self) {
         let schedule = &*self.task_schedule;
-        if !schedule.is_empty() {
+        if !schedule.lock().await.is_empty() {
             self.next_task_notify.notify_all();
         }
-        schedule.clear();
+        schedule.lock().await.clear();
     }
 }

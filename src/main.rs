@@ -20,14 +20,13 @@ use chrono::{DateTime, TimeDelta};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::sync::Arc;
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinHandle;
 
-const FUEL_RESET_THRESHOLD: f32 = 20.0;
-const MIN_PX_LEFT_FACTOR: f32 = 0.05;
-const ACCEL_FACTOR: f32 = 0.6;
-const CHARGE_TIME_THRESHOLD: TimeDelta = TimeDelta::seconds(370);
 const DT_0: TimeDelta = TimeDelta::seconds(0);
+const DT_150: TimeDelta = TimeDelta::seconds(150);
 
 const STATIC_ORBIT_VEL: (f32, f32) = (6.4f32, 7.4f32);
 pub const MIN_BATTERY_THRESHOLD: f32 = 10.0;
@@ -35,18 +34,19 @@ pub const MAX_BATTERY_THRESHOLD: f32 = 100.0;
 const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 const BIN_FILEPATH: &str = "camera_controller_narrow.bin";
 
-const LOG_POS: bool = true;
+const LOG_POS: bool = false;
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::too_many_lines)]
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
     let client = Arc::new(HTTPClient::new("http://localhost:33000"));
     let console_endpoint = Arc::new(ConsoleEndpoint::start());
+    
     if LOG_POS {
         let thread_client = Arc::clone(&client);
         tokio::spawn(async move { log_pos(thread_client).await });
     }
-
+    
     let t_cont = TaskController::new();
     let c_cont = CameraController::from_file(BIN_FILEPATH).await.unwrap_or_else(|e| {
         println!("[WARN] Failed to read from binary file: {e}");
@@ -89,6 +89,7 @@ async fn main() {
             f_cont.update_observation().await;
             f_cont.state()
         };
+
         let acq_phase = if current_state == FlightState::Acquisition {
             let end_time = chrono::Utc::now() + chrono::Duration::seconds(10000);
             Some(handle_acquisition(
@@ -97,7 +98,7 @@ async fn main() {
                 end_time,
                 img_dt,
                 CONST_ANGLE,
-                false
+                false,
             ))
         } else {
             None
@@ -109,12 +110,46 @@ async fn main() {
             h.0.await.ok();
         }
 
-        while let Some(task) = t_cont_locked.lock().await.sched_arc().pop() {
+        let mut phases = 0;
+
+        while let Some(task) = {
+            println!("[INFO] Trying to acquire task lock");
+            let start = chrono::Utc::now();
+            let t_cont = t_cont_locked.lock().await;
+            let sched = t_cont.sched_arc();
+            let mut sched_lock = sched.lock().await;
+            println!("[INFO] Releasing task lock after {}", (chrono::Utc::now() - start).num_seconds());
+            sched_lock.pop_front()
+        } {
+            phases += 1;
             let task_type = task.task_type();
             let due_time = task.dt().time_left();
-            if due_time > DT_0 {
+            println!("[INFO] Iteration {phases}: {task_type} in  {} s!", due_time.num_seconds());
+            
+            let current_state = f_cont_locked.lock().await.state();
+            if  current_state == FlightState::Acquisition && due_time > DT_0 {
+                let acq_phase = handle_acquisition(
+                    &f_cont_locked,
+                    &c_cont_locked,
+                    task.dt().get_end(),
+                    img_dt,
+                    CONST_ANGLE,
+                    true,
+                );
+                acq_phase.0.await.ok();
+            } else if current_state == FlightState::Charge && due_time > DT_0 {
+                let task_due = task.dt().time_left();
+                if task_due > DT_150 && phases % 5 == 0 {
+                    let start_time = chrono::Utc::now();
+                    let img = c_cont_locked.lock().await.export_full_view_png().await.unwrap();
+                    let mut file = File::create("snapshot.png").await.unwrap();
+                    file.write_all(&img).await.expect("[ERROR] Error while exporting");
+                    println!("[INFO] Exported Full-View PNG in {} s!", (chrono::Utc::now() - start_time).num_seconds());
+                }
                 let mut f_cont = f_cont_locked.lock().await;
-                f_cont.make_ff_call(due_time.to_std().unwrap()).await;
+                f_cont.make_ff_call(task_due.to_std().unwrap()).await;
+            } else {
+                panic!("[FATAL] Illegal state ({current_state}) or too little time left for task ({due_time})!")
             }
             match task_type {
                 BaseTask::TASKImageTask(_) => {
@@ -124,19 +159,6 @@ async fn main() {
                     FlightState::Acquisition => {
                         let mut f_cont = f_cont_locked.lock().await;
                         f_cont.state_change_ff(FlightState::Acquisition).await;
-                        if let Some(next) = t_cont_locked.lock().await.sched_arc().peek() {
-                            let task_due = next.dt().time_left();
-                            let acq_phase = handle_acquisition(
-                                &f_cont_locked,
-                                &c_cont_locked,
-                                next.dt().get_end(),
-                                img_dt,
-                                CONST_ANGLE,
-                                true
-                            );
-                            acq_phase.0.await.ok();
-                            // TODO: export png here
-                        }
                     }
                     FlightState::Charge => {
                         let mut f_cont = f_cont_locked.lock().await;
@@ -151,16 +173,6 @@ async fn main() {
             // TODO: perform optimal orbit until objective notification
         }
     }
-
-    /* if chrono::Utc::now() > orbit_s_end {
-        println!(
-            "[LOG] First orbit over, position: {:?}",
-            f_cont.current_pos()
-        );
-        break;
-    }*/
-
-    //c_cont.save_png_to(BIN_FILEPATH).await.unwrap();
 }
 
 fn handle_acquisition(
@@ -190,9 +202,9 @@ fn handle_acquisition(
             last_image_notify_cloned,
             img_dt,
             angle,
-            ff_allowed
+            ff_allowed,
         )
-        .await;
+            .await;
     });
     (handle, last_image_notify, end_time_locked)
 }

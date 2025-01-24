@@ -1,8 +1,8 @@
-use crate::flight_control::common::img_buffer::SubBuffer;
 use crate::flight_control::{
     camera_state::CameraAngle,
     common::{bitmap::Bitmap, vec2d::Vec2D},
     flight_computer::FlightComputer,
+    common::img_buffer::SubBuffer
 };
 use crate::http_handler::{
     http_client::HTTPClient, http_request::request_common::NoBodyHTTPRequestType,
@@ -10,20 +10,17 @@ use crate::http_handler::{
 };
 use bitvec::boxed::BitBox;
 use futures::StreamExt;
-use image::codecs::png::{CompressionType, FilterType, PngDecoder, PngEncoder};
 use image::{
     imageops::Lanczos3, DynamicImage, GenericImage, GenericImageView, ImageBuffer, ImageReader,
     Pixel, Rgb, RgbImage, Rgba, RgbaImage,
+    codecs::png::{CompressionType, FilterType, PngDecoder, PngEncoder}
 };
-use std::io::Cursor;
-use std::sync::Arc;
-use chrono::TimeDelta;
-use tokio::sync::{Mutex, Notify, RwLock};
+use std::{io::Cursor, sync::Arc};
 use tokio::{
+    sync::{Mutex, Notify, RwLock},
     fs::File,
     io::{AsyncReadExt, AsyncWriteExt},
 };
-use crate::flight_control::flight_computer::ChargeCommand::Duration;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct MapImageStorage {
@@ -303,6 +300,15 @@ impl CameraController {
         Ok(writer.into_inner())
     }
 
+    pub(crate) async fn export_full_view_png(
+        &self,
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        let map_image = self.map_image.read().await;
+        let mut writer = Cursor::new(Vec::<u8>::new());
+        map_image.fullsize_buffer.write_with_encoder(PngEncoder::new(&mut writer))?;
+        Ok(writer.into_inner())
+    }
+
     #[allow(clippy::cast_sign_loss)]
     pub(crate) async fn export_thumbnail_png(
         &self,
@@ -332,7 +338,7 @@ impl CameraController {
         Ok(writer.into_inner())
     }
 
-    pub(crate) async fn create_snapshot(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub(crate) async fn create_snapshot_thumb(&self) -> Result<(), Box<dyn std::error::Error>> {
         let image = self.export_full_thumbnail_png().await?;
         let mut file = File::create("snapshot.png").await?;
         file.write_all(&image).await?;
@@ -387,12 +393,16 @@ impl CameraController {
         ff_allowed: bool,
     ) {
         let mut last_image_flag = false;
+        let mut pic_count = 0;
 
         loop {
             {
                 let mut c_cont = this.lock().await;
                 match c_cont.shoot_image_to_buffer(Arc::clone(&f_cont_locked), lens).await {
-                    Ok(()) => println!("[INFO] Took picture at {}", chrono::Utc::now()),
+                    Ok(()) => {
+                        pic_count += 1;
+                        println!("[INFO] Took {pic_count}. picture in cycle at {}", chrono::Utc::now());
+                    },
                     Err(e) => println!("[ERROR] Couldn't take picture: {e}"),
                 };
             }
@@ -422,7 +432,7 @@ impl CameraController {
                     }
                 } => {
                     let mut end = end_time_locked.lock().await;
-                    *end -= TimeDelta::seconds(saved_time);
+                    *end -= chrono::TimeDelta::seconds(saved_time);
                 }
                 () = last_img_kill.notified() => {
                     last_image_flag = true;

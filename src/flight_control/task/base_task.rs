@@ -5,6 +5,7 @@ use crate::flight_control::common::pinned_dt::PinnedTimeDelay;
 use crate::flight_control::common::vec2d::Vec2D;
 use crate::flight_control::flight_state::FlightState;
 use std::fmt::{Display, Formatter};
+use strum_macros::Display;
 
 #[derive(Debug, Copy, Clone)]
 pub struct Task {
@@ -12,7 +13,7 @@ pub struct Task {
     dt: PinnedTimeDelay,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Display, Debug, Copy, Clone)]
 pub enum BaseTask {
     TASKImageTask(ImageTask),
     TASKSwitchState(SwitchStateTask),
