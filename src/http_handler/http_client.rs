@@ -8,7 +8,7 @@ impl HTTPClient {
     pub fn new(base_url: &str) -> HTTPClient {
         HTTPClient {
             client: reqwest::Client::builder()
-                .danger_accept_invalid_certs(true)
+                //.danger_accept_invalid_certs(true)
                 .timeout(std::time::Duration::from_secs(5))
                 .build()
                 .unwrap(),

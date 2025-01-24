@@ -11,7 +11,7 @@ keywords = []
 categories = []
 
 [dependencies]
-reqwest = { version = "0.12.9", features = ["json", "multipart", "stream"] }
+reqwest = { version = "0.12.9", default-features = false, features = ["json", "multipart", "stream", "http2", "deflate" ] }
 tokio = { version = "1.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 chrono = { version = "0.4", features = ["serde"] }
@@ -21,7 +21,7 @@ strum = "0.26.3"
 strum_macros = "0.26.4"
 bitvec = { version = "1.0.1", features = ["serde"] }
 futures = "0.3.31"
-image = "0.25.5"
+image = { version = "0.25.5", default-features = false, features = ["jpeg", "png", "rayon"] }
 bincode = "1.3.3"
 prost = "0.13"
 num = "0.4.3"
@@ -50,7 +50,3 @@ rpath = false
 
 [build-dependencies]
 prost-build = "0.13.4"
-
-
-
-
