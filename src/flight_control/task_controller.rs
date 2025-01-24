@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use crate::flight_control::common::pinned_dt::PinnedTimeDelay;
 use crate::flight_control::flight_computer::FlightComputer;
 use crate::flight_control::flight_state::FlightState;
@@ -9,6 +8,7 @@ use crate::flight_control::{
 };
 use crate::{MAX_BATTERY_THRESHOLD, MIN_BATTERY_THRESHOLD};
 use chrono::Duration;
+use std::collections::VecDeque;
 use std::sync::{Arc, Condvar};
 use tokio::sync::{Mutex, RwLock};
 
@@ -41,8 +41,6 @@ type AtomicDecisionGrid = Box<[AtomicDecisionBox]>; // A "2D" grid of AtomicDeci
 type AtomicDecisionCube = Box<[AtomicDecisionGrid]>;
 
 type CoverageGrid = Box<[Box<[u16]>]>;
-
-
 
 struct OptimalOrbitResult {
     pub decisions: AtomicDecisionCube,
@@ -136,11 +134,16 @@ impl TaskController {
     }
 
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
-    pub async fn schedule_optimal_orbit(&mut self, orbit: &ClosedOrbit, f_cont_lock: Arc<RwLock<FlightComputer>>) {
+    pub async fn schedule_optimal_orbit(
+        &mut self,
+        orbit: &ClosedOrbit,
+        f_cont_lock: Arc<RwLock<FlightComputer>>,
+    ) {
         let computation_start = chrono::Utc::now();
         println!("[INFO] Calculating optimal orbit schedule...");
         let current_pos = f_cont_lock.read().await.current_pos();
-        let decisions: OptimalOrbitResult = Self::calculate_optimal_orbit_schedule(orbit, current_pos);
+        let decisions: OptimalOrbitResult =
+            Self::calculate_optimal_orbit_schedule(orbit, current_pos);
 
         let dt_calc = (chrono::Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
         println!("[INFO] Optimal Orbit Calculation complete after {dt_calc:.2}");
@@ -162,7 +165,7 @@ impl TaskController {
 
         let pred_secs = Self::MAX_ORBIT_PREDICTION_SECS.min(orbit.period().0 as u32) as usize;
         let mut decision_list: Vec<AtomicDecision> = Vec::new();
-        while dt < pred_secs  {
+        while dt < pred_secs {
             let decision = decisions.decisions[dt][batt][state];
             decision_list.push(decision);
             match decision {
@@ -173,13 +176,8 @@ impl TaskController {
                 }
                 AtomicDecision::StayInAcquisition => {
                     state = 1;
-                    if batt % 150 == 0 {
-                        batt -= 10;
-                    } else {
-                        batt -= 1;
-                    }
+                    batt -= 1;
                     dt += 1;
-                    
                 }
                 AtomicDecision::SwitchToCharge => {
                     let sched_t = computation_start + Duration::seconds(dt as i64);
@@ -195,7 +193,10 @@ impl TaskController {
                 }
             }
         }
-        println!("[INFO] Number of tasks after scheduling: {}", self.task_schedule.lock().await.len());
+        println!(
+            "[INFO] Number of tasks after scheduling: {}",
+            self.task_schedule.lock().await.len()
+        );
     }
 
     /// Provides a reference to the image task schedule.
@@ -210,7 +211,11 @@ impl TaskController {
     /// - An `Arc` pointing to the `Condvar`.
     pub fn notify_arc(&self) -> Arc<Condvar> { Arc::clone(&self.next_task_notify) }
 
-    async fn schedule_switch(&mut self, target: FlightState, sched_t: chrono::DateTime<chrono::Utc>) {
+    async fn schedule_switch(
+        &mut self,
+        target: FlightState,
+        sched_t: chrono::DateTime<chrono::Utc>,
+    ) {
         if self.task_schedule.lock().await.is_empty() {
             self.next_task_notify.notify_all();
         }

@@ -194,12 +194,9 @@ fn handle_acquisition(
     ff_allowed: bool,
 ) -> (
     JoinHandle<()>,
-    Arc<Notify>,
-    Arc<Mutex<DateTime<chrono::Utc>>>,
+    Arc<Notify>
 ) {
     let f_cont_lock_arc_clone = Arc::clone(f_cont_locked);
-    let end_time_locked = Arc::new(Mutex::new(end_time));
-    let end_time_cloned = Arc::clone(&end_time_locked);
     let c_cont_cloned = Arc::clone(c_cont_locked);
     let last_image_notify = Arc::new(Notify::new());
     let last_image_notify_cloned = Arc::clone(&last_image_notify);
@@ -208,14 +205,14 @@ fn handle_acquisition(
         CameraController::execute_acquisition_cycle(
             c_cont_cloned,
             f_cont_lock_arc_clone,
-            end_time_cloned,
+            end_time,
             last_image_notify_cloned,
             img_dt,
             angle,
         )
         .await;
     });
-    (handle, last_image_notify, end_time_locked)
+    (handle, last_image_notify)
 }
 
 async fn log_pos(http_handler: Arc<HTTPClient>) {

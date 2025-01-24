@@ -388,7 +388,7 @@ impl CameraController {
     pub async fn execute_acquisition_cycle(
         this: Arc<Mutex<Self>>,
         f_cont_locked: Arc<RwLock<FlightComputer>>,
-        end_time_locked: Arc<Mutex<chrono::DateTime<chrono::Utc>>>,
+        end_time: chrono::DateTime<chrono::Utc>,
         last_img_kill: Arc<Notify>,
         image_max_dt: f32,
         lens: CameraAngle,
@@ -414,11 +414,10 @@ impl CameraController {
                 return;
             }
             let sleep_time = {
-                let end_time = end_time_locked.lock().await;
-                if chrono::Utc::now() + chrono::TimeDelta::seconds(image_max_dt as i64) > *end_time
+                if chrono::Utc::now() + chrono::TimeDelta::seconds(image_max_dt as i64) > end_time
                 {
                     last_image_flag = true;
-                    time::Duration::from_secs((*end_time - chrono::Utc::now()).num_seconds() as u64)
+                    time::Duration::from_secs((end_time - chrono::Utc::now()).num_seconds() as u64)
                 } else {
                     time::Duration::from_secs_f32(image_max_dt.floor())
                 }
