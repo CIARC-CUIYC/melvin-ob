@@ -4,10 +4,10 @@ use std::sync::{Arc, Condvar};
 /// `TaskController` manages and schedules image capture tasks for a satellite.
 /// It leverages a thread-safe task queue and notifies waiting threads when
 /// new tasks are added or processed.
-/// 
+///
 /// # Fields
 /// - `image_schedule`: An `Arc` Reference to a `LockedTaskQueue`.
-/// - `next_image_notify`: An `Arc` Reference to a `Condvar` indicating changes to the first element 
+/// - `next_image_notify`: An `Arc` Reference to a `Condvar` indicating changes to the first element
 ///   in `image_schedule`
 #[derive(Debug)]
 pub struct TaskController {
@@ -33,13 +33,13 @@ impl TaskController {
     ///
     /// # Arguments
     /// - `task`: A `ImageTask` value.
-    /// 
+    ///
     /// # Side Effects
     /// - Notifies all waiting threads if the schedule was previously empty.
     pub fn schedule_image(&mut self, task: ImageTask) {
         let schedule = &*self.image_schedule;
         if schedule.is_empty() {
-            self.next_image_notify.notify_all();            
+            self.next_image_notify.notify_all();
         }
         schedule.push(task);
     }
@@ -48,13 +48,17 @@ impl TaskController {
     ///
     /// # Returns
     /// - An `Arc` pointing to the `LockedTaskQueue`.
-    pub fn sched_arc(&self) -> Arc<LockedTaskQueue> { Arc::clone(&self.image_schedule) }
+    pub fn sched_arc(&self) -> Arc<LockedTaskQueue> {
+        Arc::clone(&self.image_schedule)
+    }
 
     /// Provides a reference to the `Convar` signaling changes to the first item in `image_schedule`.
     ///
     /// # Returns
     /// - An `Arc` pointing to the `Condvar`.
-    pub fn notify_arc(&self) -> Arc<Condvar> { Arc::clone(&self.next_image_notify) }
+    pub fn notify_arc(&self) -> Arc<Condvar> {
+        Arc::clone(&self.next_image_notify)
+    }
 
     /// Removes the next scheduled image capture task from the schedule.
     ///
@@ -62,7 +66,9 @@ impl TaskController {
     /// - Notifies all waiting threads if a task is removed.
     pub fn remove_next_image(&mut self) {
         let schedule = &*self.image_schedule;
-        if schedule.pop().is_some() { self.next_image_notify.notify_all() }
+        if schedule.pop().is_some() {
+            self.next_image_notify.notify_all()
+        }
     }
 
     /// Retrieves the time remaining until the next scheduled image.

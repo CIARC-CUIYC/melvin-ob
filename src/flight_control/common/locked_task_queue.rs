@@ -29,22 +29,24 @@ impl LockedTaskQueue {
     /// # Panics
     /// - If the Mutex is poisoned.
     pub fn lock_queue(&self) -> std::sync::MutexGuard<VecDeque<ImageTask>> {
-        self.queue
-            .lock()
-            .expect("[FATAL] Mutex poisoned: Failed to acquire lock")
+        self.queue.lock().expect("[FATAL] Mutex poisoned: Failed to acquire lock")
     }
 
     /// Adds a new task to the back of the queue.
     ///
     /// # Arguments
     /// - `task`: The `ImageTask` to add.
-    pub fn push(&self, task: ImageTask) { self.lock_queue().push_back(task) }
+    pub fn push(&self, task: ImageTask) {
+        self.lock_queue().push_back(task)
+    }
 
     /// Removes and returns the task at the front of the queue.
     ///
     /// # Returns
     /// - An `Option<ImageTask>` containing the removed task, or `None` if the queue is empty.
-    pub fn pop(&self) -> Option<ImageTask> { self.lock_queue().pop_front() }
+    pub fn pop(&self) -> Option<ImageTask> {
+        self.lock_queue().pop_front()
+    }
 
     /// Returns a copy of the task at the front of the queue without removing it.
     ///
@@ -60,23 +62,31 @@ impl LockedTaskQueue {
     ///
     /// # Returns
     /// - The number of tasks currently in the queue.
-    pub fn len(&self) -> usize { self.lock_queue().len() }
+    pub fn len(&self) -> usize {
+        self.lock_queue().len()
+    }
 
     /// Checks if the task queue is empty.
     ///
     /// # Returns
     /// - `true` if the queue is empty, `false` otherwise.
-    pub fn is_empty(&self) -> bool { self.lock_queue().is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.lock_queue().is_empty()
+    }
 
     /// Clears all tasks from the queue.
-    pub fn clear(&self) { self.lock_queue().clear() }
+    pub fn clear(&self) {
+        self.lock_queue().clear()
+    }
 
     /// Iterates over the tasks in the queue and applies a provided function to each.
     ///
     /// # Arguments
     /// - `func`: A closure to apply to each task in the queue.
     pub fn for_each<F>(&self, func: F)
-    where F: FnMut(&mut ImageTask) {
+    where
+        F: FnMut(&mut ImageTask),
+    {
         self.lock_queue().iter_mut().for_each(func);
     }
 }

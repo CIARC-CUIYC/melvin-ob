@@ -42,7 +42,9 @@ impl Orbit {
         }
     }
 
-    pub fn start_timestamp(&self) -> chrono::DateTime<chrono::Utc> { self.init_timestamp }
+    pub fn start_timestamp(&self) -> chrono::DateTime<chrono::Utc> {
+        self.init_timestamp
+    }
 
     #[allow(clippy::cast_possible_truncation)]
     pub fn period(&mut self) -> Option<f32> {
@@ -61,8 +63,7 @@ impl Orbit {
             let disp_y = (self.vel_exact.y() * tts as i32).to_f32().unwrap();
             let disp = Vec2D::new(disp_x, disp_y);
 
-            let mut resulting_point = self.fp + disp;
-            resulting_point.wrap_around_map();
+            let resulting_point = (self.fp + disp).wrap_around_map();
             let resulting_dist = resulting_point - self.fp;
             if resulting_dist.x().abs() < f32::EPSILON && resulting_dist.y().abs() < f32::EPSILON {
                 self.orbit_period = Some((

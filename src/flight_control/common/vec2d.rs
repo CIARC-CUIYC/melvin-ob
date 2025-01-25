@@ -1,5 +1,5 @@
+use num::traits::{real::Real, Num, NumAssignOps, NumCast};
 use std::ops::{Add, Deref, Div, Mul, Sub};
-use num::traits::{Num, NumAssignOps, NumCast, real::Real};
 
 /// A 2D vector generic over any numeric type.
 ///
@@ -23,14 +23,16 @@ where
     T: Num + NumCast + Copy,
 {
     pub fn wrap_around_map(&self) -> Self {
-        Wrapped2D(Vec2D::new(Self::wrap_coordinate(self.0.x, T::from(X).unwrap()), Self::wrap_coordinate(self.0.y, T::from(Y).unwrap())))
+        Wrapped2D(Vec2D::new(
+            Self::wrap_coordinate(self.0.x, T::from(X).unwrap()),
+            Self::wrap_coordinate(self.0.y, T::from(Y).unwrap()),
+        ))
     }
 
     pub fn wrap_coordinate(value: T, max_value: T) -> T {
         (value + max_value) % max_value
     }
 }
-
 
 impl<T, const X: u32, const Y: u32> Deref for Wrapped2D<T, X, Y> {
     type Target = Vec2D<T>;
@@ -48,7 +50,9 @@ where
     ///
     /// # Returns
     /// The magnitude of the vector as a scalar of type `T`.
-    pub fn abs(&self) -> T { (self.x.powi(2) + self.y.powi(2)).sqrt() }
+    pub fn abs(&self) -> T {
+        (self.x.powi(2) + self.y.powi(2)).sqrt()
+    }
 
     /// Creates a vector pointing from the current vector (`self`) to another vector (`other`).
     ///
@@ -107,19 +111,25 @@ impl<T: Copy> Vec2D<T> {
     ///
     /// # Returns
     /// A new `Vec2D` object.
-    pub const fn new(x: T, y: T) -> Self { Self { x, y } }
+    pub const fn new(x: T, y: T) -> Self {
+        Self { x, y }
+    }
 
     /// Returns the x-component of the vector.
     ///
     /// # Returns
     /// The `x` value of type `T`.
-    pub const fn x(&self) -> T { self.x }
+    pub const fn x(&self) -> T {
+        self.x
+    }
 
     /// Returns the y-component of the vector.
     ///
     /// # Returns
     /// The `y` value of type `T`.
-    pub const fn y(&self) -> T { self.y }
+    pub const fn y(&self) -> T {
+        self.y
+    }
 }
 
 impl<T: Num + NumCast + Copy> Vec2D<T> {
@@ -135,10 +145,12 @@ impl<T: Num + NumCast + Copy> Vec2D<T> {
     ///
     /// # Returns
     /// A scalar value of type `T` that represents the dot product of the two vectors.
-    pub fn dot(self, other: Vec2D<T>) -> T { self.x * other.x + self.y * other.y }
+    pub fn dot(self, other: Vec2D<T>) -> T {
+        self.x * other.x + self.y * other.y
+    }
 
     /// Computes the Euclidean distance between the current vector and another vector as an `f64`.
-    /// This enables Euclidean distance calculation for integer type `T`. 
+    /// This enables Euclidean distance calculation for integer type `T`.
     ///
     /// # Arguments
     /// * `other` - Another `Vec2D` vector to compute the distance to.
@@ -173,13 +185,17 @@ impl<T: Num + NumCast + Copy> Vec2D<T> {
     ///
     /// # Returns
     /// The magnitude of the vector as an `f64`.
-    pub fn abs_f64(self) -> f64 { (self.x * self.x + self.y * self.y).to_f64().unwrap().sqrt() }
+    pub fn abs_f64(self) -> f64 {
+        (self.x * self.x + self.y * self.y).to_f64().unwrap().sqrt()
+    }
 
     /// Creates a zero vector (x = 0, y = 0).
     ///
     /// # Returns
     /// A zero-initialized `Vec2D` with member type `T`.
-    pub fn zero() -> Self { Self::new(T::zero(), T::zero()) }
+    pub fn zero() -> Self {
+        Self::new(T::zero(), T::zero())
+    }
 
     /// Returns the dimensions of a predefined map as a 2D vector.
     ///
@@ -202,7 +218,10 @@ impl<T: Num + NumCast + Copy> Vec2D<T> {
         let map_size_x = Self::map_size().x();
         let map_size_y = Self::map_size().y();
 
-        Vec2D::new(Self::wrap_coordinate(self.x, map_size_x), Self::wrap_coordinate(self.y, map_size_y))
+        Vec2D::new(
+            Self::wrap_coordinate(self.x, map_size_x),
+            Self::wrap_coordinate(self.y, map_size_y),
+        )
     }
 
     /// Wraps a single coordinate around a specific maximum value.

@@ -98,11 +98,7 @@ pub(crate) trait MultipartBodyHTTPRequestType: HTTPRequestType {
             .get_request_base(client)
             .headers(self.header_params_with_content_type())
             .query(&self.query_params())
-            .multipart(
-                self.body()
-                    .await
-                    .map_err(HTTPError::HTTPRequestError)?,
-            )
+            .multipart(self.body().await.map_err(HTTPError::HTTPRequestError)?)
             .send()
             .await;
         let response = response.map_err(ResponseError::from);
@@ -116,8 +112,12 @@ pub(crate) trait HTTPRequestType {
     type Response: HTTPResponseType;
     fn endpoint(&self) -> &str;
     fn request_method(&self) -> HTTPRequestMethod;
-    fn header_params(&self) -> reqwest::header::HeaderMap { reqwest::header::HeaderMap::default() }
-    fn query_params(&self) -> HashMap<&str, String> { HashMap::new() }
+    fn header_params(&self) -> reqwest::header::HeaderMap {
+        reqwest::header::HeaderMap::default()
+    }
+    fn query_params(&self) -> HashMap<&str, String> {
+        HashMap::new()
+    }
     fn get_request_base(&self, client: &HTTPClient) -> reqwest::RequestBuilder {
         let compound_url = format!("{}{}", client.url(), self.endpoint());
         match self.request_method() {

@@ -11,7 +11,7 @@ use std::ops::Not;
 /// - `width`: A `u32` representing the 2D bitmap width.
 /// - `height`: A `u32` representing the 2D bitmap height.
 /// - `data`: A `BitBox` storing the actual bitmap data.
-/// 
+///
 /// This structure provides methods for manipulating pixel data, checking
 /// regions, and exporting the bitmap to a PNG image.
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
@@ -64,21 +64,25 @@ impl Bitmap {
     ///
     /// # Returns
     /// The 1D index as `u32`.
-    /// 
+    ///
     /// # Example
     /// ```rust
     /// let bitmap = Bitmap::new(4, 4);
     /// let index = bitmap.get_bitmap_index(2, 3);
     /// assert_eq!(index, 14);
     /// ```
-    fn get_bitmap_index(&self, x: u32, y: u32) -> u32 { y * self.width + x }
+    fn get_bitmap_index(&self, x: u32, y: u32) -> u32 {
+        y * self.width + x
+    }
 
     /// Returns the total number of pixels in the bitmap.
     /// This is equivalent to the product of its `width` and `height`.
     ///
     /// # Returns
     /// The total number of pixels as `u32`.
-    pub fn len(&self) -> u32 { self.width * self.height }
+    pub fn len(&self) -> u32 {
+        self.width * self.height
+    }
 
     /// Checks whether the pixel at the specified `(x, y)` coordinates is set.
     ///
@@ -131,11 +135,7 @@ impl Bitmap {
     /// This panics if `(x, y)` is out of bounds.
     fn flip(&mut self, x: u32, y: u32) {
         let index = self.get_bitmap_index(x, y);
-        let state = self
-            .data
-            .get(index as usize)
-            .expect("[FATAL] Index out of bounds!")
-            .not();
+        let state = self.data.get(index as usize).expect("[FATAL] Index out of bounds!").not();
         self.data.set(index as usize, state);
     }
 
@@ -180,7 +180,7 @@ impl Bitmap {
     /// # Panics
     /// This can panic due to conversion errors or bugs left.
     pub fn get_region_slice_indices(&self, x: i32, y: i32, angle: CameraAngle) -> Vec<(u32, u32)> {
-        let angle_const = i32::from(angle.get_square_side_length()/2);
+        let angle_const = i32::from(angle.get_square_side_length() / 2);
         let mut slices = Vec::new();
         let max_height = i32::try_from(self.height).expect("[FATAL] Cast to i32 failed!");
         let max_width = i32::try_from(self.width).expect("[FATAL] Cast to i32 failed!");

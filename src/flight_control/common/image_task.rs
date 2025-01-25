@@ -27,7 +27,7 @@ pub struct ImageTask {
     /// The target position for the image capture.
     planned_pos: Vec2D<u32>,
     /// The lens configuration for the capture.
-    lens: CameraAngle
+    lens: CameraAngle,
 }
 
 impl ImageTask {
@@ -40,26 +40,30 @@ impl ImageTask {
     ///
     /// # Returns
     /// - A new `ImageTask` instance with the given parameters.
-    pub fn new(dt: PinnedTimeDelay, planned_pos: Vec2D<u32>, lens: CameraAngle) -> Self { 
+    pub fn new(dt: PinnedTimeDelay, planned_pos: Vec2D<u32>, lens: CameraAngle) -> Self {
         Self {
             image_status: ImageTaskStatus::Planned,
             planned_pos,
             dt,
-            lens
-        } 
+            lens,
+        }
     }
 
     /// Returns a mutable reference to the task's time delay.
     ///
     /// # Returns
     /// - A mutable reference to `PinnedTimeDelay`.
-    pub fn dt_mut(&mut self) -> &mut PinnedTimeDelay { &mut self.dt }
+    pub fn dt_mut(&mut self) -> &mut PinnedTimeDelay {
+        &mut self.dt
+    }
 
     /// Returns an immutable reference to the task's time delay.
     ///
     /// # Returns
     /// - An immutable reference to `PinnedTimeDelay`.
-    pub fn dt(&self) -> &PinnedTimeDelay { &self.dt }
+    pub fn dt(&self) -> &PinnedTimeDelay {
+        &self.dt
+    }
 
     /// Marks the task as completed and records the actual capture position.
     ///
@@ -74,7 +78,7 @@ impl ImageTask {
         let center_dev_x = (f64::from(self.planned_pos.x()) - f64::from(actual_pos.x())).abs();
         let center_dev_y = (f64::from(self.planned_pos.y()) - f64::from(actual_pos.y())).abs();
         let px_dev = square_side * center_dev_x + (square_side - center_dev_x) * center_dev_y;
-        let px_dev_rel = px_dev / (square_side*square_side);
+        let px_dev_rel = px_dev / (square_side * square_side);
         let new_status = ImageTaskStatus::Done {
             actual_pos,
             px_dev_rel,

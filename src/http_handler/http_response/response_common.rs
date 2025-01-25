@@ -89,8 +89,7 @@ impl std::error::Error for ResponseError {}
 impl From<reqwest::Error> for ResponseError {
     fn from(value: reqwest::Error) -> Self {
         if value.is_request() {
-            
-            ResponseError::BadRequest(BadRequestReturn { detail: vec![]})
+            ResponseError::BadRequest(BadRequestReturn { detail: vec![] })
         } else if value.is_timeout() || value.is_redirect() {
             ResponseError::InternalServer
         } else if value.is_connect() {

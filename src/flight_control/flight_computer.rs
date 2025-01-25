@@ -16,7 +16,6 @@ use crate::http_handler::{
 };
 use crate::CHARGE_CHARGE_PER_S;
 use chrono::TimeDelta;
-use num::range;
 use std::{cmp::min, sync::Arc, time::Duration};
 use tokio::time::sleep;
 
@@ -117,13 +116,17 @@ impl<'a> FlightComputer<'a> {
     ///
     /// # Returns
     /// A `Vec2D` representing the current satellite position.
-    pub fn current_pos(&self) -> Vec2D<f32> { self.current_pos }
+    pub fn current_pos(&self) -> Vec2D<f32> {
+        self.current_pos
+    }
 
     /// Retrieves the current position of the velocity.
     ///
     /// # Returns
     /// A `Vec2D` representing the current satellite velocity.
-    pub fn current_vel(&self) -> Vec2D<f32> { self.current_vel }
+    pub fn current_vel(&self) -> Vec2D<f32> {
+        self.current_vel
+    }
 
     /// Retrieves the maximum battery capacity of the satellite.
     ///
@@ -131,19 +134,25 @@ impl<'a> FlightComputer<'a> {
     ///
     /// # Returns
     /// - A `f32` value representing the maximum battery charge.
-    pub fn max_battery(&self) -> f32 { self.max_battery }
+    pub fn max_battery(&self) -> f32 {
+        self.max_battery
+    }
 
     /// Retrieves the current battery charge level of the satellite.
     ///
     /// # Returns
     /// - A `f32` value denoting the battery's current charge level.
-    pub fn current_battery(&self) -> f32 { self.current_battery }
+    pub fn current_battery(&self) -> f32 {
+        self.current_battery
+    }
 
     /// Retrieves the remaining fuel level of the satellite.
     ///
     /// # Returns
     /// - A `f32` value representing the remaining percentage of fuel.
-    pub fn fuel_left(&self) -> f32 { self.fuel_left }
+    pub fn fuel_left(&self) -> f32 {
+        self.fuel_left
+    }
 
     /// Retrieves the current operational state of the satellite.
     ///
@@ -152,7 +161,9 @@ impl<'a> FlightComputer<'a> {
     ///
     /// # Returns
     /// - A `FlightState` enum denoting the active operational state.
-    pub fn state(&self) -> FlightState { self.current_state }
+    pub fn state(&self) -> FlightState {
+        self.current_state
+    }
 
     pub async fn reset(&mut self) {
         ResetRequest {}.send_request(self.request_client).await.expect("ERROR: Failed to reset");
@@ -467,8 +478,6 @@ impl<'a> FlightComputer<'a> {
     /// # Returns
     /// - A `Vec2D<f32>` representing the satellite’s predicted position.
     pub fn pos_in_dt(&self, time_delta: TimeDelta) -> Vec2D<f32> {
-        let mut pos = self.current_pos + (self.current_vel * time_delta.num_seconds());
-        pos.wrap_around_map();
-        pos
+        self.current_pos + (self.current_vel * time_delta.num_seconds()).wrap_around_map()
     }
 }

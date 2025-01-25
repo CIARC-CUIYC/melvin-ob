@@ -1,25 +1,22 @@
+mod console_communication;
 mod flight_control;
 mod http_handler;
-mod console_communication;
 
-use std::env;
-use std::fs::OpenOptions;
-use crate::console_communication::console_endpoint::{ConsoleEndpoint, ConsoleEndpointEvent};
-use crate::console_communication::melvin_messages;
-use crate::flight_control::{
-    camera_controller::CameraController,
-    camera_state::CameraAngle,
-    flight_computer::FlightComputer,
-};
-use crate::http_handler::http_request::request_common::NoBodyHTTPRequestType;
-use std::sync::Arc;
-use std::io::Write;
-use chrono::TimeDelta;
+use crate::console_communication::console_messenger::ConsoleMessenger;
 use crate::flight_control::common::orbit::Orbit;
 use crate::flight_control::flight_computer::ChargeCommand::TargetCharge;
 use crate::flight_control::task_controller::TaskController;
+use crate::flight_control::{
+    camera_controller::CameraController, camera_state::CameraAngle, flight_computer::FlightComputer,
+};
 use crate::http_handler::http_client::HTTPClient;
 use crate::http_handler::http_request::observation_get::ObservationRequest;
+use crate::http_handler::http_request::request_common::NoBodyHTTPRequestType;
+use chrono::TimeDelta;
+use std::env;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::sync::Arc;
 
 const FUEL_RESET_THRESHOLD: f32 = 20.0;
 const MIN_PX_LEFT_FACTOR: f32 = 0.05;
@@ -41,22 +38,22 @@ const LOG_POS: bool = true;
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
     let base_url_var = env::var("DRS_BASE_URL");
-    let base_url = base_url_var
-        .as_ref()
-        .map_or("http://localhost:33000", |v| v.as_str());
+    let base_url = base_url_var.as_ref().map_or("http://localhost:33000", |v| v.as_str());
     let client = Arc::new(HTTPClient::new(base_url));
-    let console_endpoint = Arc::new(ConsoleEndpoint::start());
     if LOG_POS {
         let thread_client = Arc::clone(&client);
         tokio::spawn(async move { log_pos(thread_client).await });
     }
 
     let t_cont = TaskController::new();
-    let mut c_cont = CameraController::from_file(BIN_FILEPATH).await.unwrap_or_else(|e| {
-        println!("[WARN] Failed to read from binary file: {e}");
-        CameraController::new()
-    });
+    let c_cont = Arc::new(
+        CameraController::from_file(BIN_FILEPATH).await.unwrap_or_else(|e| {
+            println!("[WARN] Failed to read from binary file: {e}");
+            CameraController::new()
+        }),
+    );
     let mut f_cont = FlightComputer::new(&*client, &t_cont).await;
+    let console_messenger = ConsoleMessenger::start(c_cont.clone());
 
     f_cont.reset().await;
     f_cont.set_vel_ff(STATIC_ORBIT_VEL.into(), false).await;
@@ -74,7 +71,9 @@ async fn main() {
     loop {
         let mut break_flag = false;
         loop {
-            c_cont.shoot_image_to_buffer(&client, &mut f_cont, CONST_ANGLE).await.unwrap();
+            let position =
+                c_cont.shoot_image_to_buffer(&client, &mut f_cont, CONST_ANGLE).await.unwrap();
+            console_messenger.send_thumbnail(position, CONST_ANGLE);
 
             if break_flag {
                 break;
@@ -113,10 +112,10 @@ async fn main() {
             c_cont.save_png_to(BIN_FILEPATH),
             f_cont.charge_until(TargetCharge(MAX_BATTERY_THRESHOLD))
         )
-            .0
-            .unwrap();
+        .0
+        .unwrap();
     }
-    drop(console_endpoint);
+    drop(console_messenger);
 }
 
 async fn log_pos(http_handler: Arc<HTTPClient>) {

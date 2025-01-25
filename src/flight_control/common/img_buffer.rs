@@ -1,6 +1,6 @@
-use std::ops::{Deref, DerefMut};
-use image::{GenericImage, GenericImageView, ImageBuffer, Pixel};
 use super::vec2d::Vec2D;
+use image::{GenericImage, GenericImageView};
+use std::ops::{Deref, DerefMut};
 
 // TODO: this could be useful as soon as metadata for pixels is necessary
 /*
@@ -16,7 +16,7 @@ pub struct PixelData {
 /// - `width`: A `u32` representing the 2D image width.
 /// - `height`: A `u32` representing the 2D image height.
 /// - `data`: A `Vec` storing the actual RGB data.
-/// 
+///
 /// This structure provides methods for creating a buffer, saving pixels, and computing
 /// the 1D index of pixels based on their 2D coordinates.
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
@@ -117,7 +117,7 @@ pub struct SubBuffer<T> {
 
 impl<T, C> GenericImageView for SubBuffer<T>
 where
-    T: Deref<Target=C>,
+    T: Deref<Target = C>,
     C: GenericImageView + Sized,
 {
     type Pixel = C::Pixel;
@@ -149,7 +149,6 @@ where
         let y = (y + self.offset.y()) % self.buffer_size.y();
         self.buffer.put_pixel(x, y, pixel)
     }
-
 
     fn blend_pixel(&mut self, x: u32, y: u32, pixel: Self::Pixel) {
         let x = (x + self.offset.x()) % self.buffer_size.x();
