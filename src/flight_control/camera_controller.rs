@@ -145,7 +145,7 @@ impl CameraController {
             Vec2D::map_size().y(),
             image.fullsize_buffer,
         )
-        .unwrap();
+            .unwrap();
 
         let mut map_image = MapImage {
             coverage: image.coverage,
@@ -192,7 +192,7 @@ impl CameraController {
                     offset_x as i32 + additional_offset_x,
                     offset_y as i32 + additional_offset_y,
                 )
-                .wrap_around_map();
+                    .wrap_around_map();
                 let map_image_view = base.fullsize_view(
                     Vec2D::new(pos.x() as u32, pos.y() as u32),
                     Vec2D::new(decoded_image.width(), decoded_image.height()),
@@ -238,29 +238,29 @@ impl CameraController {
         )?;
         let position = controller.current_pos();
         let angle_const = angle.get_square_side_length() / 2;
-        let pos: Vec2D<i32> = Vec2D::new(
+        let offset: Vec2D<i32> = Vec2D::new(
             position.x().round() as i32 - angle_const as i32,
             position.y().round() as i32 - angle_const as i32,
         )
-        .wrap_around_map();
+            .wrap_around_map();
 
         let mut map_image = self.map_image.write().await;
         let best_offset =
-            Self::score_offset(&decoded_image, &map_image, pos.x() as u32, pos.y() as u32);
-        let pos = (pos + best_offset).wrap_around_map();
+            Self::score_offset(&decoded_image, &map_image, offset.x() as u32, offset.y() as u32);
+        let offset = (offset + best_offset).wrap_around_map();
 
-        let mut map_image_view = map_image.fullsize_mut_view(pos.cast());
+        let mut map_image_view = map_image.fullsize_mut_view(offset.cast());
 
         map_image_view.copy_from(&decoded_image, 0, 0).unwrap();
 
-        let thumbnail_position = Vec2D::new(
-            pos.x() - MapImage::THUMBNAIL_SCALE_FACTOR as i32 * 2,
-            pos.y() - MapImage::THUMBNAIL_SCALE_FACTOR as i32 * 2,
+        let thumbnail_offset = Vec2D::new(
+            offset.x() - MapImage::THUMBNAIL_SCALE_FACTOR as i32 * 2,
+            offset.y() - MapImage::THUMBNAIL_SCALE_FACTOR as i32 * 2,
         )
-        .wrap_around_map()
-        .cast();
+            .wrap_around_map()
+            .cast();
         let size = angle_const as u32 * 2 + MapImage::THUMBNAIL_SCALE_FACTOR * 4;
-        let map_image_view = map_image.fullsize_view(thumbnail_position, Vec2D::new(size, size));
+        let map_image_view = map_image.fullsize_view(thumbnail_offset, Vec2D::new(size, size));
 
         let resized_image = image::imageops::thumbnail(
             &map_image_view,
@@ -268,11 +268,11 @@ impl CameraController {
             size / MapImage::THUMBNAIL_SCALE_FACTOR,
         );
         map_image
-            .thumbnail_mut_view(thumbnail_position.cast() / MapImage::THUMBNAIL_SCALE_FACTOR)
+            .thumbnail_mut_view(thumbnail_offset.cast() / MapImage::THUMBNAIL_SCALE_FACTOR)
             .copy_from(&resized_image, 0, 0)
             .unwrap();
         map_image.coverage.set_region(Vec2D::new(position.x(), position.y()), angle, true);
-        Ok(pos.cast())
+        Ok(offset.cast())
     }
 
     async fn fetch_image_data(
@@ -331,27 +331,18 @@ impl CameraController {
 
     pub(crate) async fn export_thumbnail_png(
         &self,
-        position: Vec2D<u32>,
+        offset: Vec2D<u32>,
         angle: CameraAngle,
     ) -> Result<EncodedImageExtract, Box<dyn std::error::Error>> {
-        let radius = (angle.get_square_side_length() / 2) as u32;
-        let offset = Vec2D::new(
-            position.x() as i32 - radius as i32,
-            position.y() as i32 - radius as i32,
-        )
-        .wrap_around_map();
-
+        let offset = offset / MapImage::THUMBNAIL_SCALE_FACTOR;
+        let size = angle.get_square_side_length() as u32;
+        let size = Vec2D::new(
+            size,
+            size,
+        ) / MapImage::THUMBNAIL_SCALE_FACTOR;
         let map_image = self.map_image.read().await;
 
-        let position = Vec2D::new(
-            offset.x() as u32 / MapImage::THUMBNAIL_SCALE_FACTOR,
-            offset.y() as u32 / MapImage::THUMBNAIL_SCALE_FACTOR,
-        );
-        let size = Vec2D::new(
-            (radius * 2) / MapImage::THUMBNAIL_SCALE_FACTOR,
-            (radius * 2) / MapImage::THUMBNAIL_SCALE_FACTOR,
-        );
-        let thumbnail = map_image.thumbnail_view(position, size);
+        let thumbnail = map_image.thumbnail_view(offset, size);
 
         let mut thumbnail_image = RgbaImage::new(thumbnail.width(), thumbnail.width());
         thumbnail_image.copy_from(&thumbnail, 0, 0).unwrap();
@@ -360,8 +351,8 @@ impl CameraController {
         thumbnail_image.write_with_encoder(PngEncoder::new(&mut writer))?;
 
         Ok(EncodedImageExtract {
-            offset: position.cast(),
-            size: position.cast(),
+            offset: offset.cast(),
+            size: offset.cast(),
             data: writer.into_inner(),
         })
     }
@@ -382,7 +373,7 @@ impl CameraController {
             let old_snapshot = DynamicImage::from_decoder(PngDecoder::new(&mut Cursor::new(
                 old_snapshot_encoded,
             ))?)?
-            .to_rgba8();
+                .to_rgba8();
             let map_image = self.map_image.read().await;
             let mut current_snapshot = map_image.thumbnail_buffer.clone();
 
