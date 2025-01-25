@@ -41,7 +41,7 @@ impl ImageTask {
         Self {
             image_status: ImageTaskStatus::Planned,
             planned_pos,
-            lens
+            lens,
         }
     }
 

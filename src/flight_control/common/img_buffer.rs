@@ -82,9 +82,7 @@ impl Buffer {
     /// let index = buffer.get_buffer_index(2, 3);
     /// assert_eq!(index, 14);
     /// ```
-    pub fn get_buffer_index(&self, x: u32, y: u32) -> u32 {
-        y * self.width + x
-    }
+    pub fn get_buffer_index(&self, x: u32, y: u32) -> u32 { y * self.width + x }
 
     pub fn view(&self, offset: Vec2D<u32>, size: Vec2D<u32>) -> SubBuffer<&Buffer> {
         SubBuffer {
@@ -99,9 +97,7 @@ impl Buffer {
 impl GenericImageView for Buffer {
     type Pixel = image::Rgb<u8>;
 
-    fn dimensions(&self) -> (u32, u32) {
-        (self.width, self.height)
-    }
+    fn dimensions(&self) -> (u32, u32) { (self.width, self.height) }
 
     fn get_pixel(&self, x: u32, y: u32) -> Self::Pixel {
         image::Rgb(self.data[(y * self.width + x) as usize])
@@ -122,9 +118,7 @@ where
 {
     type Pixel = <<T as Deref>::Target as GenericImageView>::Pixel;
 
-    fn dimensions(&self) -> (u32, u32) {
-        (self.size.x(), self.size.y())
-    }
+    fn dimensions(&self) -> (u32, u32) { (self.size.x(), self.size.y()) }
 
     fn get_pixel(&self, x: u32, y: u32) -> Self::Pixel {
         let x = (x + self.offset.x()) % self.buffer_size.x();
@@ -149,7 +143,7 @@ where
         let y = (y + self.offset.y()) % self.buffer_size.y();
         self.buffer.put_pixel(x, y, pixel);
     }
-    
+
     fn blend_pixel(&mut self, x: u32, y: u32, pixel: Self::Pixel) {
         let x = (x + self.offset.x()) % self.buffer_size.x();
         let y = (y + self.offset.y()) % self.buffer_size.y();

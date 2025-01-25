@@ -51,37 +51,52 @@ impl ConsoleMessenger {
                             );
                         }
                     }
-                    ConsoleEvent::Message(melvin_messages::UpstreamContent::SubmitObjective(submit_objective)) => {
+                    ConsoleEvent::Message(melvin_messages::UpstreamContent::SubmitObjective(
+                        submit_objective,
+                    )) => {
                         let camera_controller_local = camera_controller_local.clone();
                         let endpoint_local = endpoint_local.clone();
                         tokio::spawn(async move {
-                            let result = camera_controller_local.upload_objective_png(
-                                submit_objective.objective_id as usize,
-                                Vec2D::new(submit_objective.offset_x as u32, submit_objective.offset_y as u32),
-                                Vec2D::new(submit_objective.width as u32, submit_objective.height as u32),
-                            ).await;
+                            let result = camera_controller_local
+                                .upload_objective_png(
+                                    submit_objective.objective_id as usize,
+                                    Vec2D::new(
+                                        submit_objective.offset_x as u32,
+                                        submit_objective.offset_y as u32,
+                                    ),
+                                    Vec2D::new(
+                                        submit_objective.width as u32,
+                                        submit_objective.height as u32,
+                                    ),
+                                )
+                                .await;
 
                             endpoint_local.send_downstream(
-                                melvin_messages::DownstreamContent::SubmitResponse(melvin_messages::SubmitResponse {
-                                    success: result.is_ok(),
-                                    objective_id: Some(submit_objective.objective_id),
-                                })
+                                melvin_messages::DownstreamContent::SubmitResponse(
+                                    melvin_messages::SubmitResponse {
+                                        success: result.is_ok(),
+                                        objective_id: Some(submit_objective.objective_id),
+                                    },
+                                ),
                             );
                         });
-                    },
+                    }
                     ConsoleEvent::Message(melvin_messages::UpstreamContent::SubmitDailyMap(_)) => {
                         let camera_controller_local = camera_controller_local.clone();
                         let endpoint_local = endpoint_local.clone();
                         tokio::spawn(async move {
-                            let mut success = camera_controller_local.create_snapshot_full().await.is_ok();
+                            let mut success =
+                                camera_controller_local.create_snapshot_full().await.is_ok();
                             if success {
                                 success = camera_controller_local.upload_daily_map().await.is_ok();
                             }
                             endpoint_local.send_downstream(
-                                melvin_messages::DownstreamContent::SubmitResponse(melvin_messages::SubmitResponse {
-                                    success,
-                                    objective_id: None,
-                                })
+                                melvin_messages::DownstreamContent::SubmitResponse(
+                                    melvin_messages::SubmitResponse {
+                                        success,
+                                        objective_id: None,
+                                    },
+                                ),
                             );
                         });
                     }
@@ -90,7 +105,10 @@ impl ConsoleMessenger {
             }
         });
 
-        Self { camera_controller, endpoint }
+        Self {
+            camera_controller,
+            endpoint,
+        }
     }
 
     pub(crate) fn send_thumbnail(&self, offset: Vec2D<u32>, angle: CameraAngle) {

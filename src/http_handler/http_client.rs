@@ -15,10 +15,6 @@ impl HTTPClient {
             base_url: String::from(base_url),
         }
     }
-    pub fn client(&self) -> &reqwest::Client {
-        &self.client
-    }
-    pub fn url(&self) -> &str {
-        self.base_url.as_str()
-    }
+    pub fn client(&self) -> &reqwest::Client { &self.client }
+    pub fn url(&self) -> &str { self.base_url.as_str() }
 }

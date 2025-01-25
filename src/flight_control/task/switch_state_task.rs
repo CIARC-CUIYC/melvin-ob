@@ -15,6 +15,6 @@ impl SwitchStateTask {
             _ => None,
         }
     }
-    
+
     pub fn target_state(self) -> FlightState { self.target_state }
 }

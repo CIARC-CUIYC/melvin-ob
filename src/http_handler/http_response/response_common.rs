@@ -4,9 +4,7 @@ pub(crate) trait JSONBodyHTTPResponseType: HTTPResponseType {
     async fn parse_json_body(
         response: reqwest::Response,
     ) -> Result<Self::ParsedResponseType, ResponseError>
-    where
-        Self::ParsedResponseType: for<'de> serde::Deserialize<'de>,
-    {
+    where Self::ParsedResponseType: for<'de> serde::Deserialize<'de> {
         Ok(response.json::<Self::ParsedResponseType>().await?)
     }
 }

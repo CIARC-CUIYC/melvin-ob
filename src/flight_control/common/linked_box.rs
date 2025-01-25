@@ -24,22 +24,14 @@ impl<T> LinkedBox<T> {
     }
 
     /// Returns a reference to the first element, if present.
-    pub fn front(&self) -> Option<&T> {
-        self.list.front()
-    }
+    pub fn front(&self) -> Option<&T> { self.list.front() }
 
     /// Returns a reference to the last element, if present.
-    pub fn back(&self) -> Option<&T> {
-        self.list.back()
-    }
+    pub fn back(&self) -> Option<&T> { self.list.back() }
 
     /// Returns the current number of elements in the list.
-    pub fn len(&self) -> usize {
-        self.list.len()
-    }
+    pub fn len(&self) -> usize { self.list.len() }
 
     /// Checks if the list is empty.
-    pub fn is_empty(&self) -> bool {
-        self.list.is_empty()
-    }    
+    pub fn is_empty(&self) -> bool { self.list.is_empty() }
 }

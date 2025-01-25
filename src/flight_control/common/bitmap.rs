@@ -71,18 +71,14 @@ impl Bitmap {
     /// let index = bitmap.get_bitmap_index(2, 3);
     /// assert_eq!(index, 14);
     /// ```
-    fn get_bitmap_index(&self, x: u32, y: u32) -> u32 {
-        y * self.width + x
-    }
+    fn get_bitmap_index(&self, x: u32, y: u32) -> u32 { y * self.width + x }
 
     /// Returns the total number of pixels in the bitmap.
     /// This is equivalent to the product of its `width` and `height`.
     ///
     /// # Returns
     /// The total number of pixels as `u32`.
-    pub fn len(&self) -> u32 {
-        self.width * self.height
-    }
+    pub fn len(&self) -> u32 { self.width * self.height }
 
     /// Checks whether the pixel at the specified `(x, y)` coordinates is set.
     ///

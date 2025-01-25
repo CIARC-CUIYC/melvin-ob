@@ -1,10 +1,17 @@
+use crate::console_communication::console_messenger::ConsoleMessenger;
 use crate::flight_control::{
     camera_state::CameraAngle,
     common::img_buffer::SubBuffer,
     common::{bitmap::Bitmap, vec2d::Vec2D},
     flight_computer::FlightComputer,
 };
-use crate::http_handler::{http_client, http_client::HTTPClient, http_request::request_common::NoBodyHTTPRequestType, http_request::shoot_image_get::ShootImageRequest};
+use crate::http_handler::http_request::daily_map_post::DailyMapRequest;
+use crate::http_handler::http_request::objective_image_post::ObjectiveImageRequest;
+use crate::http_handler::http_request::request_common::MultipartBodyHTTPRequestType;
+use crate::http_handler::{
+    http_client, http_client::HTTPClient, http_request::request_common::NoBodyHTTPRequestType,
+    http_request::shoot_image_get::ShootImageRequest,
+};
 use bitvec::boxed::BitBox;
 use futures::StreamExt;
 use image::{
@@ -13,17 +20,13 @@ use image::{
     DynamicImage, GenericImage, GenericImageView, ImageBuffer, ImageReader, Pixel, Rgb, RgbImage,
     Rgba, RgbaImage,
 };
-use std::{io::Cursor, sync::Arc};
 use num::traits::Float;
+use std::{io::Cursor, sync::Arc};
 use tokio::{
     fs::File,
     io::{AsyncReadExt, AsyncWriteExt},
     sync::{Mutex, Notify, RwLock},
 };
-use crate::console_communication::console_messenger::ConsoleMessenger;
-use crate::http_handler::http_request::daily_map_post::DailyMapRequest;
-use crate::http_handler::http_request::objective_image_post::ObjectiveImageRequest;
-use crate::http_handler::http_request::request_common::MultipartBodyHTTPRequestType;
 
 pub struct EncodedImageExtract {
     pub(crate) offset: Vec2D<u32>,
@@ -123,7 +126,7 @@ impl GenericImageView for MapImage {
 
 pub struct CameraController {
     map_image: RwLock<MapImage>,
-    request_client: Arc<HTTPClient>
+    request_client: Arc<HTTPClient>,
 }
 
 const SNAPSHOT_FULL_PATH: &str = "snapshot_full.png";
@@ -132,11 +135,14 @@ impl CameraController {
     pub fn new(request_client: Arc<HTTPClient>) -> Self {
         Self {
             map_image: RwLock::new(MapImage::new()),
-            request_client
+            request_client,
         }
     }
 
-    pub async fn from_file(path: &str, request_client: Arc<HTTPClient>) -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn from_file(
+        path: &str,
+        request_client: Arc<HTTPClient>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let mut file = File::open(path).await?;
         let mut file_buffer = Vec::new();
         file.read_to_end(&mut file_buffer).await?;
@@ -147,7 +153,7 @@ impl CameraController {
             Vec2D::map_size().y(),
             image.fullsize_buffer,
         )
-            .unwrap();
+        .unwrap();
 
         let mut map_image = MapImage {
             coverage: image.coverage,
@@ -164,7 +170,7 @@ impl CameraController {
 
         Ok(Self {
             map_image: RwLock::new(map_image),
-            request_client
+            request_client,
         })
     }
 
@@ -187,7 +193,7 @@ impl CameraController {
                     offset_x as i32 + additional_offset_x,
                     offset_y as i32 + additional_offset_y,
                 )
-                    .wrap_around_map();
+                .wrap_around_map();
                 let map_image_view = base.fullsize_view(
                     Vec2D::new(pos.x() as u32, pos.y() as u32),
                     Vec2D::new(decoded_image.width(), decoded_image.height()),
@@ -237,11 +243,15 @@ impl CameraController {
             position.x().round() as i32 - i32::from(angle_const),
             position.y().round() as i32 - i32::from(angle_const),
         )
-            .wrap_around_map();
+        .wrap_around_map();
 
         let mut map_image = self.map_image.write().await;
-        let best_offset =
-            Self::score_offset(&decoded_image, &map_image, offset.x() as u32, offset.y() as u32);
+        let best_offset = Self::score_offset(
+            &decoded_image,
+            &map_image,
+            offset.x() as u32,
+            offset.y() as u32,
+        );
         let offset = (offset + best_offset).wrap_around_map();
 
         let mut map_image_view = map_image.fullsize_mut_view(offset.cast());
@@ -270,9 +280,7 @@ impl CameraController {
         Ok(offset.cast())
     }
 
-    async fn fetch_image_data(
-        &self,
-    ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    async fn fetch_image_data(&self) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
         let response_stream = ShootImageRequest {}.send_request(&self.request_client).await?;
 
         let mut collected_png: Vec<u8> = Vec::new();
@@ -330,10 +338,7 @@ impl CameraController {
     ) -> Result<EncodedImageExtract, Box<dyn std::error::Error>> {
         let offset = offset / MapImage::THUMBNAIL_SCALE_FACTOR;
         let size = u32::from(angle.get_square_side_length());
-        let size = Vec2D::new(
-            size,
-            size,
-        ) / MapImage::THUMBNAIL_SCALE_FACTOR;
+        let size = Vec2D::new(size, size) / MapImage::THUMBNAIL_SCALE_FACTOR;
         let map_image = self.map_image.read().await;
 
         let thumbnail = map_image.thumbnail_view(offset, size);
@@ -348,8 +353,6 @@ impl CameraController {
             size: size.cast(),
             data: writer.into_inner(),
         })
-
-
     }
 
     #[allow(clippy::cast_sign_loss)]
@@ -364,14 +367,14 @@ impl CameraController {
         let mut thumbnail_image = RgbaImage::new(sub_image.width(), sub_image.width());
         let mut writer = Cursor::new(Vec::<u8>::new());
         sub_image.to_image().write_with_encoder(PngEncoder::new(&mut writer))?;
-        ObjectiveImageRequest::new(objective_id, writer.into_inner()).send_request(&self.request_client).await?;
+        ObjectiveImageRequest::new(objective_id, writer.into_inner())
+            .send_request(&self.request_client)
+            .await?;
         Ok(())
     }
 
     #[allow(clippy::cast_sign_loss)]
-    pub(crate) async fn upload_daily_map(
-        &self,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub(crate) async fn upload_daily_map(&self) -> Result<(), Box<dyn std::error::Error>> {
         DailyMapRequest::new(SNAPSHOT_FULL_PATH)?.send_request(&self.request_client).await?;
         Ok(())
     }
@@ -401,7 +404,7 @@ impl CameraController {
             let old_snapshot = DynamicImage::from_decoder(PngDecoder::new(&mut Cursor::new(
                 old_snapshot_encoded,
             ))?)?
-                .to_rgba8();
+            .to_rgba8();
             let map_image = self.map_image.read().await;
             let mut current_snapshot = map_image.thumbnail_buffer.clone();
 
@@ -430,7 +433,8 @@ impl CameraController {
     }
 
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    pub async fn execute_acquisition_cycle(self: Arc<Self>,
+    pub async fn execute_acquisition_cycle(
+        self: Arc<Self>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
         console_messenger: &ConsoleMessenger,
         end_time: chrono::DateTime<chrono::Utc>,
@@ -446,10 +450,13 @@ impl CameraController {
             let pic_count_lock_clone = Arc::clone(&pic_count_lock);
             let self_clone = Arc::clone(&self);
             let img_handle = tokio::spawn(async move {
-                let offset = match self_clone.shoot_image_to_buffer(Arc::clone(&f_cont_lock_clone), lens).await {
+                let offset = match self_clone
+                    .shoot_image_to_buffer(Arc::clone(&f_cont_lock_clone), lens)
+                    .await
+                {
                     Ok(offset) => {
                         let pic_num = {
-                            let mut lock = pic_count_lock_clone.lock().await ;
+                            let mut lock = pic_count_lock_clone.lock().await;
                             *lock += 1;
                             *lock
                         };
@@ -469,7 +476,7 @@ impl CameraController {
             let next_img_due = {
                 let next_max_dt =
                     chrono::Utc::now() + chrono::TimeDelta::seconds(image_max_dt as i64);
-                if  next_max_dt > end_time {
+                if next_max_dt > end_time {
                     last_image_flag = true;
                     end_time
                 } else {

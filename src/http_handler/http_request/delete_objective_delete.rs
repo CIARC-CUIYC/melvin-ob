@@ -12,12 +12,8 @@ impl NoBodyHTTPRequestType for DeleteObjectiveRequest {}
 
 impl HTTPRequestType for DeleteObjectiveRequest {
     type Response = delete_objective::DeleteObjectiveResponse;
-    fn endpoint(&self) -> &'static str {
-        "/objective"
-    }
-    fn request_method(&self) -> HTTPRequestMethod {
-        HTTPRequestMethod::Delete
-    }
+    fn endpoint(&self) -> &'static str { "/objective" }
+    fn request_method(&self) -> HTTPRequestMethod { HTTPRequestMethod::Delete }
     fn query_params(&self) -> HashMap<&str, String> {
         let mut query = HashMap::new();
         query.insert("id", self.id.to_string());

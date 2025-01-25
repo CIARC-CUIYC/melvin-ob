@@ -21,7 +21,7 @@ use crate::http_handler::{
     http_request::{observation_get::ObservationRequest, request_common::NoBodyHTTPRequestType},
 };
 use chrono::{DateTime, TimeDelta};
-use std::{fs::OpenOptions, io::Write, sync::Arc, env};
+use std::{env, fs::OpenOptions, io::Write, sync::Arc};
 use tokio::{
     sync::{Mutex, Notify, RwLock},
     task::JoinHandle,
@@ -41,12 +41,14 @@ async fn main() {
     let base_url_var = env::var("DRS_BASE_URL");
     let base_url = base_url_var.as_ref().map_or("http://localhost:33000", |v| v.as_str());
     let client = Arc::new(HTTPClient::new(base_url));
-   
+
     let t_cont = TaskController::new();
-    let c_cont = Arc::new(CameraController::from_file(BIN_FILEPATH, client.clone()).await.unwrap_or_else(|e| {
-        println!("[WARN] Failed to read from binary file: {e}");
-        CameraController::new(client.clone())
-    }));
+    let c_cont = Arc::new(
+        CameraController::from_file(BIN_FILEPATH, client.clone()).await.unwrap_or_else(|e| {
+            println!("[WARN] Failed to read from binary file: {e}");
+            CameraController::new(client.clone())
+        }),
+    );
     let f_cont_lock = Arc::new(RwLock::new(FlightComputer::new(Arc::clone(&client)).await));
     let console_messenger = Arc::new(ConsoleMessenger::start(c_cont.clone()));
     let f_cont_lock_clone = Arc::clone(&f_cont_lock);
@@ -85,8 +87,10 @@ async fn main() {
 
     // orbit
     loop {
-        let cycle_param =
-            (chrono::Utc::now(), (chrono::Utc::now() - orbit_s_start).num_seconds() as usize);
+        let cycle_param = (
+            chrono::Utc::now(),
+            (chrono::Utc::now() - orbit_s_start).num_seconds() as usize,
+        );
         let f_cont_rw_clone = Arc::clone(&f_cont_lock);
         let c_orbit_lock_clone = Arc::clone(&c_orbit_lock);
         let t_cont_lock_clone = Arc::clone(&t_cont_lock);
@@ -105,7 +109,7 @@ async fn main() {
                 end_time,
                 img_dt,
                 CONST_ANGLE,
-                cycle_param
+                cycle_param,
             ))
         } else {
             None
@@ -115,8 +119,8 @@ async fn main() {
         if let Some(h) = acq_phase {
             h.1.notify_one();
             h.0.await.ok();
-            let start_index = h.2.1;
-            let mut end_index = start_index + (chrono::Utc::now() - h.2.0).num_seconds() as usize;
+            let start_index = h.2 .1;
+            let mut end_index = start_index + (chrono::Utc::now() - h.2 .0).num_seconds() as usize;
             end_index = end_index - (end_index % orbit_full_period as usize);
             let c_orbit_lock_clone = Arc::clone(&c_orbit_lock);
             tokio::spawn(async move {
@@ -151,7 +155,7 @@ async fn main() {
                     task.dt().get_end(),
                     img_dt,
                     CONST_ANGLE,
-                    cycle_param
+                    cycle_param,
                 );
                 acq_phase.0.await.ok();
             } else if current_state == FlightState::Charge && due_time > DT_0 {
@@ -176,7 +180,10 @@ async fn main() {
                         };
                         let c_cont_local = c_cont.clone();
                         let handle = tokio::spawn(async move {
-                            c_cont_local.create_snapshot_full().await.expect("[WARN] Export failed!");
+                            c_cont_local
+                                .create_snapshot_full()
+                                .await
+                                .expect("[WARN] Export failed!");
                         });
                         tokio::join!(join_handle, handle);
                     }
@@ -200,31 +207,28 @@ fn handle_acquisition(
     end_time: DateTime<chrono::Utc>,
     img_dt: f32,
     angle: CameraAngle,
-    cycle_param: (DateTime<chrono::Utc>, usize)
-) -> (
-    JoinHandle<()>,
-    Arc<Notify>,
-    (DateTime<chrono::Utc>, usize)
-) {
+    cycle_param: (DateTime<chrono::Utc>, usize),
+) -> (JoinHandle<()>, Arc<Notify>, (DateTime<chrono::Utc>, usize)) {
     let f_cont_lock_arc_clone = Arc::clone(f_cont_locked);
     let last_image_notify = Arc::new(Notify::new());
     let last_image_notify_cloned = Arc::clone(&last_image_notify);
 
     let cycle_param = (
         chrono::Utc::now(),
-        cycle_param.1 + (chrono::Utc::now() - cycle_param.0).num_seconds() as usize
+        cycle_param.1 + (chrono::Utc::now() - cycle_param.0).num_seconds() as usize,
     );
 
     let handle = tokio::spawn(async move {
-        c_cont.execute_acquisition_cycle(
-            f_cont_lock_arc_clone,
-            &console_messenger,
-            end_time,
-            last_image_notify_cloned,
-            img_dt,
-            angle
-        )
-        .await;
+        c_cont
+            .execute_acquisition_cycle(
+                f_cont_lock_arc_clone,
+                &console_messenger,
+                end_time,
+                last_image_notify_cloned,
+                img_dt,
+                angle,
+            )
+            .await;
     });
     (handle, last_image_notify, cycle_param)
 }

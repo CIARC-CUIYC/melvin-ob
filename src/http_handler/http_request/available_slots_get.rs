@@ -8,10 +8,6 @@ impl NoBodyHTTPRequestType for AvailableSlotsRequest {}
 
 impl HTTPRequestType for AvailableSlotsRequest {
     type Response = AvailableSlotsResponse;
-    fn endpoint(&self) -> &'static str {
-        "/slots"
-    }
-    fn request_method(&self) -> HTTPRequestMethod {
-        HTTPRequestMethod::Get
-    }
+    fn endpoint(&self) -> &'static str { "/slots" }
+    fn request_method(&self) -> HTTPRequestMethod { HTTPRequestMethod::Get }
 }

@@ -77,7 +77,7 @@ pub struct Telemetry {
 pub struct SubmitResponse {
     #[prost(bool, tag = "1")]
     pub success: bool,
-    #[prost(uint32, optional, tag = "2", )]
+    #[prost(uint32, optional, tag = "2")]
     pub objective_id: Option<u32>,
 }
 
@@ -90,7 +90,7 @@ pub enum DownstreamContent {
     #[prost(message, tag = "3")]
     Telemetry(Telemetry),
     #[prost(message, tag = "4")]
-    SubmitResponse(SubmitResponse)
+    SubmitResponse(SubmitResponse),
 }
 
 #[derive(Clone, PartialEq, prost::Oneof)]
@@ -106,7 +106,7 @@ pub enum UpstreamContent {
     #[prost(message, tag = "5")]
     SubmitObjective(SubmitObjective),
     #[prost(message, tag = "6")]
-    SubmitDailyMap(SubmitDailyMap)
+    SubmitDailyMap(SubmitDailyMap),
 }
 #[derive(Clone, Copy, PartialEq, prost::Message)]
 pub struct GetFullImage {}
@@ -122,7 +122,7 @@ pub struct SubmitObjective {
     #[prost(uint32, tag = "4")]
     pub offset_x: u32,
     #[prost(uint32, tag = "5")]
-    pub offset_y: u32
+    pub offset_y: u32,
 }
 
 #[derive(Clone, Copy, PartialEq, prost::Message)]

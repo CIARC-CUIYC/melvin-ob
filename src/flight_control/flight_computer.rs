@@ -182,7 +182,7 @@ impl FlightComputer {
         println!("[LOG] Waiting for condition: {rationale}");
         let start_time = std::time::Instant::now();
         while start_time.elapsed().as_millis() < u128::from(timeout_millis) {
-            let cond = {condition(&*locked_self.read().await)};
+            let cond = { condition(&*locked_self.read().await) };
             if cond {
                 println!(
                     "[LOG] Condition met after {} ms",
@@ -201,7 +201,7 @@ impl FlightComputer {
     /// - `locked_self`: A `RwLock<Self>` reference to the active flight computer.
     /// - `new_state`: The target operational state.
     pub async fn set_state_wait(locked_self: &RwLock<Self>, new_state: FlightState) {
-        let init_state = {locked_self.read().await.current_state};
+        let init_state = { locked_self.read().await.current_state };
         if new_state == init_state {
             println!("[LOG] State already set to {new_state}");
             // return; // TODO: here an error should be returned or logged maybe???
@@ -266,13 +266,13 @@ impl FlightComputer {
         }
         if current_state != FlightState::Acquisition {
             panic!("[FATAL] Angle cant be changed in state {current_state}");
-            // return; // TODO: here an error should be logged or returned 
+            // return; // TODO: here an error should be logged or returned
         }
-        
+
         locked_self.read().await.set_angle(new_angle).await;
         let cond = (
             |cont: &FlightComputer| cont.current_angle() == new_angle,
-            format!("Lens equals {new_angle}")
+            format!("Lens equals {new_angle}"),
         );
         Self::wait_for_condition(locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
     }
@@ -340,7 +340,11 @@ impl FlightComputer {
         loop {
             match req.send_request(&self.request_client).await {
                 Ok(_) => {
-                    println!("[LOG] Velocity change commanded to [{}, {}]", new_vel.x(), new_vel.y());
+                    println!(
+                        "[LOG] Velocity change commanded to [{}, {}]",
+                        new_vel.x(),
+                        new_vel.y()
+                    );
                     return;
                 }
                 Err(_) => {

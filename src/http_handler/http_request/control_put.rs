@@ -11,17 +11,11 @@ pub struct ControlSatelliteRequest {
 
 impl JSONBodyHTTPRequestType for ControlSatelliteRequest {
     type Body = ControlSatelliteRequest;
-    fn body(&self) -> &Self::Body {
-        self
-    }
+    fn body(&self) -> &Self::Body { self }
 }
 
 impl HTTPRequestType for ControlSatelliteRequest {
     type Response = ControlSatelliteResponse;
-    fn endpoint(&self) -> &'static str {
-        "/control"
-    }
-    fn request_method(&self) -> HTTPRequestMethod {
-        HTTPRequestMethod::Put
-    }
+    fn endpoint(&self) -> &'static str { "/control" }
+    fn request_method(&self) -> HTTPRequestMethod { HTTPRequestMethod::Put }
 }

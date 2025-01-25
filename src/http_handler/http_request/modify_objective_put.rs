@@ -11,17 +11,11 @@ pub struct ModifyObjectiveRequest {
 
 impl JSONBodyHTTPRequestType for ModifyObjectiveRequest {
     type Body = Self;
-    fn body(&self) -> &Self::Body {
-        self
-    }
+    fn body(&self) -> &Self::Body { self }
 }
 
 impl HTTPRequestType for ModifyObjectiveRequest {
     type Response = modify_objective::ModifyObjectiveResponse;
-    fn endpoint(&self) -> &'static str {
-        "/objective"
-    }
-    fn request_method(&self) -> HTTPRequestMethod {
-        HTTPRequestMethod::Put
-    }
+    fn endpoint(&self) -> &'static str { "/objective" }
+    fn request_method(&self) -> HTTPRequestMethod { HTTPRequestMethod::Put }
 }

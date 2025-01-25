@@ -14,12 +14,8 @@ impl NoBodyHTTPRequestType for ModifySlotRequest {}
 
 impl HTTPRequestType for ModifySlotRequest {
     type Response = ModifySlotResponse;
-    fn endpoint(&self) -> &'static str {
-        "/slots"
-    }
-    fn request_method(&self) -> HTTPRequestMethod {
-        HTTPRequestMethod::Put
-    }
+    fn endpoint(&self) -> &'static str { "/slots" }
+    fn request_method(&self) -> HTTPRequestMethod { HTTPRequestMethod::Put }
     fn query_params(&self) -> HashMap<&str, String> {
         let mut query = HashMap::new();
         query.insert("slot_id", self.slot_id.to_string());

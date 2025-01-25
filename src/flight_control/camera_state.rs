@@ -24,9 +24,7 @@ impl CameraAngle {
     ///
     /// # Returns
     /// A `u16` representing the side length of the square for the given camera angle.
-    pub fn get_square_side_length(self) -> u16 {
-        CAMERA_SCALE_LOOKUP[&self]
-    }
+    pub fn get_square_side_length(self) -> u16 { CAMERA_SCALE_LOOKUP[&self] }
 }
 
 impl From<&str> for CameraAngle {

@@ -2,10 +2,10 @@ use super::objective_image::ObjectiveImageResponse;
 use super::request_common::{
     HTTPRequestMethod, HTTPRequestType, MultipartBodyHTTPRequestType, RequestError,
 };
+use bytes::Bytes;
 use std::collections::HashMap;
 use std::io;
 use std::path::Path;
-use bytes::Bytes;
 
 #[derive(Debug)]
 pub struct ObjectiveImageRequest {
@@ -22,12 +22,8 @@ impl MultipartBodyHTTPRequestType for ObjectiveImageRequest {
 
 impl HTTPRequestType for ObjectiveImageRequest {
     type Response = ObjectiveImageResponse;
-    fn endpoint(&self) -> &'static str {
-        "/image"
-    }
-    fn request_method(&self) -> HTTPRequestMethod {
-        HTTPRequestMethod::Post
-    }
+    fn endpoint(&self) -> &'static str { "/image" }
+    fn request_method(&self) -> HTTPRequestMethod { HTTPRequestMethod::Post }
     fn query_params(&self) -> HashMap<&str, String> {
         let mut query = HashMap::new();
         query.insert("objective_id", self.objective_id.to_string());

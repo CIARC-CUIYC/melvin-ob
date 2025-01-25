@@ -31,10 +31,11 @@ impl ConsoleEndpoint {
             let mut buffer = vec![0u8; length as usize];
             socket.read_exact(&mut buffer).await?;
 
-            if let Ok(message) = melvin_messages::Upstream::decode(&mut Cursor::new(buffer)) {
-                upstream_event_sender
-                    .send(ConsoleEvent::Message(message.content.unwrap()))
-                    .unwrap();
+            if let Ok(melvin_messages::Upstream {
+                content: Some(content),
+            }) = melvin_messages::Upstream::decode(&mut Cursor::new(buffer))
+            {
+                upstream_event_sender.send(ConsoleEvent::Message(content)).unwrap();
             }
         }
     }

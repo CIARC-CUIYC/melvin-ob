@@ -19,8 +19,7 @@ pub struct Vec2D<T> {
 pub struct Wrapped2D<T, const X: u32, const Y: u32>(Vec2D<T>);
 
 impl<T, const X: u32, const Y: u32> Wrapped2D<T, X, Y>
-where
-    T: Num + NumCast + Copy,
+where T: Num + NumCast + Copy
 {
     pub fn wrap_around_map(&self) -> Self {
         Wrapped2D(Vec2D::new(
@@ -29,32 +28,25 @@ where
         ))
     }
 
-    pub fn wrap_coordinate(value: T, max_value: T) -> T {
-        (value + max_value) % max_value
-    }
+    pub fn wrap_coordinate(value: T, max_value: T) -> T { (value + max_value) % max_value }
 }
 
 impl<T, const X: u32, const Y: u32> Deref for Wrapped2D<T, X, Y> {
     type Target = Vec2D<T>;
 
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+    fn deref(&self) -> &Self::Target { &self.0 }
 }
 
 impl<T> Vec2D<T>
-where
-    T: Real + NumCast + NumAssignOps,
+where T: Real + NumCast + NumAssignOps
 {
     /// Computes the magnitude (absolute value) of the vector.
     ///
     /// # Returns
     /// The magnitude of the vector as a scalar of type `T`.
     pub fn abs(&self) -> T { (self.x.powi(2) + self.y.powi(2)).sqrt() }
-    
-    pub fn round(&self) -> Vec2D<T> {
-        Vec2D::new(self.x.round(), self.y.round())
-    }
+
+    pub fn round(&self) -> Vec2D<T> { Vec2D::new(self.x.round(), self.y.round()) }
 
     /// Creates a vector pointing from the current vector (`self`) to another vector (`other`).
     ///
@@ -222,9 +214,7 @@ impl<T: Num + NumCast + Copy> Vec2D<T> {
     ///
     /// # Returns
     /// The wrapped coordinate as type `T`.
-    pub fn wrap_coordinate(value: T, max_value: T) -> T {
-        (value + max_value) % max_value
-    }
+    pub fn wrap_coordinate(value: T, max_value: T) -> T { (value + max_value) % max_value }
 
     pub fn cast<D: NumCast>(self) -> Vec2D<D> {
         Vec2D {

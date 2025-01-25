@@ -65,7 +65,7 @@ impl From<&str> for FlightState {
             "charge" => FlightState::Charge,
             "comms" => FlightState::Comms,
             "safe" => FlightState::Safe,
-            _ => panic!("Couldn't convert flight_state string")// TODO: conversion error should be logged
+            _ => panic!("Couldn't convert flight_state string"), // TODO: conversion error should be logged
         }
     }
 }
@@ -115,7 +115,6 @@ pub static TRANSITION_DELAY_LOOKUP: LazyLock<HashMap<(FlightState, FlightState),
                 FlightState::Comms,
                 Duration::from_secs(180),
             ),
-            
             // Acquisition transitions
             (
                 FlightState::Acquisition,
@@ -132,7 +131,6 @@ pub static TRANSITION_DELAY_LOOKUP: LazyLock<HashMap<(FlightState, FlightState),
                 FlightState::Comms,
                 Duration::from_secs(180),
             ),
-            
             // Charge transitions
             (
                 FlightState::Charge,
@@ -149,7 +147,6 @@ pub static TRANSITION_DELAY_LOOKUP: LazyLock<HashMap<(FlightState, FlightState),
                 FlightState::Comms,
                 Duration::from_secs(180),
             ),
-            
             // Comms transitions
             (
                 FlightState::Comms,
@@ -166,7 +163,6 @@ pub static TRANSITION_DELAY_LOOKUP: LazyLock<HashMap<(FlightState, FlightState),
                 FlightState::Charge,
                 Duration::from_secs(180),
             ),
-            
             // Safe transitions
             (
                 FlightState::Safe,
