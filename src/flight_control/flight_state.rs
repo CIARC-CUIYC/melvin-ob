@@ -35,14 +35,14 @@ impl FlightState {
     ///
     /// # Returns
     /// A `f32` value representing the charge rate for the flight state.
-    pub fn get_charge_rate(self) -> f32{
+    pub fn get_charge_rate(self) -> f32 {
         match self {
-            FlightState::Deployment => {-0.025}
-            FlightState::Transition => {0.0}
-            FlightState::Acquisition => {-0.1}
-            FlightState::Charge => {0.1}
-            FlightState::Comms => {-0.016}
-            FlightState::Safe => {0.05}
+            FlightState::Deployment => -0.025,
+            FlightState::Transition => 0.0,
+            FlightState::Acquisition => -0.1,
+            FlightState::Charge => 0.1,
+            FlightState::Comms => -0.016,
+            FlightState::Safe => 0.05,
         }
     }
 }
@@ -51,11 +51,11 @@ impl From<&str> for FlightState {
     /// Converts a string value into a `FlightState` enum.
     ///
     /// # Arguments
-    /// - `value`: A string slice representing the flight state (`"deployment"`, `"transition"`, 
+    /// - `value`: A string slice representing the flight state (`"deployment"`, `"transition"`,
     ///   `"acquisition"`, `"charge"`, `"comms"` or `"safe"`).
     ///
     /// # Returns
-    /// A `FlightState` converted from the input string. 
+    /// A `FlightState` converted from the input string.
     /// If the input is an unknown string this defaults to `safe` and logs the error.
     fn from(value: &str) -> Self {
         match value.to_lowercase().as_str() {

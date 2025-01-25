@@ -1,8 +1,8 @@
-use std::collections::HashMap;
 use super::modify_slot::ModifySlotResponse;
 use super::request_common::{
     bool_to_string, HTTPRequestMethod, HTTPRequestType, NoBodyHTTPRequestType,
 };
+use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct ModifySlotRequest {

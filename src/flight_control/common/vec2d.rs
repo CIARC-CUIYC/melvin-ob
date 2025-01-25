@@ -1,5 +1,5 @@
+use num::traits::{real::Real, Num, NumAssignOps, NumCast};
 use std::ops::{Add, Deref, Div, Mul, Sub};
-use num::traits::{Num, NumAssignOps, NumCast, real::Real};
 
 /// A 2D vector generic over any numeric type.
 ///
@@ -23,14 +23,16 @@ where
     T: Num + NumCast + Copy,
 {
     pub fn wrap_around_map(&self) -> Self {
-        Wrapped2D(Vec2D::new(Self::wrap_coordinate(self.0.x, T::from(X).unwrap()), Self::wrap_coordinate(self.0.y, T::from(Y).unwrap())))
+        Wrapped2D(Vec2D::new(
+            Self::wrap_coordinate(self.0.x, T::from(X).unwrap()),
+            Self::wrap_coordinate(self.0.y, T::from(Y).unwrap()),
+        ))
     }
 
     pub fn wrap_coordinate(value: T, max_value: T) -> T {
         (value + max_value) % max_value
     }
 }
-
 
 impl<T, const X: u32, const Y: u32> Deref for Wrapped2D<T, X, Y> {
     type Target = Vec2D<T>;
@@ -142,7 +144,7 @@ impl<T: Num + NumCast + Copy> Vec2D<T> {
     pub fn dot(self, other: Vec2D<T>) -> T { self.x * other.x + self.y * other.y }
 
     /// Computes the Euclidean distance between the current vector and another vector as an `f64`.
-    /// This enables Euclidean distance calculation for integer type `T`. 
+    /// This enables Euclidean distance calculation for integer type `T`.
     ///
     /// # Arguments
     /// * `other` - Another `Vec2D` vector to compute the distance to.
@@ -206,7 +208,10 @@ impl<T: Num + NumCast + Copy> Vec2D<T> {
         let map_size_x = Self::map_size().x();
         let map_size_y = Self::map_size().y();
 
-        Vec2D::new(Self::wrap_coordinate(self.x, map_size_x), Self::wrap_coordinate(self.y, map_size_y))
+        Vec2D::new(
+            Self::wrap_coordinate(self.x, map_size_x),
+            Self::wrap_coordinate(self.y, map_size_y),
+        )
     }
 
     /// Wraps a single coordinate around a specific maximum value.

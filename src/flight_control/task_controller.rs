@@ -3,7 +3,7 @@ use crate::flight_control::flight_computer::FlightComputer;
 use crate::flight_control::flight_state::FlightState;
 use crate::flight_control::task::base_task::Task;
 use crate::flight_control::{
-    common::{linked_box::LinkedBox, vec2d::Vec2D},
+    common::{linked_box::LinkedBox},
     orbit::closed_orbit::ClosedOrbit,
 };
 use crate::{MAX_BATTERY_THRESHOLD, MIN_BATTERY_THRESHOLD};
@@ -149,7 +149,7 @@ impl TaskController {
         let (decisions, orbit_period) = {
             let orbit = orbit_lock.lock().await;
             (Self::calculate_optimal_orbit_schedule(&orbit, p_t_shift), orbit.period())
-            
+
         };
         let dt_calc = (chrono::Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
         println!("[INFO] Optimal Orbit Calculation complete after {dt_calc:.2}");

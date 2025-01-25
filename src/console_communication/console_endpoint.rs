@@ -8,7 +8,7 @@ use tokio::sync::broadcast;
 use tokio::sync::oneshot;
 
 #[derive(Debug, Clone)]
-pub enum ConsoleEndpointEvent {
+pub enum ConsoleEvent {
     Connected,
     Disconnected,
     Message(melvin_messages::UpstreamContent),
@@ -16,14 +16,14 @@ pub enum ConsoleEndpointEvent {
 
 pub(crate) struct ConsoleEndpoint {
     downstream_sender: broadcast::Sender<Option<Vec<u8>>>,
-    upstream_event_receiver: broadcast::Receiver<ConsoleEndpointEvent>,
+    upstream_event_receiver: broadcast::Receiver<ConsoleEvent>,
     close_oneshot_sender: Option<oneshot::Sender<()>>,
 }
 
 impl ConsoleEndpoint {
     async fn handle_connection_rx(
-        socket: &mut ReadHalf<'_>,
-        upstream_event_sender: &broadcast::Sender<ConsoleEndpointEvent>,
+        mut socket: &mut ReadHalf<'_>,
+        upstream_event_sender: &broadcast::Sender<ConsoleEvent>,
     ) -> Result<(), std::io::Error> {
         loop {
             let length = socket.read_u32().await?;
@@ -33,22 +33,23 @@ impl ConsoleEndpoint {
 
             if let Ok(message) = melvin_messages::Upstream::decode(&mut Cursor::new(buffer)) {
                 upstream_event_sender
-                    .send(ConsoleEndpointEvent::Message(message.content.unwrap()))
+                    .send(ConsoleEvent::Message(message.content.unwrap()))
                     .unwrap();
             }
         }
     }
-    
-    #[allow(clippy::cast_possible_truncation)]
     async fn handle_connection_tx(
-        socket: &mut WriteHalf<'_>,
+        mut socket: &mut WriteHalf<'_>,
         downstream_receiver: &mut broadcast::Receiver<Option<Vec<u8>>>,
     ) -> Result<(), std::io::Error> {
-        while let Ok(Some(message_buffer)) = downstream_receiver.recv().await {
-            socket.write_u32(message_buffer.len() as u32).await?;
-            socket.write_all(&message_buffer).await?;
+        loop {
+            if let Ok(Some(message_buffer)) = downstream_receiver.recv().await {
+                socket.write_u32(message_buffer.len() as u32).await?;
+                socket.write_all(&message_buffer).await?;
+            } else {
+                break;
+            }
         }
-
         Ok(())
     }
 
@@ -71,7 +72,7 @@ impl ConsoleEndpoint {
                 };
 
                 if let Ok((mut socket, _)) = accept {
-                    upstream_event_sender.send(ConsoleEndpointEvent::Connected).unwrap();
+                    upstream_event_sender.send(ConsoleEvent::Connected).unwrap();
                     let mut upstream_event_sender_local = upstream_event_sender.clone();
                     let mut downstream_receiver = downstream_sender.subscribe();
 
@@ -80,12 +81,10 @@ impl ConsoleEndpoint {
 
                         let result = tokio::select! {
                             res = ConsoleEndpoint::handle_connection_tx(&mut tx_socket, &mut downstream_receiver) => res,
-                            res = ConsoleEndpoint::handle_connection_rx(&mut rx_socket, &upstream_event_sender_local) => res
+                            res = ConsoleEndpoint::handle_connection_rx(&mut rx_socket, &mut upstream_event_sender_local) => res
                         };
 
-                        upstream_event_sender_local
-                            .send(ConsoleEndpointEvent::Disconnected)
-                            .unwrap();
+                        upstream_event_sender_local.send(ConsoleEvent::Disconnected).unwrap();
                         match result {
                             Err(e)
                                 if e.kind() == ErrorKind::UnexpectedEof
@@ -95,7 +94,7 @@ impl ConsoleEndpoint {
                                 return;
                             }
                             Err(e) => {
-                                eprintln!("[WARN]: Closing connection to console due to {e:?}");
+                                eprintln!("[WARN]: Closing connection to console due to {:?}", e)
                             }
                             _ => {}
                         };
@@ -114,8 +113,11 @@ impl ConsoleEndpoint {
             melvin_messages::Downstream { content: Some(msg) }.encode_to_vec(),
         ));
     }
+    pub(crate) fn is_console_connected(&self) -> bool {
+        self.downstream_sender.receiver_count() > 0
+    }
 
-    pub(crate) fn upstream_event_receiver(&self) -> &broadcast::Receiver<ConsoleEndpointEvent> {
+    pub(crate) fn upstream_event_receiver(&self) -> &broadcast::Receiver<ConsoleEvent> {
         &self.upstream_event_receiver
     }
 }

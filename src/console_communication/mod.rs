@@ -1,2 +1,3 @@
-pub(crate) mod console_endpoint;
-pub(crate) mod melvin_messages;
+mod console_endpoint;
+pub(crate) mod console_messenger;
+mod melvin_messages;

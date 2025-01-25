@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use super::delete_objective;
 use super::request_common::{HTTPRequestMethod, HTTPRequestType, NoBodyHTTPRequestType};
+use std::collections::HashMap;
 
 #[derive(Debug)]
 #[cfg(debug_assertions)]

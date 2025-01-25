@@ -3,7 +3,7 @@ mod console_communication;
 mod flight_control;
 mod http_handler;
 
-use crate::console_communication::console_endpoint::ConsoleEndpoint;
+use crate::console_communication::console_messenger::ConsoleMessenger;
 use crate::flight_control::{
     camera_controller::CameraController,
     camera_state::CameraAngle,
@@ -21,7 +21,7 @@ use crate::http_handler::{
     http_request::{observation_get::ObservationRequest, request_common::NoBodyHTTPRequestType},
 };
 use chrono::{DateTime, TimeDelta};
-use std::{fs::OpenOptions, io::Write, sync::Arc};
+use std::{fs::OpenOptions, io::Write, sync::Arc, env};
 use tokio::{
     sync::{Mutex, Notify, RwLock},
     task::JoinHandle,
@@ -38,9 +38,10 @@ const BIN_FILEPATH: &str = "camera_controller_narrow.bin";
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::too_many_lines)]
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
-    let client = Arc::new(HTTPClient::new("http://localhost:33000"));
-    let console_endpoint = Arc::new(ConsoleEndpoint::start());
-
+    let base_url_var = env::var("DRS_BASE_URL");
+    let base_url = base_url_var.as_ref().map_or("http://localhost:33000", |v| v.as_str());
+    let client = Arc::new(HTTPClient::new(base_url));
+   
     let t_cont = TaskController::new();
     let c_cont = CameraController::from_file(BIN_FILEPATH).await.unwrap_or_else(|e| {
         println!("[WARN] Failed to read from binary file: {e}");
@@ -48,7 +49,7 @@ async fn main() {
     });
     let c_cont_lock = Arc::new(Mutex::new(c_cont));
     let f_cont_lock = Arc::new(RwLock::new(FlightComputer::new(Arc::clone(&client)).await));
-
+    //let console_messenger = ConsoleMessenger::start(Arc::clone(c_cont_lock));
     let f_cont_lock_clone = Arc::clone(&f_cont_lock);
     tokio::spawn(async move {
         loop {
@@ -188,6 +189,7 @@ async fn main() {
             // TODO: perform optimal orbit until objective notification
         }
     }
+    // drop(console_messenger);
 }
 
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
@@ -225,28 +227,4 @@ fn handle_acquisition(
         .await;
     });
     (handle, last_image_notify, cycle_param)
-}
-
-async fn log_pos(http_handler: Arc<HTTPClient>) {
-    let mut positions: Vec<(i32, i32)> = Vec::new();
-    let mut next_save = chrono::Utc::now() + chrono::Duration::seconds(300);
-    loop {
-        if let Ok(obs) = (ObservationRequest {}.send_request(&http_handler).await) {
-            let pos = (i32::from(obs.pos_x()), i32::from(obs.pos_y()));
-            positions.push(pos);
-        }
-        if next_save < chrono::Utc::now() {
-            if let Ok(mut f) = OpenOptions::new().create(true).append(true).open("pos.csv") {
-                for (x, y) in &positions {
-                    writeln!(f, "{x},{y}").unwrap();
-                }
-                next_save = chrono::Utc::now() + chrono::Duration::seconds(300);
-                positions.clear();
-            } else {
-                println!("[WARN] Failed to open pos.csv for writing!");
-                continue;
-            }
-        }
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-    }
 }

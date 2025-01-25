@@ -1,6 +1,6 @@
-use std::ops::{Deref, DerefMut};
-use image::{GenericImage, GenericImageView};
 use super::vec2d::Vec2D;
+use image::{GenericImage, GenericImageView};
+use std::ops::{Deref, DerefMut};
 
 // TODO: this could be useful as soon as metadata for pixels is necessary
 /*
@@ -16,7 +16,7 @@ pub struct PixelData {
 /// - `width`: A `u32` representing the 2D image width.
 /// - `height`: A `u32` representing the 2D image height.
 /// - `data`: A `Vec` storing the actual RGB data.
-/// 
+///
 /// This structure provides methods for creating a buffer, saving pixels, and computing
 /// the 1D index of pixels based on their 2D coordinates.
 #[derive(serde::Serialize, serde::Deserialize, Clone)]

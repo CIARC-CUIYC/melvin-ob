@@ -383,50 +383,6 @@ impl FlightComputer {
     /// # Returns
     /// - A `Vec2D<f32>` representing the satellite’s predicted position.
     pub fn pos_in_dt(&self, time_delta: TimeDelta) -> Vec2D<f32> {
-        let pos = self.current_pos + (self.current_vel * time_delta.num_seconds());
-        pos.wrap_around_map();
-        pos
+        self.current_pos + (self.current_vel * time_delta.num_seconds()).wrap_around_map()
     }
-
-    // TODO: LEGACY METHODS
-
-    /*    /// Charges the satellite battery to a target charge percentage.
-    ///
-    /// Calculates the charging duration based on the charge rate, executes the charging process and
-    /// restores the previous `FlightState` afterward.
-    ///
-    /// # Arguments
-    /// - `target_battery`: The desired target battery level (percentage).
-    #[allow(clippy::cast_precision_loss)]
-    pub async fn charge_until(&mut self, command: ChargeCommand) {
-        // TODO: make this work in parallel (calculation || state_change to charge)
-        self.update_observation().await;
-        let initial_state = self.current_state;
-        let target_battery = match command {
-            ChargeCommand::TargetCharge(target) => target,
-            ChargeCommand::Duration(mut dt) => {
-                if initial_state != FlightState::Charge {
-                    dt -= TimeDelta::seconds(2 * 180);
-                }
-                self.current_battery + dt.num_seconds() as f32 * FlightState::Charge.get_charge_rate()
-            }
-        };
-        let charge_rate: f32 = FlightState::Charge.get_charge_rate();
-        let charge_time_s = ((target_battery - self.current_battery) / charge_rate) * 2.0;
-        let charge_time = Duration::from_secs_f32(charge_time_s);
-        self.state_change_ff(FlightState::Charge).await;
-        Self::make_ff_call(charge_time).await;
-        self.state_change_ff(initial_state).await;
-        self.update_observation().await;
-    }*/
-
-    /*    /// Changes the angle of the satellite's camera.
-    ///
-    /// # Arguments
-    /// - `new_angle`: The new camera angle to set.
-    pub async fn set_angle(&mut self, new_angle: CameraAngle) {
-        self.update_observation().await;
-
-        self.update_observation().await;
-    }*/
 }
