@@ -43,13 +43,12 @@ async fn main() {
     let client = Arc::new(HTTPClient::new(base_url));
    
     let t_cont = TaskController::new();
-    let c_cont = CameraController::from_file(BIN_FILEPATH).await.unwrap_or_else(|e| {
+    let c_cont = Arc::new(CameraController::from_file(BIN_FILEPATH, client.clone()).await.unwrap_or_else(|e| {
         println!("[WARN] Failed to read from binary file: {e}");
-        CameraController::new()
-    });
-    let c_cont_lock = Arc::new(Mutex::new(c_cont));
+        CameraController::new(client.clone())
+    }));
     let f_cont_lock = Arc::new(RwLock::new(FlightComputer::new(Arc::clone(&client)).await));
-    //let console_messenger = ConsoleMessenger::start(Arc::clone(c_cont_lock));
+    let console_messenger = Arc::new(ConsoleMessenger::start(c_cont.clone()));
     let f_cont_lock_clone = Arc::clone(&f_cont_lock);
     tokio::spawn(async move {
         loop {
@@ -101,7 +100,8 @@ async fn main() {
             let end_time = chrono::Utc::now() + chrono::Duration::seconds(10000);
             Some(handle_acquisition(
                 &f_cont_lock,
-                &c_cont_lock,
+                console_messenger.clone(),
+                c_cont.clone(),
                 end_time,
                 img_dt,
                 CONST_ANGLE,
@@ -146,7 +146,8 @@ async fn main() {
             if current_state == FlightState::Acquisition && due_time > DT_0 {
                 let acq_phase = handle_acquisition(
                     &f_cont_lock,
-                    &c_cont_lock,
+                    console_messenger.clone(),
+                    c_cont.clone(),
                     task.dt().get_end(),
                     img_dt,
                     CONST_ANGLE,
@@ -173,10 +174,9 @@ async fn main() {
                             FlightComputer::set_state_wait(&f_cont_lock, FlightState::Charge).await;
                             println!("[INFO] State Change done! Hopefully export is also done!");
                         };
-                        let c_cont_lock_clone = Arc::clone(&c_cont_lock);
+                        let c_cont_local = c_cont.clone();
                         let handle = tokio::spawn(async move {
-                            let c_cont = c_cont_lock_clone.lock().await;
-                            c_cont.create_snapshot_full().await.expect("[WARN] Export failed!");
+                            c_cont_local.create_snapshot_full().await.expect("[WARN] Export failed!");
                         });
                         tokio::join!(join_handle, handle);
                     }
@@ -195,7 +195,8 @@ async fn main() {
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 fn handle_acquisition(
     f_cont_locked: &Arc<RwLock<FlightComputer>>,
-    c_cont_locked: &Arc<Mutex<CameraController>>,
+    console_messenger: Arc<ConsoleMessenger>,
+    c_cont: Arc<CameraController>,
     end_time: DateTime<chrono::Utc>,
     img_dt: f32,
     angle: CameraAngle,
@@ -206,7 +207,6 @@ fn handle_acquisition(
     (DateTime<chrono::Utc>, usize)
 ) {
     let f_cont_lock_arc_clone = Arc::clone(f_cont_locked);
-    let c_cont_cloned = Arc::clone(c_cont_locked);
     let last_image_notify = Arc::new(Notify::new());
     let last_image_notify_cloned = Arc::clone(&last_image_notify);
 
@@ -216,9 +216,9 @@ fn handle_acquisition(
     );
 
     let handle = tokio::spawn(async move {
-        CameraController::execute_acquisition_cycle(
-            c_cont_cloned,
+        c_cont.execute_acquisition_cycle(
             f_cont_lock_arc_clone,
+            &console_messenger,
             end_time,
             last_image_notify_cloned,
             img_dt,

@@ -5,16 +5,17 @@ use super::request_common::{
 use std::collections::HashMap;
 use std::io;
 use std::path::Path;
+use bytes::Bytes;
 
 #[derive(Debug)]
 pub struct ObjectiveImageRequest {
-    image_path: String,
+    encoded_image: Bytes,
     objective_id: usize,
 }
 
 impl MultipartBodyHTTPRequestType for ObjectiveImageRequest {
     async fn body(&self) -> Result<reqwest::multipart::Form, RequestError> {
-        let file_part = reqwest::multipart::Part::file(&self.image_path).await?;
+        let file_part = reqwest::multipart::Part::stream(self.encoded_image.clone());
         Ok(reqwest::multipart::Form::new().part("image", file_part))
     }
 }
@@ -35,23 +36,10 @@ impl HTTPRequestType for ObjectiveImageRequest {
 }
 
 impl ObjectiveImageRequest {
-    pub fn new<P: AsRef<Path>>(image_path: P, objective_id: usize) -> Result<Self, io::Error> {
-        let path = image_path.as_ref();
-        if !path.exists() {
-            return Err(io::Error::new(
-                io::ErrorKind::NotFound,
-                "File path does not exist",
-            ));
-        }
-        if !path.is_file() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Path is not a valid file",
-            ));
-        }
-        Ok(Self {
-            image_path: path.to_string_lossy().to_string(),
+    pub fn new(objective_id: usize, encoded_image: Vec<u8>) -> Self {
+        Self {
+            encoded_image: Bytes::from(encoded_image),
             objective_id,
-        })
+        }
     }
 }

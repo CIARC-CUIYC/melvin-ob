@@ -4,10 +4,7 @@ use crate::flight_control::{
     common::{bitmap::Bitmap, vec2d::Vec2D},
     flight_computer::FlightComputer,
 };
-use crate::http_handler::{
-    http_client::HTTPClient, http_request::request_common::NoBodyHTTPRequestType,
-    http_request::shoot_image_get::ShootImageRequest,
-};
+use crate::http_handler::{http_client, http_client::HTTPClient, http_request::request_common::NoBodyHTTPRequestType, http_request::shoot_image_get::ShootImageRequest};
 use bitvec::boxed::BitBox;
 use futures::StreamExt;
 use image::{
@@ -23,6 +20,10 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::{Mutex, Notify, RwLock},
 };
+use crate::console_communication::console_messenger::ConsoleMessenger;
+use crate::http_handler::http_request::daily_map_post::DailyMapRequest;
+use crate::http_handler::http_request::objective_image_post::ObjectiveImageRequest;
+use crate::http_handler::http_request::request_common::MultipartBodyHTTPRequestType;
 
 pub struct EncodedImageExtract {
     pub(crate) offset: Vec2D<u32>,
@@ -122,16 +123,20 @@ impl GenericImageView for MapImage {
 
 pub struct CameraController {
     map_image: RwLock<MapImage>,
+    request_client: Arc<HTTPClient>
 }
 
+const SNAPSHOT_FULL_PATH: &str = "snapshot_full.png";
+
 impl CameraController {
-    pub fn new() -> Self {
+    pub fn new(request_client: Arc<HTTPClient>) -> Self {
         Self {
             map_image: RwLock::new(MapImage::new()),
+            request_client
         }
     }
 
-    pub async fn from_file(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn from_file(path: &str, request_client: Arc<HTTPClient>) -> Result<Self, Box<dyn std::error::Error>> {
         let mut file = File::open(path).await?;
         let mut file_buffer = Vec::new();
         file.read_to_end(&mut file_buffer).await?;
@@ -159,6 +164,7 @@ impl CameraController {
 
         Ok(Self {
             map_image: RwLock::new(map_image),
+            request_client
         })
     }
 
@@ -218,9 +224,8 @@ impl CameraController {
         let (position, collected_png) = {
             // TODO: it should be tested if this could be a read lock as well (by not calling update_observation, but current_pos())
             let mut f_cont = f_cont_locked.write().await;
-            let client = f_cont.client();
             let ((), collected_png) =
-                tokio::join!(f_cont.update_observation(), self.fetch_image_data(&client));
+                tokio::join!(f_cont.update_observation(), self.fetch_image_data());
             (f_cont.current_pos(), collected_png)
         };
         let decoded_image = Self::decode_png_data(
@@ -267,9 +272,8 @@ impl CameraController {
 
     async fn fetch_image_data(
         &self,
-        httpclient: &HTTPClient,
     ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-        let response_stream = ShootImageRequest {}.send_request(httpclient).await?;
+        let response_stream = ShootImageRequest {}.send_request(&self.request_client).await?;
 
         let mut collected_png: Vec<u8> = Vec::new();
         futures::pin_mut!(response_stream);
@@ -341,9 +345,35 @@ impl CameraController {
 
         Ok(EncodedImageExtract {
             offset: offset.cast(),
-            size: offset.cast(),
+            size: size.cast(),
             data: writer.into_inner(),
         })
+
+
+    }
+
+    #[allow(clippy::cast_sign_loss)]
+    pub(crate) async fn upload_objective_png(
+        &self,
+        objective_id: usize,
+        offset: Vec2D<u32>,
+        size: Vec2D<u32>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let map_image = self.map_image.read().await;
+        let sub_image = map_image.view(offset.x(), offset.y(), size.x(), size.y());
+        let mut thumbnail_image = RgbaImage::new(sub_image.width(), sub_image.width());
+        let mut writer = Cursor::new(Vec::<u8>::new());
+        sub_image.to_image().write_with_encoder(PngEncoder::new(&mut writer))?;
+        ObjectiveImageRequest::new(objective_id, writer.into_inner()).send_request(&self.request_client).await?;
+        Ok(())
+    }
+
+    #[allow(clippy::cast_sign_loss)]
+    pub(crate) async fn upload_daily_map(
+        &self,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        DailyMapRequest::new(SNAPSHOT_FULL_PATH)?.send_request(&self.request_client).await?;
+        Ok(())
     }
 
     pub(crate) async fn create_snapshot_thumb(&self) -> Result<(), Box<dyn std::error::Error>> {
@@ -354,7 +384,7 @@ impl CameraController {
     pub(crate) async fn create_snapshot_full(&self) -> Result<(), Box<dyn std::error::Error>> {
         println!("[INFO] Exporting Full-View PNG...");
         let start_time = chrono::Utc::now();
-        self.map_image.read().await.fullsize_buffer.save("snapshot_full.png")?;
+        self.map_image.read().await.fullsize_buffer.save(SNAPSHOT_FULL_PATH)?;
         println!(
             "[INFO] Exported Full-View PNG in {} s!",
             (chrono::Utc::now() - start_time).num_seconds()
@@ -389,12 +419,6 @@ impl CameraController {
                 FilterType::Adaptive,
             ))?;
             let diff_encoded = writer.into_inner();
-            File::create("snapshot_diff.png")
-                .await
-                .unwrap()
-                .write_all(&diff_encoded)
-                .await
-                .unwrap();
             Ok(EncodedImageExtract {
                 offset: Vec2D::new(0, 0),
                 size: Vec2D::map_size() / MapImage::THUMBNAIL_SCALE_FACTOR,
@@ -406,9 +430,9 @@ impl CameraController {
     }
 
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    pub async fn execute_acquisition_cycle(
-        this_lock: Arc<Mutex<Self>>,
+    pub async fn execute_acquisition_cycle(self: Arc<Self>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
+        console_messenger: &ConsoleMessenger,
         end_time: chrono::DateTime<chrono::Utc>,
         last_img_kill: Arc<Notify>,
         image_max_dt: f32,
@@ -417,15 +441,13 @@ impl CameraController {
         let mut last_image_flag = false;
         let pic_count = 0;
         let pic_count_lock = Arc::new(Mutex::new(pic_count));
-
         loop {
-            let this_lock_clone = Arc::clone(&this_lock);
             let f_cont_lock_clone = Arc::clone(&f_cont_lock);
             let pic_count_lock_clone = Arc::clone(&pic_count_lock);
+            let self_clone = Arc::clone(&self);
             let img_handle = tokio::spawn(async move {
-                let mut c_cont = this_lock_clone.lock().await;
-                match c_cont.shoot_image_to_buffer(Arc::clone(&f_cont_lock_clone), lens).await {
-                    Ok(_) => {
+                let offset = match self_clone.shoot_image_to_buffer(Arc::clone(&f_cont_lock_clone), lens).await {
+                    Ok(offset) => {
                         let pic_num = {
                             let mut lock = pic_count_lock_clone.lock().await ;
                             *lock += 1;
@@ -435,9 +457,14 @@ impl CameraController {
                             "[INFO] Took {pic_num}. picture in cycle at {}",
                             chrono::Utc::now().format("%d %H:%M:%S")
                         );
+                        Some(offset)
                     }
-                    Err(e) => println!("[ERROR] Couldn't take picture: {e}"),
+                    Err(e) => {
+                        println!("[ERROR] Couldn't take picture: {e}");
+                        None
+                    }
                 };
+                offset
             });
             let next_img_due = {
                 let next_max_dt =
@@ -449,7 +476,10 @@ impl CameraController {
                     next_max_dt
                 }
             };
-            img_handle.await;
+            let offset = img_handle.await;
+            if let Some(offset) = offset.ok().flatten() {
+                console_messenger.send_thumbnail(offset, lens);
+            }
             if last_image_flag {
                 return;
             }

@@ -51,6 +51,40 @@ impl ConsoleMessenger {
                             );
                         }
                     }
+                    ConsoleEvent::Message(melvin_messages::UpstreamContent::SubmitObjective(submit_objective)) => {
+                        let camera_controller_local = camera_controller_local.clone();
+                        let endpoint_local = endpoint_local.clone();
+                        tokio::spawn(async move {
+                            let result = camera_controller_local.upload_objective_png(
+                                submit_objective.objective_id as usize,
+                                Vec2D::new(submit_objective.offset_x as u32, submit_objective.offset_y as u32),
+                                Vec2D::new(submit_objective.width as u32, submit_objective.height as u32),
+                            ).await;
+
+                            endpoint_local.send_downstream(
+                                melvin_messages::DownstreamContent::SubmitResponse(melvin_messages::SubmitResponse {
+                                    success: result.is_ok(),
+                                    objective_id: Some(submit_objective.objective_id),
+                                })
+                            );
+                        });
+                    },
+                    ConsoleEvent::Message(melvin_messages::UpstreamContent::SubmitDailyMap(_)) => {
+                        let camera_controller_local = camera_controller_local.clone();
+                        let endpoint_local = endpoint_local.clone();
+                        tokio::spawn(async move {
+                            let mut success = camera_controller_local.create_snapshot_full().await.is_ok();
+                            if success {
+                                success = camera_controller_local.upload_daily_map().await.is_ok();
+                            }
+                            endpoint_local.send_downstream(
+                                melvin_messages::DownstreamContent::SubmitResponse(melvin_messages::SubmitResponse {
+                                    success,
+                                    objective_id: None,
+                                })
+                            );
+                        });
+                    }
                     _ => {}
                 }
             }
@@ -59,7 +93,7 @@ impl ConsoleMessenger {
         Self { camera_controller, endpoint }
     }
 
-    pub(crate) fn send_thumbnail(&self, position: Vec2D<u32>, angle: CameraAngle) {
+    pub(crate) fn send_thumbnail(&self, offset: Vec2D<u32>, angle: CameraAngle) {
         if !self.endpoint.is_console_connected() {
             return;
         }
@@ -70,7 +104,7 @@ impl ConsoleMessenger {
                 return;
             }
             if let Ok(encoded_image) =
-                camera_controller_local.export_thumbnail_png(position, angle).await
+                camera_controller_local.export_thumbnail_png(offset, angle).await
             {
                 endpoint_local.send_downstream(melvin_messages::DownstreamContent::Image(
                     melvin_messages::Image::from_encoded_image_extract(encoded_image),
