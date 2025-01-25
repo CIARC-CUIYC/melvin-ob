@@ -18,55 +18,45 @@ impl ConsoleMessenger {
         let camera_controller_local = camera_controller.clone();
 
         tokio::spawn(async move {
-            loop {
-                if let Ok(event) = receiver.recv().await {
-                    match event {
-                        ConsoleEvent::Message(
-                            melvin_messages::UpstreamContent::CreateSnapshotImage(_),
-                        ) => {
-                            camera_controller_local.create_snapshot_thumb().await.unwrap();
-                        }
-                        ConsoleEvent::Message(
-                            melvin_messages::UpstreamContent::GetSnapshotDiffImage(_),
-                        ) => {
-                            if let Ok(encoded_image) = camera_controller_local.diff_snapshot().await
-                            {
-                                endpoint_local.send_downstream(
-                                    melvin_messages::DownstreamContent::Image(
-                                        melvin_messages::Image::from_encoded_image_extract(
-                                            encoded_image,
-                                        ),
-                                    ),
-                                );
-                            }
-                        }
-                        ConsoleEvent::Message(melvin_messages::UpstreamContent::GetFullImage(
-                            _,
-                        )) => {
-                            if let Ok(encoded_image) =
-                                camera_controller_local.export_full_thumbnail_png().await
-                            {
-                                endpoint_local.send_downstream(
-                                    melvin_messages::DownstreamContent::Image(
-                                        melvin_messages::Image::from_encoded_image_extract(
-                                            encoded_image,
-                                        ),
-                                    ),
-                                );
-                            }
-                        }
-                        _ => {}
+            while let Ok(event) = receiver.recv().await {
+                match event {
+                    ConsoleEvent::Message(
+                        melvin_messages::UpstreamContent::CreateSnapshotImage(_),
+                    ) => {
+                        camera_controller_local.create_snapshot_thumb().await.unwrap();
                     }
-                } else {
-                    break;
+                    ConsoleEvent::Message(
+                        melvin_messages::UpstreamContent::GetSnapshotDiffImage(_),
+                    ) => {
+                        if let Ok(encoded_image) = camera_controller_local.diff_snapshot().await {
+                            endpoint_local.send_downstream(
+                                melvin_messages::DownstreamContent::Image(
+                                    melvin_messages::Image::from_encoded_image_extract(
+                                        encoded_image,
+                                    ),
+                                ),
+                            );
+                        }
+                    }
+                    ConsoleEvent::Message(melvin_messages::UpstreamContent::GetFullImage(_)) => {
+                        if let Ok(encoded_image) =
+                            camera_controller_local.export_full_thumbnail_png().await
+                        {
+                            endpoint_local.send_downstream(
+                                melvin_messages::DownstreamContent::Image(
+                                    melvin_messages::Image::from_encoded_image_extract(
+                                        encoded_image,
+                                    ),
+                                ),
+                            );
+                        }
+                    }
+                    _ => {}
                 }
             }
         });
 
-        Self {
-            endpoint,
-            camera_controller,
-        }
+        Self { camera_controller, endpoint }
     }
 
     pub(crate) fn send_thumbnail(&self, position: Vec2D<u32>, angle: CameraAngle) {

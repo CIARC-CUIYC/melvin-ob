@@ -38,18 +38,17 @@ impl ConsoleEndpoint {
             }
         }
     }
+
+    #[allow(clippy::cast_possible_truncation)]
     async fn handle_connection_tx(
         mut socket: &mut WriteHalf<'_>,
         downstream_receiver: &mut broadcast::Receiver<Option<Vec<u8>>>,
     ) -> Result<(), std::io::Error> {
-        loop {
-            if let Ok(Some(message_buffer)) = downstream_receiver.recv().await {
-                socket.write_u32(message_buffer.len() as u32).await?;
-                socket.write_all(&message_buffer).await?;
-            } else {
-                break;
-            }
+        while let Ok(Some(message_buffer)) = downstream_receiver.recv().await {
+            socket.write_u32(message_buffer.len() as u32).await?;
+            socket.write_all(&message_buffer).await?;
         }
+
         Ok(())
     }
 
@@ -81,7 +80,7 @@ impl ConsoleEndpoint {
 
                         let result = tokio::select! {
                             res = ConsoleEndpoint::handle_connection_tx(&mut tx_socket, &mut downstream_receiver) => res,
-                            res = ConsoleEndpoint::handle_connection_rx(&mut rx_socket, &mut upstream_event_sender_local) => res
+                            res = ConsoleEndpoint::handle_connection_rx(&mut rx_socket, &upstream_event_sender_local) => res
                         };
 
                         upstream_event_sender_local.send(ConsoleEvent::Disconnected).unwrap();
@@ -94,7 +93,7 @@ impl ConsoleEndpoint {
                                 return;
                             }
                             Err(e) => {
-                                eprintln!("[WARN]: Closing connection to console due to {:?}", e)
+                                eprintln!("[WARN]: Closing connection to console due to {e:?}");
                             }
                             _ => {}
                         };

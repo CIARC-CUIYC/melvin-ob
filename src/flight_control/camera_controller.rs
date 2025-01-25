@@ -60,7 +60,7 @@ impl MapImage {
 
     pub fn fullsize_view(&self, offset: Vec2D<u32>, size: Vec2D<u32>) -> SubBuffer<&MapImage> {
         SubBuffer {
-            buffer: &self,
+            buffer: self,
             buffer_size: Vec2D::map_size(),
             offset,
             size,
@@ -315,7 +315,7 @@ impl CameraController {
     pub(crate) async fn save_png_to(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
         let mut file = File::create(path).await.unwrap();
         let image = self.export_full_thumbnail_png().await?;
-        file.write_all(&*image.data).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+        file.write_all(&image.data).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
     }
 
     #[allow(clippy::cast_sign_loss)]
@@ -325,7 +325,7 @@ impl CameraController {
         angle: CameraAngle,
     ) -> Result<EncodedImageExtract, Box<dyn std::error::Error>> {
         let offset = offset / MapImage::THUMBNAIL_SCALE_FACTOR;
-        let size = angle.get_square_side_length() as u32;
+        let size = u32::from(angle.get_square_side_length());
         let size = Vec2D::new(
             size,
             size,
