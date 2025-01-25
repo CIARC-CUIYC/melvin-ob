@@ -35,6 +35,7 @@ impl ConsoleEndpoint {
                 content: Some(content),
             }) = melvin_messages::Upstream::decode(&mut Cursor::new(buffer))
             {
+                println!("[Info] Received upstream message: {content:?}");
                 upstream_event_sender.send(ConsoleEvent::Message(content)).unwrap();
             }
         }

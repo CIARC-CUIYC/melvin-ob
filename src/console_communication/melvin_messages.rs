@@ -2,7 +2,7 @@ use crate::flight_control::camera_controller::EncodedImageExtract;
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Upstream {
-    #[prost(oneof = "UpstreamContent", tags = "1, 2, 3, 4")]
+    #[prost(oneof = "UpstreamContent", tags = "1, 2, 3, 4, 5, 6")]
     pub content: Option<UpstreamContent>,
 }
 
@@ -13,7 +13,7 @@ pub struct Ping {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Downstream {
-    #[prost(oneof = "DownstreamContent", tags = "1, 2, 3")]
+    #[prost(oneof = "DownstreamContent", tags = "1, 2, 3, 4")]
     pub content: Option<DownstreamContent>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]

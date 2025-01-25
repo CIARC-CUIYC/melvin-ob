@@ -57,19 +57,21 @@ impl ConsoleMessenger {
                         let camera_controller_local = camera_controller_local.clone();
                         let endpoint_local = endpoint_local.clone();
                         tokio::spawn(async move {
+                            let objective_id = submit_objective.objective_id;
                             let result = camera_controller_local
                                 .upload_objective_png(
-                                    submit_objective.objective_id as usize,
+                                    objective_id as usize,
                                     Vec2D::new(
-                                        submit_objective.offset_x as u32,
-                                        submit_objective.offset_y as u32,
+                                        submit_objective.offset_x,
+                                        submit_objective.offset_y,
                                     ),
                                     Vec2D::new(
-                                        submit_objective.width as u32,
-                                        submit_objective.height as u32,
+                                        submit_objective.width,
+                                        submit_objective.height,
                                     ),
                                 )
                                 .await;
+                            println!("[Info] Submitted objective '{objective_id}' with result: {result:?}");
 
                             endpoint_local.send_downstream(
                                 melvin_messages::DownstreamContent::SubmitResponse(
