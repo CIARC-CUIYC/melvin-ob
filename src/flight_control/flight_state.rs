@@ -94,11 +94,7 @@ impl From<FlightState> for &'static str {
 /// A pre-computed lookup table defining the delays needed
 /// for transitioning between different flight states.
 ///
-/// The delay for each transition is represented as a `Duration`,
-/// a tolerance value is added for operational flexibility.
-///
-/// # Constants
-/// - **`TRANSITION_TOLERANCE`**: A small additional delay (in seconds) applied to all state transitions.
+/// The delay for each transition is represented as a `Duration`.
 pub static TRANSITION_DELAY_LOOKUP: LazyLock<HashMap<(FlightState, FlightState), Duration>> =
     LazyLock::new(|| {
         let mut lookup = HashMap::new();

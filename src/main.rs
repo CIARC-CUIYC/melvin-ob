@@ -85,7 +85,7 @@ async fn main() {
 
     // orbit
     loop {
-        let cycle_param = 
+        let cycle_param =
             (chrono::Utc::now(), (chrono::Utc::now() - orbit_s_start).num_seconds() as usize);
         let f_cont_rw_clone = Arc::clone(&f_cont_lock);
         let c_orbit_lock_clone = Arc::clone(&c_orbit_lock);
@@ -96,7 +96,7 @@ async fn main() {
         });
         let current_state = f_cont_lock.read().await.state();
 
-        let acq_phase = if current_state == FlightState::Acquisition {            
+        let acq_phase = if current_state == FlightState::Acquisition {
             let end_time = chrono::Utc::now() + chrono::Duration::seconds(10000);
             Some(handle_acquisition(
                 &f_cont_lock,
@@ -212,7 +212,7 @@ fn handle_acquisition(
         chrono::Utc::now(),
         cycle_param.1 + (chrono::Utc::now() - cycle_param.0).num_seconds() as usize
     );
-    
+
     let handle = tokio::spawn(async move {
         CameraController::execute_acquisition_cycle(
             c_cont_cloned,

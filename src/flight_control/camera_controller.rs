@@ -419,7 +419,7 @@ impl CameraController {
                 };
             });
             let next_img_due = {
-                let next_max_dt = 
+                let next_max_dt =
                     chrono::Utc::now() + chrono::TimeDelta::seconds(image_max_dt as i64);
                 if  next_max_dt > end_time {
                     last_image_flag = true;
