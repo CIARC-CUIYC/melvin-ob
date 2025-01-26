@@ -160,7 +160,7 @@ async fn main() {
             h.0.await.ok();
             let start_index = h.2 .1;
             let mut end_index = start_index + (chrono::Utc::now() - h.2 .0).num_seconds() as usize;
-            end_index = end_index - (end_index % orbit_full_period as usize);
+            end_index %= orbit_full_period as usize;
             let c_orbit_lock_clone = Arc::clone(&c_orbit_lock);
             println!("[INFO] Marking done: {start_index} - {end_index}");
             tokio::spawn(async move {
@@ -202,7 +202,7 @@ async fn main() {
                 let mut end_index =
                     start_index + (chrono::Utc::now() - acq_phase.2 .0).num_seconds() as usize;
                 // TODO: if acq_phase goes over orbit seam, this must be 2 ranges
-                end_index = end_index - (end_index % orbit_full_period as usize);
+                end_index %= orbit_full_period as usize;
                 let c_orbit_lock_clone = Arc::clone(&c_orbit_lock);
                 println!("[INFO] Marking done: {start_index} - {end_index}");
                 tokio::spawn(async move {
