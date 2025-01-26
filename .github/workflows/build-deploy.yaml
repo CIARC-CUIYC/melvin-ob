@@ -13,10 +13,10 @@ jobs:
           rustflags: '-C target-feature=+crt-static'
           target: x86_64-unknown-linux-gnu
       - name: Build
-        run: cargo build --release --target x86_64-unknown-linux-gnu --config target.x86_64-unknown-linux-gnu.linker=\"x86_64-linux-gnu-gcc\"
+        run: cargo build --debug --target x86_64-unknown-linux-gnu --config target.x86_64-unknown-linux-gnu.linker=\"x86_64-linux-gnu-gcc\"
 
       - name: Deploy
-        #if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main'
         run: |
           sshpass -p password ssh root@10.100.10.3 'tmux kill-session -t melvin-runner || true'
           sshpass -p password scp target/x86_64-unknown-linux-gnu/release/melvin-ob root@10.100.10.3:/home/melvin-ob
