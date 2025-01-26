@@ -7,6 +7,7 @@ use crate::console_communication::console_messenger::ConsoleMessenger;
 use crate::flight_control::{
     camera_controller::CameraController,
     camera_state::CameraAngle,
+    common::vec2d::Vec2D,
     flight_computer::FlightComputer,
     flight_state::FlightState,
     orbit::{
@@ -21,6 +22,7 @@ use crate::http_handler::{
     http_request::{observation_get::ObservationRequest, request_common::NoBodyHTTPRequestType},
 };
 use chrono::{DateTime, TimeDelta};
+use csv::Writer;
 use std::{env, fs::OpenOptions, io::Write, sync::Arc};
 use tokio::{
     sync::{Mutex, Notify, RwLock},
@@ -33,6 +35,8 @@ const STATIC_ORBIT_VEL: (f32, f32) = (6.4f32, 7.4f32);
 pub const MIN_BATTERY_THRESHOLD: f32 = 10.0;
 pub const MAX_BATTERY_THRESHOLD: f32 = 100.0;
 const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
+
+const POS_FILEPATH: &str = "pos.csv";
 const BIN_FILEPATH: &str = "camera_controller_narrow.bin";
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::too_many_lines)]
@@ -52,13 +56,45 @@ async fn main() {
     let f_cont_lock = Arc::new(RwLock::new(FlightComputer::new(Arc::clone(&client)).await));
     let console_messenger = Arc::new(ConsoleMessenger::start(c_cont.clone()));
     let f_cont_lock_clone = Arc::clone(&f_cont_lock);
+    
+    // spawn logging task
     tokio::spawn(async move {
+        let file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(POS_FILEPATH)
+            .unwrap();
+        let mut wrt = Writer::from_writer(file);
+        let mut first = true; // DEBUG ARTIFACT
+        let mut last_pos: Vec2D<f32> = Vec2D::new(-100.0, -100.0);
         loop {
             {
                 let mut f_cont = f_cont_lock_clone.write().await;
                 (*f_cont).update_observation().await;
+                if first && f_cont.current_vel().eq(&STATIC_ORBIT_VEL.into()) {
+                    last_pos = f_cont.current_pos();
+                    drop(f_cont);
+                    first = false;
+                } else if !first {
+                    let current_pos = f_cont.current_pos();
+                    drop(f_cont);
+                    let mut expected_pos =
+                        last_pos + <(f32, f32) as Into<Vec2D<f32>>>::into(STATIC_ORBIT_VEL) * 0.4;
+                    expected_pos = expected_pos.wrap_around_map();
+                    let diff = current_pos - expected_pos;
+                    wrt.write_record(&[
+                        current_pos.x().to_string(),
+                        current_pos.y().to_string(),
+                        expected_pos.x().to_string(),
+                        expected_pos.y().to_string(),
+                        diff.x().to_string(),
+                        diff.y().to_string(),                        
+                    ]).unwrap();
+                    last_pos = expected_pos;
+                }
             };
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(400)).await;
         }
     });
 
