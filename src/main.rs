@@ -68,6 +68,7 @@ async fn main() {
         let mut wrt = Writer::from_writer(file);
         let mut first = true; // DEBUG ARTIFACT
         let mut last_pos: Vec2D<f32> = Vec2D::new(-100.0, -100.0);
+        let mut last_timestamp = chrono::Utc::now();
         loop {
             {
                 let mut f_cont = f_cont_lock_clone.write().await;
@@ -75,12 +76,15 @@ async fn main() {
                 if first && f_cont.current_vel().eq(&STATIC_ORBIT_VEL.into()) {
                     last_pos = f_cont.current_pos();
                     drop(f_cont);
+                    last_timestamp = chrono::Utc::now();
                     first = false;
                 } else if !first {
                     let current_pos = f_cont.current_pos();
                     drop(f_cont);
+                    let dt = chrono::Utc::now() - last_timestamp;
+                    last_timestamp = chrono::Utc::now();
                     let mut expected_pos =
-                        last_pos + <(f32, f32) as Into<Vec2D<f32>>>::into(STATIC_ORBIT_VEL) * 0.4;
+                        last_pos + <(f32, f32) as Into<Vec2D<f32>>>::into(STATIC_ORBIT_VEL) * dt.num_milliseconds() as f32 / 1000.0;
                     expected_pos = expected_pos.wrap_around_map();
                     let diff = current_pos - expected_pos;
                     wrt.write_record(&[
