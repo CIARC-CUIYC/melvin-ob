@@ -450,7 +450,7 @@ impl CameraController {
             let pic_count_lock_clone = Arc::clone(&pic_count_lock);
             let self_clone = Arc::clone(&self);
             let img_handle = tokio::spawn(async move {
-                let offset = match self_clone
+                match self_clone
                     .shoot_image_to_buffer(Arc::clone(&f_cont_lock_clone), lens)
                     .await
                 {
@@ -470,9 +470,9 @@ impl CameraController {
                         println!("[ERROR] Couldn't take picture: {e}");
                         None
                     }
-                };
-                offset
+                }
             });
+            
             let next_img_due = {
                 let next_max_dt =
                     chrono::Utc::now() + chrono::TimeDelta::seconds(image_max_dt as i64);
@@ -483,6 +483,7 @@ impl CameraController {
                     next_max_dt
                 }
             };
+            
             let offset = img_handle.await;
             if let Some(offset) = offset.ok().flatten() {
                 console_messenger.send_thumbnail(offset, lens);
