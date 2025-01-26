@@ -239,7 +239,7 @@ impl CameraController {
             angle,
         )?;
         let angle_const = angle.get_square_side_length() / 2;
-        let offset: Vec2D<i32> = Vec2D::new(
+        let mut offset: Vec2D<i32> = Vec2D::new(
             position.x().round() as i32 - i32::from(angle_const),
             position.y().round() as i32 - i32::from(angle_const),
         )
@@ -252,7 +252,7 @@ impl CameraController {
             offset.x() as u32,
             offset.y() as u32,
         );
-        let offset = (offset + best_offset).wrap_around_map();
+        offset = (offset + best_offset).wrap_around_map();
 
         let mut map_image_view = map_image.fullsize_mut_view(offset.cast());
 

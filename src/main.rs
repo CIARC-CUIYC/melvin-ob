@@ -56,15 +56,11 @@ async fn main() {
     let f_cont_lock = Arc::new(RwLock::new(FlightComputer::new(Arc::clone(&client)).await));
     let console_messenger = Arc::new(ConsoleMessenger::start(c_cont.clone()));
     let f_cont_lock_clone = Arc::clone(&f_cont_lock);
-    
+
     // spawn logging task
     tokio::spawn(async move {
-        let file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(POS_FILEPATH)
-            .unwrap();
+        let file =
+            OpenOptions::new().write(true).create(true).truncate(true).open(POS_FILEPATH).unwrap();
         let mut wrt = Writer::from_writer(file);
         let mut first = true; // DEBUG ARTIFACT
         let mut last_pos: Vec2D<f32> = Vec2D::new(-100.0, -100.0);
@@ -83,8 +79,10 @@ async fn main() {
                     drop(f_cont);
                     let dt = chrono::Utc::now() - last_timestamp;
                     last_timestamp = chrono::Utc::now();
-                    let mut expected_pos =
-                        last_pos + <(f32, f32) as Into<Vec2D<f32>>>::into(STATIC_ORBIT_VEL) * dt.num_milliseconds() as f32 / 1000.0;
+                    let mut expected_pos = last_pos
+                        + <(f32, f32) as Into<Vec2D<f32>>>::into(STATIC_ORBIT_VEL)
+                            * dt.num_milliseconds() as f32
+                            / 1000.0;
                     expected_pos = expected_pos.wrap_around_map();
                     let diff = current_pos - expected_pos;
                     wrt.write_record(&[
@@ -93,8 +91,9 @@ async fn main() {
                         expected_pos.x().to_string(),
                         expected_pos.y().to_string(),
                         diff.x().to_string(),
-                        diff.y().to_string(),                        
-                    ]).unwrap();
+                        diff.y().to_string(),
+                    ])
+                    .unwrap();
                     last_pos = expected_pos;
                 }
             };
@@ -163,6 +162,7 @@ async fn main() {
             let mut end_index = start_index + (chrono::Utc::now() - h.2 .0).num_seconds() as usize;
             end_index = end_index - (end_index % orbit_full_period as usize);
             let c_orbit_lock_clone = Arc::clone(&c_orbit_lock);
+            println!("[INFO] Marking done: {start_index} - {end_index}");
             tokio::spawn(async move {
                 let mut c_orbit = c_orbit_lock_clone.lock().await;
                 c_orbit.mark_done(start_index, end_index);
@@ -199,13 +199,17 @@ async fn main() {
                 );
                 acq_phase.0.await.ok();
                 let start_index = acq_phase.2 .1;
-                let mut end_index = start_index + (chrono::Utc::now() - acq_phase.2 .0).num_seconds() as usize;
+                let mut end_index =
+                    start_index + (chrono::Utc::now() - acq_phase.2 .0).num_seconds() as usize;
+                // TODO: if acq_phase goes over orbit seam, this must be 2 ranges
                 end_index = end_index - (end_index % orbit_full_period as usize);
                 let c_orbit_lock_clone = Arc::clone(&c_orbit_lock);
+                println!("[INFO] Marking done: {start_index} - {end_index}");
                 tokio::spawn(async move {
                     let mut c_orbit = c_orbit_lock_clone.lock().await;
                     c_orbit.mark_done(start_index, end_index);
                 });
+                
             } else if current_state == FlightState::Charge && due_time > DT_0 {
                 let task_due = task.dt().time_left();
                 FlightComputer::wait_for_duration(task_due.to_std().unwrap()).await;
@@ -224,7 +228,6 @@ async fn main() {
                     FlightState::Charge => {
                         let join_handle = async {
                             FlightComputer::set_state_wait(&f_cont_lock, FlightState::Charge).await;
-                            println!("[INFO] State Change done! Hopefully export is also done!");
                         };
                         let c_cont_local = c_cont.clone();
                         let handle = tokio::spawn(async move {
@@ -233,7 +236,7 @@ async fn main() {
                                 .await
                                 .expect("[WARN] Export failed!");
                         });
-                        tokio::join!(join_handle, handle);
+                        join_handle.await;
                     }
                     FlightState::Comms => {}
                     _ => {
@@ -261,7 +264,7 @@ fn handle_acquisition(
     let last_image_notify = Arc::new(Notify::new());
     let last_image_notify_cloned = Arc::clone(&last_image_notify);
 
-    let cycle_param = (
+    let loc_cycle_param = (
         chrono::Utc::now(),
         cycle_param.1 + (chrono::Utc::now() - cycle_param.0).num_seconds() as usize,
     );
@@ -278,5 +281,5 @@ fn handle_acquisition(
             )
             .await;
     });
-    (handle, last_image_notify, cycle_param)
+    (handle, last_image_notify, loc_cycle_param)
 }
