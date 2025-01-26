@@ -12,6 +12,7 @@ use crate::flight_control::{
     flight_state::FlightState,
     orbit::{
         closed_orbit::{ClosedOrbit, OrbitUsabilityError},
+        index::IndexedOrbitPosition,
         orbit_base::OrbitBase,
     },
     task::base_task::BaseTask,
@@ -76,6 +77,7 @@ async fn main() {
                     first = false;
                 } else if !first {
                     let current_pos = f_cont.current_pos();
+                    let current_state_str = f_cont.state().to_string();
                     drop(f_cont);
                     let dt = chrono::Utc::now() - last_timestamp;
                     last_timestamp = chrono::Utc::now();
@@ -92,6 +94,7 @@ async fn main() {
                         expected_pos.y().to_string(),
                         diff.x().to_string(),
                         diff.y().to_string(),
+                        current_state_str
                     ])
                     .unwrap();
                     last_pos = expected_pos;
@@ -116,56 +119,64 @@ async fn main() {
     };
 
     let img_dt = c_orbit.max_image_dt();
-    let orbit_s_start = c_orbit.base_orbit_ref().start_timestamp();
     let orbit_s_end = c_orbit.base_orbit_ref().start_timestamp()
         + chrono::Duration::seconds(c_orbit.period().0 as i64);
-    let orbit_full_period = c_orbit.period().0 as i64;
+    let orbit_full_period = c_orbit.period().0 as usize;
+    // TODO: this must be created dynamically in the loop at some time
+    let i_entry = IndexedOrbitPosition::new(0, orbit_full_period, {
+        f_cont_lock.read().await.current_pos()
+    });
 
     let c_orbit_lock = Arc::new(Mutex::new(c_orbit));
     let t_cont_lock = Arc::new(Mutex::new(t_cont));
 
     // orbit
     loop {
-        let cycle_param = (
-            chrono::Utc::now(),
-            (chrono::Utc::now() - orbit_s_start).num_seconds() as usize,
-        );
         let f_cont_rw_clone = Arc::clone(&f_cont_lock);
         let c_orbit_lock_clone = Arc::clone(&c_orbit_lock);
         let t_cont_lock_clone = Arc::clone(&t_cont_lock);
         let schedule_join_handle = tokio::spawn(async move {
             let mut t_cont = t_cont_lock_clone.lock().await;
-            t_cont.schedule_optimal_orbit(c_orbit_lock_clone, f_cont_rw_clone, cycle_param.1).await;
+            t_cont
+                .schedule_optimal_orbit(c_orbit_lock_clone, f_cont_rw_clone, i_entry.index())
+                .await;
         });
         let current_state = f_cont_lock.read().await.state();
 
         let acq_phase = if current_state == FlightState::Acquisition {
             let end_time = chrono::Utc::now() + chrono::Duration::seconds(10000);
-            Some(handle_acquisition(
-                &f_cont_lock,
-                console_messenger.clone(),
-                c_cont.clone(),
-                end_time,
-                img_dt,
-                CONST_ANGLE,
-                cycle_param,
-            ))
+            Some(
+                handle_acquisition(
+                    &f_cont_lock,
+                    console_messenger.clone(),
+                    c_cont.clone(),
+                    end_time,
+                    img_dt,
+                    CONST_ANGLE,
+                    i_entry,
+                )
+                .await,
+            )
         } else {
             None
         };
 
         schedule_join_handle.await.ok();
-        if let Some(h) = acq_phase {
-            h.1.notify_one();
-            h.0.await.ok();
-            let start_index = h.2 .1;
-            let mut end_index = start_index + (chrono::Utc::now() - h.2 .0).num_seconds() as usize;
-            end_index %= orbit_full_period as usize;
+        if let Some(phase) = acq_phase {
+            phase.1.notify_one();
+            phase.0.await.ok();
+            let ranges = phase.2.get_range_to_now();
             let c_orbit_lock_clone = Arc::clone(&c_orbit_lock);
-            println!("[INFO] Marking done: {start_index} - {end_index}");
+            print!("[INFO] Marking done: {} - {}", ranges[0].0, ranges[0].1);
+            if let Some(r) = ranges.get(1) {
+                print!(" and {} - {}", r.0, r.1);
+            }
+            println!();
             tokio::spawn(async move {
                 let mut c_orbit = c_orbit_lock_clone.lock().await;
-                c_orbit.mark_done(start_index, end_index);
+                ranges.iter().for_each(|(start, end)| {
+                    c_orbit.mark_done(*start, *end);
+                });                    
             });
         }
 
@@ -195,21 +206,23 @@ async fn main() {
                     task.dt().get_end(),
                     img_dt,
                     CONST_ANGLE,
-                    cycle_param,
-                );
+                    i_entry,
+                )
+                .await;
                 acq_phase.0.await.ok();
-                let start_index = acq_phase.2 .1;
-                let mut end_index =
-                    start_index + (chrono::Utc::now() - acq_phase.2 .0).num_seconds() as usize;
-                // TODO: if acq_phase goes over orbit seam, this must be 2 ranges
-                end_index %= orbit_full_period as usize;
+                let ranges = acq_phase.2.get_range_to_now();
                 let c_orbit_lock_clone = Arc::clone(&c_orbit_lock);
-                println!("[INFO] Marking done: {start_index} - {end_index}");
+                print!("[INFO] Marking done: {} - {}", ranges[0].0, ranges[0].1);
+                if let Some(r) = ranges.get(1) {
+                    print!(" and {} - {}", r.0, r.1);
+                }
+                println!();
                 tokio::spawn(async move {
                     let mut c_orbit = c_orbit_lock_clone.lock().await;
-                    c_orbit.mark_done(start_index, end_index);
+                    ranges.iter().for_each(|(start, end)| {
+                        c_orbit.mark_done(*start, *end);
+                    });
                 });
-                
             } else if current_state == FlightState::Charge && due_time > DT_0 {
                 let task_due = task.dt().time_left();
                 FlightComputer::wait_for_duration(task_due.to_std().unwrap()).await;
@@ -251,23 +264,20 @@ async fn main() {
 }
 
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-fn handle_acquisition(
+async fn handle_acquisition(
     f_cont_locked: &Arc<RwLock<FlightComputer>>,
     console_messenger: Arc<ConsoleMessenger>,
     c_cont: Arc<CameraController>,
     end_time: DateTime<chrono::Utc>,
     img_dt: f32,
     angle: CameraAngle,
-    cycle_param: (DateTime<chrono::Utc>, usize),
-) -> (JoinHandle<()>, Arc<Notify>, (DateTime<chrono::Utc>, usize)) {
+    i_shift: IndexedOrbitPosition,
+) -> (JoinHandle<()>, Arc<Notify>, IndexedOrbitPosition) {
     let f_cont_lock_arc_clone = Arc::clone(f_cont_locked);
     let last_image_notify = Arc::new(Notify::new());
     let last_image_notify_cloned = Arc::clone(&last_image_notify);
 
-    let loc_cycle_param = (
-        chrono::Utc::now(),
-        cycle_param.1 + (chrono::Utc::now() - cycle_param.0).num_seconds() as usize,
-    );
+    let i_start = i_shift.new_from_pos({ f_cont_lock_arc_clone.read().await.current_pos() });
 
     let handle = tokio::spawn(async move {
         c_cont
@@ -281,5 +291,5 @@ fn handle_acquisition(
             )
             .await;
     });
-    (handle, last_image_notify, loc_cycle_param)
+    (handle, last_image_notify, i_start)
 }

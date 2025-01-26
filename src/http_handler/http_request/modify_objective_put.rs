@@ -1,6 +1,6 @@
 use super::modify_objective;
 use super::request_common::{HTTPRequestMethod, HTTPRequestType, JSONBodyHTTPRequestType};
-use crate::http_handler::http_handler_common::{BeaconObjective, ZonedObjective};
+use crate::http_handler::common::{BeaconObjective, ZonedObjective};
 
 #[derive(serde::Serialize, Debug)]
 #[cfg(debug_assertions)]

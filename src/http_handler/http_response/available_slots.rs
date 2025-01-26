@@ -1,4 +1,4 @@
-use crate::http_handler::http_handler_common::CommunicationSlot;
+use crate::http_handler::common::CommunicationSlot;
 use crate::http_handler::http_response::response_common::SerdeJSONBodyHTTPResponseType;
 
 #[derive(serde::Deserialize, Debug)]
