@@ -1,4 +1,5 @@
 use num::traits::{real::Real, Num, NumAssignOps, NumCast};
+use std::cmp::Ordering;
 use std::ops::{Add, Deref, Div, Mul, Sub};
 
 /// A 2D vector generic over any numeric type.
@@ -57,6 +58,22 @@ where T: Real + NumCast + NumAssignOps
     /// A new vector representing the direction from `self` to `other`.
     pub fn to(&self, other: &Vec2D<T>) -> Vec2D<T> {
         Vec2D::new(other.x - self.x, other.y - self.y)
+    }
+
+    pub fn unwrapped_to(&self, other: &Vec2D<T>) -> Vec2D<f32> {
+        let mut options = Vec::new();
+        for x_sign in [1, -1] {
+            for y_sign in [1, -1] {
+                let target: Vec2D<f32> = Vec2D::new(
+                    other.x + Self::map_size().x() * T::from(x_sign).unwrap(),
+                    other.y + Self::map_size().y() * T::from(y_sign).unwrap(),
+                )
+                .cast();
+                let target_abs = target.abs();
+                options.push((target, target_abs));
+            }
+        }
+        options.iter().min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Less)).unwrap().0
     }
 
     /// Normalizes the vector to have a magnitude of 1.

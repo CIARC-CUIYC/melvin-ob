@@ -14,7 +14,9 @@ use crate::http_handler::{
 };
 use chrono::TimeDelta;
 use std::{sync::Arc, time::Duration};
+use std::ops::Index;
 use tokio::sync::RwLock;
+use crate::flight_control::orbit::index::IndexedOrbitPosition;
 
 /// Represents the core flight computer for satellite control.
 /// It manages operations such as state changes, velocity updates,
@@ -386,7 +388,12 @@ impl FlightComputer {
     ///
     /// # Returns
     /// - A `Vec2D<f32>` representing the satellite’s predicted position.
-    pub fn pos_in_dt(&self, time_delta: TimeDelta) -> Vec2D<f32> {
-        self.current_pos + (self.current_vel * time_delta.num_seconds()).wrap_around_map()
+    pub fn pos_in_dt(&self, now: IndexedOrbitPosition, dt: TimeDelta) -> IndexedOrbitPosition {
+        let pos = 
+            self.current_pos + (self.current_vel * dt.num_seconds()).wrap_around_map();
+        now.new_from_future_pos(pos, dt)
+        
+        
+        
     }
 }

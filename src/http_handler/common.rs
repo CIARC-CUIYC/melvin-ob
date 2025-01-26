@@ -1,6 +1,7 @@
 use super::http_request::request_common::RequestError;
 use super::http_response::response_common::ResponseError;
 use strum_macros::Display;
+use crate::flight_control::common::vec2d::Vec2D;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug)]
 pub struct ZonedObjective {
@@ -20,15 +21,25 @@ pub struct ZonedObjective {
 }
 
 impl ZonedObjective {
-    fn id(&self) -> usize { self.id }
-    fn name(&self) -> &str { &self.name }
-    fn decrease_rate(&self) -> i64 { self.decrease_rate }
-    fn is_enabled(&self) -> bool { self.enabled }
-    fn zone(&self) -> &[i32; 4] { &self.zone }
-    fn optic_required(&self) -> &str { &self.optic_required }
-    fn coverage_required(&self) -> usize { self.coverage_required }
-    fn sprite(&self) -> &str { &self.sprite }
-    fn is_secret(&self) -> bool { self.secret }
+    pub fn id(&self) -> usize { self.id }
+    pub fn end(&self) -> chrono::DateTime<chrono::Utc> { self.end }
+    pub fn name(&self) -> &str { &self.name }
+    pub fn decrease_rate(&self) -> i64 { self.decrease_rate }
+    pub fn is_enabled(&self) -> bool { self.enabled }
+    pub fn zone(&self) -> &[i32; 4] { &self.zone }
+    pub fn optic_required(&self) -> &str { &self.optic_required }
+    pub fn coverage_required(&self) -> usize { self.coverage_required }
+    pub fn sprite(&self) -> &str { &self.sprite }
+    pub fn is_secret(&self) -> bool { self.secret }
+
+    pub fn get_imaging_points(&self) -> Vec<Vec2D<f32>> {
+        // TODO: this has to be adapted for multiple imaging points later
+        let x_size = self.zone[2] - self.zone[0];
+        let y_size = self.zone[3] - self.zone[1];
+        let pos = Vec2D::new(self.zone[0] + x_size, self.zone[1] + y_size);
+        let pos_f32 = pos.cast::<f32>().wrap_around_map();
+        vec![pos_f32]
+    }
 }
 
 impl Timed for ZonedObjective {

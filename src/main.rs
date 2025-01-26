@@ -165,7 +165,7 @@ async fn main() {
         if let Some(phase) = acq_phase {
             phase.1.notify_one();
             phase.0.await.ok();
-            let ranges = phase.2.get_range_to_now();
+            let ranges = phase.2.get_ranges_to_now();
             let c_orbit_lock_clone = Arc::clone(&c_orbit_lock);
             print!("[INFO] Marking done: {} - {}", ranges[0].0, ranges[0].1);
             if let Some(r) = ranges.get(1) {
@@ -174,9 +174,9 @@ async fn main() {
             println!();
             tokio::spawn(async move {
                 let mut c_orbit = c_orbit_lock_clone.lock().await;
-                ranges.iter().for_each(|(start, end)| {
+                for (start, end) in &ranges {
                     c_orbit.mark_done(*start, *end);
-                });                    
+                }                    
             });
         }
 
@@ -210,7 +210,7 @@ async fn main() {
                 )
                 .await;
                 acq_phase.0.await.ok();
-                let ranges = acq_phase.2.get_range_to_now();
+                let ranges = acq_phase.2.get_ranges_to_now();
                 let c_orbit_lock_clone = Arc::clone(&c_orbit_lock);
                 print!("[INFO] Marking done: {} - {}", ranges[0].0, ranges[0].1);
                 if let Some(r) = ranges.get(1) {
@@ -219,9 +219,9 @@ async fn main() {
                 println!();
                 tokio::spawn(async move {
                     let mut c_orbit = c_orbit_lock_clone.lock().await;
-                    ranges.iter().for_each(|(start, end)| {
+                    for (start, end) in &ranges {
                         c_orbit.mark_done(*start, *end);
-                    });
+                    }
                 });
             } else if current_state == FlightState::Charge && due_time > DT_0 {
                 let task_due = task.dt().time_left();

@@ -1,12 +1,18 @@
-use crate::flight_control::common::pinned_dt::PinnedTimeDelay;
-use crate::flight_control::flight_computer::FlightComputer;
-use crate::flight_control::flight_state::FlightState;
-use crate::flight_control::task::base_task::Task;
-use crate::flight_control::{common::linked_box::LinkedBox, orbit::closed_orbit::ClosedOrbit};
+use crate::flight_control::orbit::index::IndexedOrbitPosition;
+use crate::flight_control::{
+    common::{linked_box::LinkedBox, pinned_dt::PinnedTimeDelay},
+    flight_computer::FlightComputer,
+    flight_state::FlightState,
+    orbit::closed_orbit::ClosedOrbit,
+    task::base_task::Task,
+};
+use crate::http_handler::ZonedObjective;
 use crate::{MAX_BATTERY_THRESHOLD, MIN_BATTERY_THRESHOLD};
 use chrono::Duration;
-use std::collections::VecDeque;
-use std::sync::{Arc, Condvar};
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Condvar},
+};
 use tokio::sync::{Mutex, RwLock};
 
 /// `TaskController` manages and schedules image capture tasks for a satellite.
@@ -48,6 +54,8 @@ impl TaskController {
     const MAX_ORBIT_PREDICTION_SECS: u32 = 80000;
     const BATTERY_RESOLUTION: f32 = 0.1;
     const TIME_RESOLUTION: f32 = 1.0;
+    const OBJECTIVE_SCHEDULE_MIN_DT: usize = 200;
+    const OBJECTIVE_MIN_RETRIEVAL_TOL: usize = 100;
 
     /// Creates a new instance of the `TaskController` struct.
     ///
@@ -131,6 +139,37 @@ impl TaskController {
         OptimalOrbitResult {
             decisions: decision_buffer,
             coverage_slice: max_cov_buffer,
+        }
+    }
+
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    pub async fn schedule_single_zone_objective(
+        &mut self,
+        orbit_lock: Arc<Mutex<ClosedOrbit>>,
+        curr_i: IndexedOrbitPosition,
+        f_cont_lock: Arc<RwLock<FlightComputer>>,
+        objective: ZonedObjective,
+    ) {
+        let computation_start = chrono::Utc::now();
+        let time_left = objective.end() - chrono::Utc::now();
+        let max_dt = {
+            let max = usize::try_from(time_left.num_seconds()).unwrap_or(0);
+            max - Self::OBJECTIVE_MIN_RETRIEVAL_TOL
+        };
+        let target_pos = objective.get_imaging_points()[0];
+        let (due_i, step_size) = {
+            let f_cont = f_cont_lock.read().await;
+            (f_cont.pos_in_dt(curr_i, time_left), f_cont.current_vel())
+        };
+        let step_abs = step_size.abs();
+        
+        for dt in (Self::OBJECTIVE_SCHEDULE_MIN_DT..max_dt).rev() {
+            let pos = (curr_i.pos() + step_size * dt).wrap_around_map();
+            let direction_vec = pos.unwrapped_to(&target_pos);
+            let pos_to_target_min_dt = (direction_vec.abs()/step_abs).abs().round() as usize;
+            if pos_to_target_min_dt + dt >= max_dt { continue; };
+            
+            
         }
     }
 
