@@ -198,6 +198,14 @@ async fn main() {
                     cycle_param,
                 );
                 acq_phase.0.await.ok();
+                let start_index = acq_phase.2 .1;
+                let mut end_index = start_index + (chrono::Utc::now() - acq_phase.2 .0).num_seconds() as usize;
+                end_index = end_index - (end_index % orbit_full_period as usize);
+                let c_orbit_lock_clone = Arc::clone(&c_orbit_lock);
+                tokio::spawn(async move {
+                    let mut c_orbit = c_orbit_lock_clone.lock().await;
+                    c_orbit.mark_done(start_index, end_index);
+                });
             } else if current_state == FlightState::Charge && due_time > DT_0 {
                 let task_due = task.dt().time_left();
                 FlightComputer::wait_for_duration(task_due.to_std().unwrap()).await;

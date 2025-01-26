@@ -449,11 +449,9 @@ impl CameraController {
             let f_cont_lock_clone = Arc::clone(&f_cont_lock);
             let pic_count_lock_clone = Arc::clone(&pic_count_lock);
             let self_clone = Arc::clone(&self);
+            let img_init_timestamp = chrono::Utc::now();
             let img_handle = tokio::spawn(async move {
-                match self_clone
-                    .shoot_image_to_buffer(Arc::clone(&f_cont_lock_clone), lens)
-                    .await
-                {
+                match self_clone.shoot_image_to_buffer(Arc::clone(&f_cont_lock_clone), lens).await {
                     Ok(offset) => {
                         let pic_num = {
                             let mut lock = pic_count_lock_clone.lock().await;
@@ -461,8 +459,9 @@ impl CameraController {
                             *lock
                         };
                         println!(
-                            "[INFO] Took {pic_num}. picture in cycle at {}",
-                            chrono::Utc::now().format("%d %H:%M:%S")
+                            "[INFO] Took {pic_num}. picture in cycle at {}. Processed for {} s.",
+                            img_init_timestamp.format("%d. %H:%M:%S"),
+                            (chrono::Utc::now() - img_init_timestamp).num_seconds()
                         );
                         Some(offset)
                     }
@@ -472,7 +471,7 @@ impl CameraController {
                     }
                 }
             });
-            
+
             let next_img_due = {
                 let next_max_dt =
                     chrono::Utc::now() + chrono::TimeDelta::seconds(image_max_dt as i64);
@@ -483,7 +482,7 @@ impl CameraController {
                     next_max_dt
                 }
             };
-            
+
             let offset = img_handle.await;
             if let Some(offset) = offset.ok().flatten() {
                 console_messenger.send_thumbnail(offset, lens);
