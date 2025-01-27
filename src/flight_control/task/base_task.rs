@@ -4,19 +4,21 @@ use crate::flight_control::camera_state::CameraAngle;
 use crate::flight_control::common::pinned_dt::PinnedTimeDelay;
 use crate::flight_control::common::vec2d::Vec2D;
 use crate::flight_control::flight_state::FlightState;
+use crate::flight_control::task::vel_change_task::{VelocityChangeTask, VelocityChangeType};
 use std::fmt::{Display, Formatter};
 use strum_macros::Display;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct Task {
     task_type: BaseTask,
     dt: PinnedTimeDelay,
 }
 
-#[derive(Display, Debug, Copy, Clone)]
+#[derive(Display, Debug)]
 pub enum BaseTask {
     TASKImageTask(ImageTask),
     TASKSwitchState(SwitchStateTask),
+    TASKChangeVelocity(VelocityChangeTask),
 }
 
 impl Display for Task {
@@ -24,6 +26,12 @@ impl Display for Task {
         let task_type_str = match &self.task_type {
             BaseTask::TASKImageTask(_) => "Image Task",
             BaseTask::TASKSwitchState(task) => &*format!("Switch to {}", task.target_state()),
+            BaseTask::TASKChangeVelocity(task) => match task.vel_change() {
+                VelocityChangeType::AtomicVelChange(ch) => &*format!("Atomic vel change to {ch}."),
+                VelocityChangeType::SequentialVelChange(ch) => {
+                    &*format!("Atomic vel change to {}.", ch.last().unwrap())
+                }
+            },
         };
         let end = self.dt.get_end().format("%d %H:%M:%S").to_string();
         write!(f, "Due: {end}, Task: {task_type_str}")
@@ -48,6 +56,13 @@ impl Task {
         }
     }
 
+    pub fn vel_change_task(vel_change: VelocityChangeType, dt: PinnedTimeDelay) -> Self {
+        Self {
+            task_type: BaseTask::TASKChangeVelocity(VelocityChangeTask::new(vel_change)),
+            dt,
+        }
+    }
+
     /// Returns a mutable reference to the task's time delay.
     ///
     /// # Returns
@@ -60,5 +75,5 @@ impl Task {
     /// - An immutable reference to `PinnedTimeDelay`.
     pub fn dt(&self) -> &PinnedTimeDelay { &self.dt }
 
-    pub fn task_type(&self) -> BaseTask { self.task_type }
+    pub fn task_type(&self) -> &BaseTask { &self.task_type }
 }

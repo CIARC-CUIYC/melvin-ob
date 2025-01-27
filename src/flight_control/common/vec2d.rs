@@ -1,5 +1,6 @@
 use num::traits::{real::Real, Num, NumAssignOps, NumCast};
 use std::cmp::Ordering;
+use std::fmt::Display;
 use std::ops::{Add, Deref, Div, Mul, Sub};
 
 /// A 2D vector generic over any numeric type.
@@ -36,6 +37,14 @@ impl<T, const X: u32, const Y: u32> Deref for Wrapped2D<T, X, Y> {
     type Target = Vec2D<T>;
 
     fn deref(&self) -> &Self::Target { &self.0 }
+}
+
+impl<T> Display for Vec2D<T>
+where T: Display
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{}, {}]", self.x, self.y)
+    }
 }
 
 impl<T> Vec2D<T>
