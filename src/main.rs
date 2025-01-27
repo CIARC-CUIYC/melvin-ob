@@ -1,4 +1,10 @@
 #![allow(dead_code, unused)]
+#![warn(
+    clippy::shadow_reuse,
+    clippy::shadow_same,
+    clippy::builtin_type_shadow
+)]
+
 mod console_communication;
 mod flight_control;
 mod http_handler;
@@ -22,7 +28,7 @@ use crate::http_handler::{
     http_client::HTTPClient,
     http_request::{observation_get::ObservationRequest, request_common::NoBodyHTTPRequestType},
 };
-use chrono::{DateTime, TimeDelta};
+use chrono::DateTime;
 use csv::Writer;
 use std::{env, fs::OpenOptions, io::Write, sync::Arc};
 use tokio::{
@@ -30,7 +36,7 @@ use tokio::{
     task::JoinHandle,
 };
 
-const DT_0: TimeDelta = TimeDelta::seconds(0);
+const DT_0: chrono::TimeDelta = chrono::TimeDelta::seconds(0);
 
 const STATIC_ORBIT_VEL: (f32, f32) = (6.4f32, 7.4f32);
 pub const MIN_BATTERY_THRESHOLD: f32 = 10.0;
@@ -40,7 +46,12 @@ const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 const POS_FILEPATH: &str = "pos.csv";
 const BIN_FILEPATH: &str = "camera_controller_narrow.bin";
 
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::too_many_lines)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::too_many_lines,
+    clippy::cast_precision_loss
+)]
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
     let base_url_var = env::var("DRS_BASE_URL");
@@ -94,7 +105,7 @@ async fn main() {
                         expected_pos.y().to_string(),
                         diff.x().to_string(),
                         diff.y().to_string(),
-                        current_state_str
+                        current_state_str,
                     ])
                     .unwrap();
                     last_pos = expected_pos;
@@ -120,7 +131,7 @@ async fn main() {
 
     let img_dt = c_orbit.max_image_dt();
     let orbit_s_end = c_orbit.base_orbit_ref().start_timestamp()
-        + chrono::Duration::seconds(c_orbit.period().0 as i64);
+        + chrono::TimeDelta::seconds(c_orbit.period().0 as i64);
     let orbit_full_period = c_orbit.period().0 as usize;
     // TODO: this must be created dynamically in the loop at some time
     let i_entry = IndexedOrbitPosition::new(0, orbit_full_period, {
@@ -144,7 +155,7 @@ async fn main() {
         let current_state = f_cont_lock.read().await.state();
 
         let acq_phase = if current_state == FlightState::Acquisition {
-            let end_time = chrono::Utc::now() + chrono::Duration::seconds(10000);
+            let end_time = chrono::Utc::now() + chrono::TimeDelta::seconds(10000);
             Some(
                 handle_acquisition(
                     &f_cont_lock,
@@ -176,7 +187,7 @@ async fn main() {
                 let mut c_orbit = c_orbit_lock_clone.lock().await;
                 for (start, end) in &ranges {
                     c_orbit.mark_done(*start, *end);
-                }                    
+                }
             });
         }
 

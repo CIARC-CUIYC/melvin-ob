@@ -106,7 +106,7 @@ trait Timed {
     fn start(&self) -> chrono::DateTime<chrono::Utc>;
     fn end(&self) -> chrono::DateTime<chrono::Utc>;
 
-    fn time_to_start(&self) -> Option<chrono::Duration> {
+    fn time_to_start(&self) -> Option<chrono::TimeDelta> {
         let now = chrono::Utc::now();
         if now < self.start() {
             Some(self.start() - now)
@@ -115,7 +115,7 @@ trait Timed {
         }
     }
 
-    fn time_to_end(&self) -> Option<chrono::Duration> {
+    fn time_to_end(&self) -> Option<chrono::TimeDelta> {
         let now = chrono::Utc::now();
         if now < self.end() {
             Some(self.end() - now)

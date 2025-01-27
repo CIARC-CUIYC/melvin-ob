@@ -178,7 +178,7 @@ impl CameraController {
         self.map_image.read().await.coverage.data.clone()
     }
 
-    #[allow(clippy::cast_sign_loss)]
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
     fn score_offset(
         decoded_image: &RgbImage,
         base: &MapImage,
@@ -221,7 +221,7 @@ impl CameraController {
         best_additional_offset
     }
 
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
     pub async fn shoot_image_to_buffer(
         &self,
         f_cont_locked: Arc<RwLock<FlightComputer>>,

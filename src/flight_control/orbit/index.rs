@@ -42,7 +42,7 @@ impl IndexedOrbitPosition {
         }
     }
 
-    pub fn new_from_future_pos(&self, pos: Vec2D<f32>, dt: chrono::Duration) -> Self {
+    pub fn new_from_future_pos(&self, pos: Vec2D<f32>, dt: chrono::TimeDelta) -> Self {
         Self {
             t: self.t + dt,
             index: self.index_then(dt),
@@ -56,7 +56,8 @@ impl IndexedOrbitPosition {
         (self.index + (chrono::Utc::now() - self.t).num_seconds() as usize) % self.period
     }
 
-    fn index_then(&self, dt: chrono::Duration) -> usize {
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+    fn index_then(&self, dt: chrono::TimeDelta) -> usize {
         (self.index + dt.num_seconds() as usize) % self.period 
     }
 }

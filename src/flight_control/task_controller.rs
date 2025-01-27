@@ -1,3 +1,5 @@
+use crate::flight_control::common::math;
+use crate::flight_control::common::vec2d::Vec2D;
 use crate::flight_control::orbit::index::IndexedOrbitPosition;
 use crate::flight_control::{
     common::{linked_box::LinkedBox, pinned_dt::PinnedTimeDelay},
@@ -8,7 +10,6 @@ use crate::flight_control::{
 };
 use crate::http_handler::ZonedObjective;
 use crate::{MAX_BATTERY_THRESHOLD, MIN_BATTERY_THRESHOLD};
-use chrono::Duration;
 use std::{
     collections::VecDeque,
     sync::{Arc, Condvar},
@@ -56,6 +57,8 @@ impl TaskController {
     const TIME_RESOLUTION: f32 = 1.0;
     const OBJECTIVE_SCHEDULE_MIN_DT: usize = 200;
     const OBJECTIVE_MIN_RETRIEVAL_TOL: usize = 100;
+    const OFF_ORBIT_DT_WEIGHT: f32 = 2.0;
+    const FUEL_CONSUMPTION_WEIGHT: f32 = 1.0;
 
     /// Creates a new instance of the `TaskController` struct.
     ///
@@ -85,6 +88,7 @@ impl TaskController {
             .skip(orbit.period().0 as usize - prediction_secs);
 
         // initiate buffers
+        // TODO: optimize vecs with custom indexed struct in one dimension (Cache optimization)
         let cov_dt_temp =
             vec![vec![0u16; 2].into_boxed_slice(); max_battery + 1].into_boxed_slice();
         let mut decision_buffer =
@@ -142,38 +146,126 @@ impl TaskController {
         }
     }
 
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    pub async fn schedule_single_zone_objective(
-        &mut self,
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
+        clippy::cast_possible_wrap
+    )]
+    pub async fn calculate_single_point_maneuver(
         orbit_lock: Arc<Mutex<ClosedOrbit>>,
         curr_i: IndexedOrbitPosition,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
-        objective: ZonedObjective,
+        target_pos: Vec2D<f32>,
+        target_end_time: chrono::DateTime<chrono::Utc>,
     ) {
         let computation_start = chrono::Utc::now();
-        let time_left = objective.end() - chrono::Utc::now();
+        let time_left = target_end_time - chrono::Utc::now();
         let max_dt = {
             let max = usize::try_from(time_left.num_seconds()).unwrap_or(0);
             max - Self::OBJECTIVE_MIN_RETRIEVAL_TOL
         };
-        let target_pos = objective.get_imaging_points()[0];
-        let (due_i, step_size) = {
+        let (due_i, orbit_vel) = {
             let f_cont = f_cont_lock.read().await;
             (f_cont.pos_in_dt(curr_i, time_left), f_cont.current_vel())
         };
-        let step_abs = step_size.abs();
-        
+        let max_off_orbit_t = max_dt - Self::OBJECTIVE_SCHEDULE_MIN_DT;
+
+        // TODO: precalculate possible velocity changes
+        let turns_handle =
+            tokio::spawn(async move { FlightComputer::compute_possible_turns(orbit_vel) });
+
+        let orbit_vel_abs = orbit_vel.abs();
+        let mut last_possible_dt = 0;
         for dt in (Self::OBJECTIVE_SCHEDULE_MIN_DT..max_dt).rev() {
-            let pos = (curr_i.pos() + step_size * dt).wrap_around_map();
+            let pos = (curr_i.pos() + orbit_vel * dt).wrap_around_map();
+            let to_target = pos.unwrapped_to(&target_pos);
+            let min_dt = (to_target.abs() / orbit_vel_abs).abs().round() as usize;
+
+            if min_dt + dt < max_dt {
+                last_possible_dt = dt;
+                break;
+            }
+        }
+
+        let remaining_range = (Self::OBJECTIVE_SCHEDULE_MIN_DT..=last_possible_dt);
+        let offset = *remaining_range.start();
+        let mut possible_orbit_changes = vec![None; remaining_range.end() - offset];
+
+        let turns = turns_handle.await.unwrap();
+        for dt in remaining_range.rev() {
+            let pos = (curr_i.pos() + orbit_vel * dt).wrap_around_map();
+            let maneuver_start =
+                curr_i.new_from_future_pos(pos, chrono::TimeDelta::seconds(dt as i64));
             let direction_vec = pos.unwrapped_to(&target_pos);
-            let pos_to_target_min_dt = (direction_vec.abs()/step_abs).abs().round() as usize;
-            if pos_to_target_min_dt + dt >= max_dt { continue; };
-            
-            
+            let to_target = (direction_vec.abs() / orbit_vel_abs).abs().round() as usize;
+
+            let (turns_in_dir, break_cond) = {
+                if direction_vec.is_clockwise_to(&orbit_vel).unwrap_or(false) {
+                    (&turns.0, false)
+                } else {
+                    (&turns.1, true)
+                }
+            };
+
+            let mut add_dt = 0;
+            let mut fin_sequence: Vec<(Vec2D<f32>, Vec2D<f32>)> = Vec::new();
+            let mut fin_angle_dev = 0.0;
+            let mut fin_dt = 0;
+            let max_add_dt = turns_in_dir.len();
+
+            'inner: for atomic_turn in turns_in_dir {
+                let next_pos = pos + atomic_turn.0;
+                let next_vel = atomic_turn.1;
+
+                let next_to_target = next_pos.unwrapped_to(&target_pos);
+                let min_dt = (next_to_target.abs() / next_vel.abs()).abs().round() as usize;
+
+                if min_dt + dt + add_dt > max_dt {
+                    break 'inner;
+                }
+
+                if direction_vec.is_clockwise_to(&next_vel).unwrap_or(break_cond) == break_cond {
+                    let (last_pos, last_vel) = fin_sequence.last().unwrap();
+                    (fin_dt, fin_angle_dev) = {
+                        let last_angle_deviation = last_vel.angle_to(&next_to_target);
+                        let this_angle_deviation = next_vel.angle_to(&next_to_target);
+                        if last_angle_deviation > this_angle_deviation {
+                            fin_sequence.push((next_pos, next_vel));
+                            (min_dt + dt + add_dt, this_angle_deviation)
+                        } else {
+                            let last_to_target = last_pos.unwrapped_to(&target_pos);
+                            let last_min_dt =
+                                (last_to_target.abs() / last_vel.abs()).abs().round() as usize;
+                            (last_min_dt + dt + add_dt, last_angle_deviation)
+                        }
+                    };
+                } else {
+                    fin_sequence.push((next_pos, next_vel));
+                    add_dt += 1;
+                }
+            }
+            possible_orbit_changes[dt - offset] =
+                (Some((dt, fin_dt, add_dt, fin_angle_dev, fin_sequence)));
+            let normalized_fuel_consumption = math::normalize_f32(
+                add_dt as f32 * FlightComputer::FUEL_CONST,
+                0.0,
+                max_add_dt as f32 * FlightComputer::FUEL_CONST,
+            )
+            .unwrap();
+            let normalized_off_orbit_t =
+                math::normalize_f32((fin_dt - dt) as f32, 0.0, max_off_orbit_t as f32).unwrap();
+            let orbit_score = Self::OFF_ORBIT_DT_WEIGHT * normalized_off_orbit_t
+                + Self::FUEL_CONSUMPTION_WEIGHT * normalized_fuel_consumption;
         }
     }
 
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
+        clippy::cast_possible_wrap
+    )]
     pub async fn schedule_optimal_orbit(
         &mut self,
         orbit_lock: Arc<Mutex<ClosedOrbit>>,
@@ -224,13 +316,13 @@ impl TaskController {
                     dt += 1;
                 }
                 AtomicDecision::SwitchToCharge => {
-                    let sched_t = computation_start + Duration::seconds(dt as i64);
+                    let sched_t = computation_start + chrono::TimeDelta::seconds(dt as i64);
                     self.schedule_switch(FlightState::Charge, sched_t).await;
                     state = 0;
                     dt = (dt + 180).min(pred_secs);
                 }
                 AtomicDecision::SwitchToAcquisition => {
-                    let sched_t = computation_start + Duration::seconds(dt as i64);
+                    let sched_t = computation_start + chrono::TimeDelta::seconds(dt as i64);
                     self.schedule_switch(FlightState::Acquisition, sched_t).await;
                     state = 1;
                     dt = (dt + 180).min(pred_secs);

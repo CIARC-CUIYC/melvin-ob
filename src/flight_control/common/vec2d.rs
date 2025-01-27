@@ -57,7 +57,7 @@ where T: Real + NumCast + NumAssignOps
     /// # Returns
     /// A new vector representing the direction from `self` to `other`.
     pub fn to(&self, other: &Vec2D<T>) -> Vec2D<T> {
-        Vec2D::new(other.x - self.x, other.y - self.y)
+        Vec2D::new(self.x - other.x, self.y - other.y)
     }
 
     pub fn unwrapped_to(&self, other: &Vec2D<T>) -> Vec2D<f32> {
@@ -69,11 +69,66 @@ where T: Real + NumCast + NumAssignOps
                     other.y + Self::map_size().y() * T::from(y_sign).unwrap(),
                 )
                 .cast();
-                let target_abs = target.abs();
-                options.push((target, target_abs));
+                let to_target = self.cast().to(&target);
+                let to_target_abs = to_target.abs();
+                options.push((to_target, to_target_abs));
             }
         }
         options.iter().min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Less)).unwrap().0
+    }
+
+    pub fn perp_unit_to(&self, other: &Vec2D<T>) -> Vec2D<T> {
+        match self.is_clockwise_to(other) {
+            Some(dir) => self.perp_unit(dir),
+            None => Vec2D::zero(),
+        }
+    }
+
+    pub fn perp_unit(&self, clockwise: bool) -> Vec2D<T> {
+        let perp =
+            if clockwise { Vec2D::new(-self.x, self.y) } else { Vec2D::new(self.x, -self.y) };
+        perp.normalize()
+    }
+
+    pub fn is_clockwise_to(&self, other: &Vec2D<T>) -> Option<bool> {
+        let cross: f32 = self.cast().cross(other.cast());
+        if cross > 0.0 {
+            // Counterclockwise
+            Some(false)
+        } else if cross < 0.0 {
+            // Clockwise
+            Some(true)
+        } else {
+            // Aligned or opposite
+            None
+        }
+    }
+
+    pub fn unit(&self) -> Vec2D<T> {
+        let magnitude = self.abs();
+        if magnitude.is_zero() {
+            *self
+        } else {
+            *self / magnitude
+        }
+    }
+
+    pub fn angle_to(&self, other: &Vec2D<T>) -> f32 {
+        let self_cast: Vec2D<f32> = self.cast();
+        let other_cast: Vec2D<f32> = other.cast();
+
+        let dot: f32 = self_cast.dot(other_cast);
+
+        let a_abs: f32 = self_cast.abs();
+        let b_abs: f32 = other_cast.abs();
+
+        if a_abs == 0.0 || b_abs == 0.0 {
+            return 0.0;
+        }
+        let cos_theta = dot / (a_abs * b_abs);
+        let clamped_cos_theta = cos_theta.clamp(-1.0, 1.0);
+        let angle_radians = clamped_cos_theta.acos();
+        angle_radians * 180.0 / std::f32::consts::PI
     }
 
     /// Normalizes the vector to have a magnitude of 1.
@@ -151,6 +206,8 @@ impl<T: Num + NumCast + Copy> Vec2D<T> {
     /// # Returns
     /// A scalar value of type `T` that represents the dot product of the two vectors.
     pub fn dot(self, other: Vec2D<T>) -> T { self.x * other.x + self.y * other.y }
+
+    pub fn cross(self, other: Vec2D<T>) -> T { self.x * other.y - self.y * other.x }
 
     /// Computes the Euclidean distance between the current vector and another vector as an `f64`.
     /// This enables Euclidean distance calculation for integer type `T`.

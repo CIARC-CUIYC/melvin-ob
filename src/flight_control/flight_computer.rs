@@ -12,11 +12,12 @@ use crate::http_handler::{
         reset_get::ResetRequest,
     },
 };
-use chrono::TimeDelta;
 use std::{sync::Arc, time::Duration};
 use std::ops::Index;
 use tokio::sync::RwLock;
 use crate::flight_control::orbit::index::IndexedOrbitPosition;
+
+type TurnsClockCClockTup = (Vec<(Vec2D<f32>, Vec2D<f32>)>, Vec<(Vec2D<f32>, Vec2D<f32>)>);
 
 /// Represents the core flight computer for satellite control.
 /// It manages operations such as state changes, velocity updates,
@@ -65,12 +66,14 @@ pub struct FlightComputer {
 
 pub enum ChargeCommand {
     TargetCharge(f32),
-    Duration(chrono::Duration),
+    Duration(chrono::TimeDelta),
 }
 
 impl FlightComputer {
-    /// Acceleration factor for calculations involving velocity and state transitions.
-    const ACC_CONST: f32 = 0.02;
+    /// Constant acceleration in target velocity vector direction
+    pub const ACC_CONST: f32 = 0.02;
+    /// Constant fuel consumption per accelerating second
+    pub const FUEL_CONST: f32 = 0.03;
     /// Maximum decimal places that are used in the observation endpoint for velocity
     const VEL_BE_MAX_DECIMAL: u8 = 2;
     /// Constant timeout for the `wait_for_condition`-method
@@ -105,6 +108,53 @@ impl FlightComputer {
         };
         return_controller.update_observation().await;
         return_controller
+    }
+    
+    pub fn trunc_vel(vel: Vec2D<f32>) -> Vec2D<f32> {
+        let factor = 10f32.powi(i32::from(Self::VEL_BE_MAX_DECIMAL));
+        Vec2D::new(
+            (vel.x() * factor).floor() / factor, 
+            (vel.y() * factor).floor() / factor
+        )
+    }
+    
+    pub fn compute_possible_turns(init_vel: Vec2D<f32>) -> TurnsClockCClockTup {
+        let init_vel_clock_unit = init_vel.perp_unit(true);
+        let init_vel_c_clock_unit = init_vel.perp_unit(false);
+
+        let mut acc_clock = init_vel_clock_unit * FlightComputer::ACC_CONST;
+        let mut acc_c_clock = init_vel_c_clock_unit * FlightComputer::ACC_CONST;
+        let mut vel_clock = FlightComputer::trunc_vel(init_vel + acc_clock);
+        let mut vel_c_clock = FlightComputer::trunc_vel(init_vel + acc_c_clock);
+
+
+        let mut pos_clock: Vec2D<f32> = Vec2D::zero();
+        let mut pos_c_clock: Vec2D<f32> = Vec2D::zero();
+
+        let mut pos_vel_clock = vec![(pos_clock, vel_clock)];
+        let mut pos_vel_c_clock = vec![(pos_c_clock, vel_c_clock)];
+
+        while !vel_clock.is_clockwise_to(&init_vel_c_clock_unit).unwrap_or(false){
+            (pos_clock, vel_clock) = *pos_vel_clock.last().unwrap();
+            pos_clock = pos_clock + vel_clock;
+
+            acc_clock = vel_clock.perp_unit(true) * FlightComputer::ACC_CONST;
+            vel_clock = FlightComputer::trunc_vel(vel_clock + acc_clock);
+
+            pos_vel_clock.push((pos_clock, vel_clock));
+        }
+
+        while vel_c_clock.is_clockwise_to(&init_vel_c_clock_unit).unwrap_or(false){
+            (pos_c_clock, vel_c_clock) = *pos_vel_c_clock.last().unwrap();
+            pos_c_clock = pos_c_clock + vel_c_clock;
+
+            acc_c_clock = vel_c_clock.perp_unit(true) * FlightComputer::ACC_CONST;
+            vel_c_clock = FlightComputer::trunc_vel(vel_c_clock + acc_c_clock);
+
+            pos_vel_c_clock.push((pos_c_clock, vel_c_clock));
+        }
+
+        (pos_vel_clock, pos_vel_c_clock)
     }
 
     /// Retrieves the current position of the satellite.
@@ -388,7 +438,7 @@ impl FlightComputer {
     ///
     /// # Returns
     /// - A `Vec2D<f32>` representing the satellite’s predicted position.
-    pub fn pos_in_dt(&self, now: IndexedOrbitPosition, dt: TimeDelta) -> IndexedOrbitPosition {
+    pub fn pos_in_dt(&self, now: IndexedOrbitPosition, dt: chrono::TimeDelta) -> IndexedOrbitPosition {
         let pos = 
             self.current_pos + (self.current_vel * dt.num_seconds()).wrap_around_map();
         now.new_from_future_pos(pos, dt)
