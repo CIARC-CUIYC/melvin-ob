@@ -401,3 +401,16 @@ impl<T: Num + NumCast> From<(T, T)> for Vec2D<T> {
         }
     }
 }
+
+impl<T: Num + NumCast + Copy> From<Vec2D<T>> for (T, T) {
+    /// Creates a tuple from a `Vec2D` of (x, y) values.
+    ///
+    /// # Arguments
+    /// * `tuple` - A tuple representing the x and y values.
+    ///
+    /// # Returns
+    /// A new `Vec2D` created from the tuple.
+    fn from(vec: Vec2D<T>) -> Self {
+        (vec.x(), vec.y())
+    }
+}

@@ -10,6 +10,7 @@ use crate::flight_control::{
 };
 use crate::http_handler::ZonedObjective;
 use crate::{MAX_BATTERY_THRESHOLD, MIN_BATTERY_THRESHOLD};
+use num::traits::float::FloatCore;
 use std::{
     collections::VecDeque,
     sync::{Arc, Condvar},
@@ -59,6 +60,10 @@ impl TaskController {
     const OBJECTIVE_MIN_RETRIEVAL_TOL: usize = 100;
     const OFF_ORBIT_DT_WEIGHT: f32 = 2.0;
     const FUEL_CONSUMPTION_WEIGHT: f32 = 1.0;
+    /// Default magin number for the initialization of min_maneuver_time
+    const DEF_MAX_MANEUVER_TIME: i64 = 1_000_000_000;
+    /// Maximum absolute deviation after correction burn
+    const MAX_AFTER_CB_DEV: f32 = 1.0;
 
     /// Creates a new instance of the `TaskController` struct.
     ///
@@ -146,6 +151,66 @@ impl TaskController {
         }
     }
 
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn calculate_orbit_correction_burn(
+        initial_vel: Vec2D<f32>,
+        deviation: Vec2D<f32>,
+        due: PinnedTimeDelay,
+    ) -> (Vec<Vec2D<f32>>, i64, Vec2D<f32>) {
+        let is_clockwise = initial_vel.is_clockwise_to(&deviation).unwrap_or(false);
+
+        let min_maneuver_time = chrono::TimeDelta::seconds(Self::DEF_MAX_MANEUVER_TIME);
+        let mut max_acc_secs = 1;
+        let mut best_maneuver = Vec::new();
+        let mut best_min_dev = Vec2D::new(f32::infinity(), f32::infinity());
+        let mut best_vel_hold_dt = 0;
+        let mut last_vel = initial_vel;
+        while min_maneuver_time > due.time_left() {
+            let mut res_vel_diff = Vec2D::<f32>::zero();
+            let mut remaining_deviation = deviation;
+            let mut current_maneuver = Vec::new();
+            for acc_secs in 0..max_acc_secs {
+                let perp_acc = last_vel.perp_unit(is_clockwise) * FlightComputer::ACC_CONST;
+                let new_vel = FlightComputer::trunc_vel(last_vel + perp_acc);
+                current_maneuver.push(new_vel);
+                let vel_diff = new_vel - last_vel;
+                res_vel_diff = res_vel_diff + vel_diff;
+                remaining_deviation = remaining_deviation - res_vel_diff * 2;
+                last_vel = new_vel;
+            }
+
+            let x_vel_hold_dt = (remaining_deviation.x() / res_vel_diff.x()).floor();
+            let y_vel_hold_dt = (remaining_deviation.y() / res_vel_diff.y()).floor();
+            let min_vel_hold_dt = (x_vel_hold_dt.min(y_vel_hold_dt)) as i64;
+
+            if min_vel_hold_dt + max_acc_secs > due.time_left().num_seconds() {
+                continue;
+            }
+
+            let max_x_dev = (remaining_deviation - res_vel_diff * x_vel_hold_dt);
+            let max_y_dev = (remaining_deviation - res_vel_diff * y_vel_hold_dt);
+
+            let (min_t, res_dev) = math::find_min_y_for_x_range(
+                x_vel_hold_dt,
+                max_x_dev.into(),
+                y_vel_hold_dt,
+                max_y_dev.into(),
+            );
+            let res_dev_vec = Vec2D::from(res_dev);
+            let min_t_i64 = min_t.floor() as i64;
+            if best_min_dev.abs() > res_dev_vec.abs() {
+                best_min_dev = res_dev_vec;
+                best_maneuver = current_maneuver;
+                best_vel_hold_dt = min_t_i64;
+            }
+            if best_min_dev.abs() < Self::MAX_AFTER_CB_DEV {
+                break;
+            }
+            max_acc_secs += 1;
+        }
+        (best_maneuver, best_vel_hold_dt, best_min_dev)
+    }
+
     #[allow(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
@@ -194,11 +259,10 @@ impl TaskController {
 
         let turns = turns_handle.await.unwrap();
         for dt in remaining_range.rev() {
-            let pos = (curr_i.pos() + orbit_vel * dt).wrap_around_map();
+            let mut next_pos = (curr_i.pos() + orbit_vel * dt).wrap_around_map();
             let maneuver_start =
-                curr_i.new_from_future_pos(pos, chrono::TimeDelta::seconds(dt as i64));
-            let direction_vec = pos.unwrapped_to(&target_pos);
-            let to_target = (direction_vec.abs() / orbit_vel_abs).abs().round() as usize;
+                curr_i.new_from_future_pos(next_pos, chrono::TimeDelta::seconds(dt as i64));
+            let direction_vec = next_pos.unwrapped_to(&target_pos);
 
             let (turns_in_dir, break_cond) = {
                 if direction_vec.is_clockwise_to(&orbit_vel).unwrap_or(false) {
@@ -215,7 +279,7 @@ impl TaskController {
             let max_add_dt = turns_in_dir.len();
 
             'inner: for atomic_turn in turns_in_dir {
-                let next_pos = pos + atomic_turn.0;
+                next_pos = next_pos + atomic_turn.0;
                 let next_vel = atomic_turn.1;
 
                 let next_to_target = next_pos.unwrapped_to(&target_pos);
