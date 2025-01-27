@@ -10,7 +10,7 @@ pub struct VelocityChangeTask {
 #[derive(Debug)]
 pub enum VelocityChangeType {
     AtomicVelChange(Vec2D<f32>),
-    SequentialVelChange(Vec<Vec2D<f32>>),
+    SequentialVelChange(Box<[Vec2D<f32>]>),
 }
 
 impl VelocityChangeTask {

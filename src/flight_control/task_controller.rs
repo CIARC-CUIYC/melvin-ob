@@ -1,6 +1,7 @@
 use crate::flight_control::common::math;
 use crate::flight_control::common::vec2d::Vec2D;
 use crate::flight_control::orbit::index::IndexedOrbitPosition;
+use crate::flight_control::task::vel_change_task::VelocityChangeType;
 use crate::flight_control::{
     common::{linked_box::LinkedBox, pinned_dt::PinnedTimeDelay},
     flight_computer::FlightComputer,
@@ -421,6 +422,28 @@ impl TaskController {
         }
         let dt = PinnedTimeDelay::from_end(sched_t);
         self.task_schedule.lock().await.push_back(Task::switch_target(target, dt));
+    }
+
+    async fn schedule_vel_change(
+        &mut self,
+        vel: Box<[Vec2D<f32>]>,
+        sched_t: chrono::DateTime<chrono::Utc>,
+    ) {
+        if self.task_schedule.lock().await.is_empty() {
+            self.next_task_notify.notify_all();
+        }
+        let dt = PinnedTimeDelay::from_end(sched_t);
+        if vel.len() == 1 {
+            self.task_schedule.lock().await.push_back(Task::vel_change_task(
+                VelocityChangeType::AtomicVelChange(vel[0]),
+                dt,
+            ));
+        } else {
+            self.task_schedule.lock().await.push_back(Task::vel_change_task(
+                VelocityChangeType::SequentialVelChange(vel),
+                dt,
+            ));
+        }
     }
 
     /// Clears all pending tasks in the schedule.

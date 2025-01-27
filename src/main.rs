@@ -244,6 +244,9 @@ async fn main() {
                 BaseTask::TASKImageTask(_) => {
                     todo!()
                 }
+                BaseTask::TASKChangeVelocity(_) => {
+                    todo!()
+                }
                 BaseTask::TASKSwitchState(switch) => match switch.target_state() {
                     FlightState::Acquisition => {
                         FlightComputer::set_state_wait(&f_cont_lock, FlightState::Acquisition)
