@@ -436,7 +436,7 @@ impl CameraController {
     pub async fn execute_acquisition_cycle(
         self: Arc<Self>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
-        console_messenger: &ConsoleMessenger,
+        console_messenger: Arc<ConsoleMessenger>,
         end_time: chrono::DateTime<chrono::Utc>,
         last_img_kill: Arc<Notify>,
         image_max_dt: f32,
