@@ -1,10 +1,12 @@
 use super::image_task::ImageTask;
 use super::switch_state_task::SwitchStateTask;
-use crate::flight_control::camera_state::CameraAngle;
-use crate::flight_control::common::pinned_dt::PinnedTimeDelay;
-use crate::flight_control::common::vec2d::Vec2D;
-use crate::flight_control::flight_state::FlightState;
-use crate::flight_control::task::vel_change_task::{VelocityChangeTask, VelocityChangeType};
+use super::vel_change_task::VelocityChangeTask;
+use crate::flight_control::{
+    camera_state::CameraAngle,
+    common::{pinned_dt::PinnedTimeDelay, vec2d::Vec2D},
+    flight_state::FlightState,
+    orbit::burn_sequence::BurnSequence,
+};
 use std::fmt::{Display, Formatter};
 use strum_macros::Display;
 
@@ -26,12 +28,15 @@ impl Display for Task {
         let task_type_str = match &self.task_type {
             BaseTask::TakeImage(_) => "Image Task",
             BaseTask::SwitchState(task) => &*format!("Switch to {}", task.target_state()),
-            BaseTask::ChangeVelocity(task) => match task.vel_change() {
-                VelocityChangeType::AtomicVelChange(ch) => &*format!("Atomic vel change to {ch}."),
-                VelocityChangeType::SequentialVelChange(ch) => {
-                    &*format!("Atomic vel change to {}.", ch.last().unwrap())
-                }
-            },
+            BaseTask::ChangeVelocity(task) => {
+                let res_vel = task.vel_change().sequence_vel().last().unwrap();
+                let res_pos = task.vel_change().sequence_pos().last().unwrap();
+                let angle_dev = task.vel_change().res_angle_dev();
+                &*format!(
+                    "Burn to velocity {} at pos {}, angle deviation will be {}",
+                    res_vel, res_pos, angle_dev
+                )
+            }
         };
         let end = self.dt.get_end().format("%d %H:%M:%S").to_string();
         write!(f, "Due: {end}, Task: {task_type_str}")
@@ -56,9 +61,9 @@ impl Task {
         }
     }
 
-    pub fn vel_change_task(vel_change: VelocityChangeType, dt: PinnedTimeDelay) -> Self {
+    pub fn vel_change_task(burn: BurnSequence, dt: PinnedTimeDelay) -> Self {
         Self {
-            task_type: BaseTask::ChangeVelocity(VelocityChangeTask::new(vel_change)),
+            task_type: BaseTask::ChangeVelocity(VelocityChangeTask::new(burn)),
             dt,
         }
     }

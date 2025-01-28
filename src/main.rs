@@ -196,7 +196,7 @@ async fn main() {
             let task_type = task.task_type();
             let due_time = task.dt().time_left();
             println!(
-                "[INFO] Iteration {phases}: {task_type} in  {} s!",
+                "[INFO] Iteration {phases}: {task_type} in  {}s!",
                 due_time.num_seconds()
             );
 

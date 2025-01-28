@@ -389,7 +389,7 @@ impl CameraController {
         let start_time = chrono::Utc::now();
         self.map_image.read().await.fullsize_buffer.save(SNAPSHOT_FULL_PATH)?;
         println!(
-            "[INFO] Exported Full-View PNG in {} s!",
+            "[INFO] Exported Full-View PNG in {}s!",
             (chrono::Utc::now() - start_time).num_seconds()
         );
         Ok(())
@@ -459,7 +459,7 @@ impl CameraController {
                             *lock
                         };
                         println!(
-                            "[INFO] Took {pic_num}. picture in cycle at {}. Processed for {} s.",
+                            "[INFO] Took {pic_num}. picture in cycle at {}. Processed for {}s.",
                             img_init_timestamp.format("%d. %H:%M:%S"),
                             (chrono::Utc::now() - img_init_timestamp).num_seconds()
                         );

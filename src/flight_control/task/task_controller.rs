@@ -1,29 +1,21 @@
-use crate::flight_control::common::math;
-use crate::flight_control::common::vec2d::Vec2D;
-use crate::flight_control::flight_state::TRANSITION_DELAY_LOOKUP;
-use crate::flight_control::orbit::burn_sequence::BurnSequence;
-use crate::flight_control::orbit::index::IndexedOrbitPosition;
-use crate::flight_control::task::base_task::BaseTask::SwitchState;
-use crate::flight_control::task::switch_state_task::SwitchStateTask;
-use crate::flight_control::task::vel_change_task::VelocityChangeType;
 use crate::flight_control::{
-    common::{linked_box::LinkedBox, pinned_dt::PinnedTimeDelay},
+    common::{linked_box::LinkedBox, math, pinned_dt::PinnedTimeDelay, vec2d::Vec2D},
     flight_computer::FlightComputer,
-    flight_state::FlightState,
-    orbit::closed_orbit::ClosedOrbit,
+    flight_state::{FlightState, TRANSITION_DELAY_LOOKUP},
+    orbit::{burn_sequence::BurnSequence, closed_orbit::ClosedOrbit, index::IndexedOrbitPosition},
     task::{
-        atomic_decision::AtomicDecision, atomic_decision_cube::AtomicDecisionCube, base_task::Task,
-        score_grid::ScoreGrid,
+        atomic_decision::AtomicDecision, atomic_decision_cube::AtomicDecisionCube,
+        base_task::BaseTask::SwitchState, base_task::Task, score_grid::ScoreGrid,
+        switch_state_task::SwitchStateTask,
     },
 };
 use crate::http_handler::ZonedObjective;
 use crate::{MAX_BATTERY_THRESHOLD, MIN_BATTERY_THRESHOLD};
 use bitvec::prelude::BitRef;
-use num::traits::float::FloatCore;
-use num::Integer;
-use std::fmt::{Debug, Display};
+use num::{traits::float::FloatCore, Integer};
 use std::{
     collections::VecDeque,
+    fmt::{Debug, Display},
     sync::{Arc, Condvar},
 };
 use tokio::sync::{Mutex, RwLock};
@@ -273,7 +265,15 @@ impl TaskController {
 
         let remaining_range = (Self::OBJECTIVE_SCHEDULE_MIN_DT..=last_possible_dt);
         let offset = *remaining_range.start();
-        let mut best_burn_sequence = BurnSequence::new(curr_i, Vec::new(), 0, 0, f32::infinity());
+        let mut best_burn_sequence = BurnSequence::new(
+            curr_i,
+            Vec::new().into_boxed_slice(),
+            Vec::new().into_boxed_slice(),
+            0,
+            0,
+            f32::infinity(),
+            f32::infinity(),
+        );
         let max_angle_dev = {
             let vel_perp = orbit_vel.perp_unit(true) * FlightComputer::ACC_CONST;
             let vel_res = orbit_vel + vel_perp;
@@ -298,7 +298,8 @@ impl TaskController {
             };
 
             let mut add_dt = 0;
-            let mut fin_sequence: Vec<(Vec2D<f32>, Vec2D<f32>)> = vec![(next_pos, orbit_vel)];
+            let mut fin_sequence_pos: Vec<Vec2D<f32>> = vec![next_pos];
+            let mut fin_sequence_vel: Vec<Vec2D<f32>> = vec![orbit_vel];
             let mut fin_angle_dev = 0.0;
             let mut fin_dt = 0;
             let max_add_dt = turns_in_dir.len();
@@ -315,12 +316,14 @@ impl TaskController {
                 }
 
                 if direction_vec.is_clockwise_to(&next_vel).unwrap_or(break_cond) == break_cond {
-                    let (last_pos, last_vel) = fin_sequence.last().unwrap();
+                    let last_pos = fin_sequence_pos.last().unwrap();
+                    let last_vel = fin_sequence_vel.last().unwrap();
                     (fin_dt, fin_angle_dev) = {
                         let last_angle_deviation = last_vel.angle_to(&next_to_target);
                         let this_angle_deviation = next_vel.angle_to(&next_to_target);
                         if last_angle_deviation > this_angle_deviation {
-                            fin_sequence.push((next_pos, next_vel));
+                            fin_sequence_pos.push(next_pos);
+                            fin_sequence_vel.push(next_vel);
                             (min_dt + dt + add_dt, this_angle_deviation)
                         } else {
                             let last_to_target = last_pos.unwrapped_to(&target_pos);
@@ -330,7 +333,8 @@ impl TaskController {
                         }
                     };
                 } else {
-                    fin_sequence.push((next_pos, next_vel));
+                    fin_sequence_pos.push(next_pos);
+                    fin_sequence_vel.push(next_vel);
                     add_dt += 1;
                 }
             }
@@ -352,10 +356,12 @@ impl TaskController {
             if burn_sequence_cost < best_burn_sequence.cost() {
                 best_burn_sequence = BurnSequence::new(
                     burn_sequence_i,
-                    fin_sequence,
+                    fin_sequence_pos.into_boxed_slice(),
+                    fin_sequence_vel.into_boxed_slice(),
                     add_dt,
                     fin_dt - dt - add_dt,
                     burn_sequence_cost,
+                    fin_angle_dev,
                 );
             }
         }
@@ -370,6 +376,11 @@ impl TaskController {
         objective: ZonedObjective,
         scheduling_start_i: IndexedOrbitPosition,
     ) {
+        let computation_start = chrono::Utc::now();
+        println!(
+            "[INFO] Calculating schedule for Retrieval of Objective {}",
+            objective.id()
+        );
         let burn_sequence = if objective.min_images() == 1 {
             let target_pos = objective.get_imaging_points()[0];
             let due = objective.end();
@@ -384,9 +395,11 @@ impl TaskController {
             // TODO
             panic!("[FATAL] Zoned Objective with multiple images not yet supported");
         };
-
-        let travel_time = burn_sequence.detumble_dt() + burn_sequence.acc_dt();
-        let detumble_time = travel_time - burn_sequence.acc_dt();
+        let comp_time = (chrono::Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
+        println!("[INFO] Maneuver calculation completed after {comp_time}s!");
+        let acc_time = burn_sequence.acc_dt();
+        let travel_time = burn_sequence.detumble_dt() + acc_time;
+        let detumble_time = travel_time - acc_time;
         // TODO: this should be calculated in regards of the return path
         let min_charge = (travel_time as f32 * FlightState::Acquisition.get_charge_rate()
             + burn_sequence.acc_dt() as f32 * FlightState::ACQ_ACC_ADDITION)
@@ -394,21 +407,33 @@ impl TaskController {
         if min_charge > MAX_BATTERY_THRESHOLD {
             panic!["[FATAL] Minimum needed charge is greater than battery capacity"]
         }
+        let start =
+            (burn_sequence.start_i().t() - chrono::Utc::now()).num_seconds() as f32 / 1000.0;
+        println!(
+            "[INFO] Maneuver will start in {start}s, will take {acc_time}s. \
+            Detumble time will be roughly {detumble_time}s!"
+        );
         let after_burn_calc_i = {
             let pos = f_cont_lock.read().await.current_pos();
             scheduling_start_i.new_from_pos(pos)
         };
+        let dt = usize::try_from((burn_sequence.start_i().t() - chrono::Utc::now()).num_seconds())
+            .unwrap_or(0);
         let result = {
             let orbit = orbit_lock.read().await;
-            let dt =
-                usize::try_from((burn_sequence.start_i().t() - chrono::Utc::now()).num_seconds());
+
             Self::init_orbit_sched_calc(
                 &orbit,
                 after_burn_calc_i.index(),
-                Some(dt.unwrap_or(0)),
+                Some(dt),
                 Some((FlightState::Acquisition, min_charge)),
             )
         };
+        println!(
+            "[INFO] Calculating optimal orbit schedule to be at {min_charge} and in {} in {}s.",
+            <&'static str>::from(FlightState::Acquisition),
+            dt
+        );
         let after_sched_calc_i = {
             let pos = f_cont_lock.read().await.current_pos();
             scheduling_start_i.new_from_pos(pos)
@@ -420,6 +445,13 @@ impl TaskController {
             result,
             dt_shift,
             true,
+        )
+        .await;
+        let n_tasks = self.schedule_vel_change(burn_sequence).await;
+        let dt_tot = (chrono::Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
+        println!(
+            "[INFO] Number of tasks after scheduling: {n_tasks}. \
+            Calculation and processing took {dt_tot:.2}",
         );
     }
 
@@ -449,16 +481,17 @@ impl TaskController {
         println!("[INFO] Optimal Orbit Calculation complete after {dt_calc:.2}");
         let dt_shift = dt_calc.ceil() as usize;
 
-        self.schedule_optimal_orbit_result(
-            f_cont_lock,
-            computation_start,
-            result,
-            dt_shift,
-            true,
-        ).await;
+        let n_tasks = self
+            .schedule_optimal_orbit_result(f_cont_lock, computation_start, result, dt_shift, true)
+            .await;
+        let dt_tot = (chrono::Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
+        println!(
+            "[INFO] Number of tasks after scheduling: {n_tasks}. \
+            Calculation and processing took {dt_tot:.2}",
+        );
     }
 
-    #[allow(clippy::cast_possible_wrap)]
+    #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     async fn schedule_optimal_orbit_result(
         &self,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
@@ -466,7 +499,7 @@ impl TaskController {
         res: OptimalOrbitResult,
         dt_sh: usize,
         trunc: bool,
-    ) {
+    ) -> usize {
         if trunc {
             self.clear_schedule().await;
         }
@@ -516,10 +549,7 @@ impl TaskController {
                 }
             }
         }
-        println!(
-            "[INFO] Number of tasks after scheduling: {}",
-            self.task_schedule.read().await.len()
-        );
+        self.task_schedule.read().await.len()
     }
 
     /// Provides a reference to the image task schedule.
@@ -535,33 +565,27 @@ impl TaskController {
     pub fn notify_arc(&self) -> Arc<Condvar> { Arc::clone(&self.next_task_notify) }
 
     async fn schedule_switch(&self, target: FlightState, sched_t: chrono::DateTime<chrono::Utc>) {
-        if self.task_schedule.read().await.is_empty() {
-            self.next_task_notify.notify_all();
-        }
         let dt = PinnedTimeDelay::from_end(sched_t);
-        self.task_schedule.write().await.push_back(Task::switch_target(target, dt));
+        if self.task_schedule.read().await.is_empty() {
+            self.task_schedule.write().await.push_back(Task::switch_target(target, dt));
+            self.next_task_notify.notify_all();
+        } else {
+            self.task_schedule.write().await.push_back(Task::switch_target(target, dt));
+        }
     }
 
-    async fn schedule_vel_change(
-        &self,
-        vel: Box<[Vec2D<f32>]>,
-        sched_t: chrono::DateTime<chrono::Utc>,
-    ) {
+    async fn schedule_vel_change(&self, burn: BurnSequence) -> usize {
+        let mut has_to_notify = false;
         if self.task_schedule.read().await.is_empty() {
+            has_to_notify = true;
+        }
+        let dt = PinnedTimeDelay::from_end(burn.start_i().t());
+        self.task_schedule.write().await.push_back(Task::vel_change_task(burn, dt));
+
+        if has_to_notify {
             self.next_task_notify.notify_all();
         }
-        let dt = PinnedTimeDelay::from_end(sched_t);
-        if vel.len() == 1 {
-            self.task_schedule.write().await.push_back(Task::vel_change_task(
-                VelocityChangeType::AtomicVelChange(vel[0]),
-                dt,
-            ));
-        } else {
-            self.task_schedule.write().await.push_back(Task::vel_change_task(
-                VelocityChangeType::SequentialVelChange(vel),
-                dt,
-            ));
-        }
+        self.task_schedule.read().await.len()
     }
 
     pub async fn clear_after_dt(&self, dt: PinnedTimeDelay) {
@@ -587,9 +611,6 @@ impl TaskController {
     /// - Notifies all waiting threads if the schedule is cleared.
     pub async fn clear_schedule(&self) {
         let schedule = &*self.task_schedule;
-        if !schedule.read().await.is_empty() {
-            self.next_task_notify.notify_all();
-        }
         schedule.write().await.clear();
     }
 }
