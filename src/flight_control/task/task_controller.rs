@@ -235,7 +235,7 @@ impl TaskController {
         clippy::cast_possible_wrap,
         clippy::too_many_lines
     )]
-    pub async fn calculate_single_point_burn_sequence(
+    pub async fn calculate_single_target_burn_sequence(
         curr_i: IndexedOrbitPosition,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
         target_pos: Vec2D<f32>,
@@ -273,8 +273,7 @@ impl TaskController {
 
         let remaining_range = (Self::OBJECTIVE_SCHEDULE_MIN_DT..=last_possible_dt);
         let offset = *remaining_range.start();
-        let mut best_burn_sequence =
-            BurnSequence::new(curr_i, Vec::new(), 0, 0, 0, f32::infinity());
+        let mut best_burn_sequence = BurnSequence::new(curr_i, Vec::new(), 0, 0, f32::infinity());
         let max_angle_dev = {
             let vel_perp = orbit_vel.perp_unit(true) * FlightComputer::ACC_CONST;
             let vel_res = orbit_vel + vel_perp;
@@ -299,7 +298,7 @@ impl TaskController {
             };
 
             let mut add_dt = 0;
-            let mut fin_sequence: Vec<(Vec2D<f32>, Vec2D<f32>)> = Vec::new();
+            let mut fin_sequence: Vec<(Vec2D<f32>, Vec2D<f32>)> = vec![(next_pos, orbit_vel)];
             let mut fin_angle_dev = 0.0;
             let mut fin_dt = 0;
             let max_add_dt = turns_in_dir.len();
@@ -354,9 +353,8 @@ impl TaskController {
                 best_burn_sequence = BurnSequence::new(
                     burn_sequence_i,
                     fin_sequence,
-                    dt,
-                    fin_dt,
                     add_dt,
+                    fin_dt - dt - add_dt,
                     burn_sequence_cost,
                 );
             }
@@ -366,17 +364,18 @@ impl TaskController {
 
     #[allow(clippy::cast_precision_loss)]
     pub async fn schedule_zoned_objective(
-        locked_self: Arc<RwLock<TaskController>>,
-        objective: ZonedObjective,
+        self: Arc<TaskController>,
+        orbit_lock: Arc<RwLock<ClosedOrbit>>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
+        objective: ZonedObjective,
         scheduling_start_i: IndexedOrbitPosition,
     ) {
         let burn_sequence = if objective.min_images() == 1 {
             let target_pos = objective.get_imaging_points()[0];
             let due = objective.end();
-            Self::calculate_single_point_burn_sequence(
+            Self::calculate_single_target_burn_sequence(
                 scheduling_start_i,
-                f_cont_lock,
+                Arc::clone(&f_cont_lock),
                 target_pos,
                 due,
             )
@@ -386,12 +385,42 @@ impl TaskController {
             panic!("[FATAL] Zoned Objective with multiple images not yet supported");
         };
 
-        let travel_time = burn_sequence.end_dt() - burn_sequence.start_dt();
+        let travel_time = burn_sequence.detumble_dt() + burn_sequence.acc_dt();
         let detumble_time = travel_time - burn_sequence.acc_dt();
         // TODO: this should be calculated in regards of the return path
         let min_charge = (travel_time as f32 * FlightState::Acquisition.get_charge_rate()
             + burn_sequence.acc_dt() as f32 * FlightState::ACQ_ACC_ADDITION)
             * 2.0;
+        if min_charge > MAX_BATTERY_THRESHOLD {
+            panic!["[FATAL] Minimum needed charge is greater than battery capacity"]
+        }
+        let after_burn_calc_i = {
+            let pos = f_cont_lock.read().await.current_pos();
+            scheduling_start_i.new_from_pos(pos)
+        };
+        let result = {
+            let orbit = orbit_lock.read().await;
+            let dt =
+                usize::try_from((burn_sequence.start_i().t() - chrono::Utc::now()).num_seconds());
+            Self::init_orbit_sched_calc(
+                &orbit,
+                after_burn_calc_i.index(),
+                Some(dt.unwrap_or(0)),
+                Some((FlightState::Acquisition, min_charge)),
+            )
+        };
+        let after_sched_calc_i = {
+            let pos = f_cont_lock.read().await.current_pos();
+            scheduling_start_i.new_from_pos(pos)
+        };
+        let dt_shift = after_sched_calc_i.index() - after_burn_calc_i.index();
+        self.schedule_optimal_orbit_result(
+            f_cont_lock,
+            after_burn_calc_i.t(),
+            result,
+            dt_shift,
+            true,
+        );
     }
 
     #[allow(
@@ -401,14 +430,15 @@ impl TaskController {
         clippy::cast_possible_wrap
     )]
     pub async fn schedule_optimal_orbit(
-        locked_self: Arc<RwLock<TaskController>>,
+        self: Arc<TaskController>,
         orbit_lock: Arc<RwLock<ClosedOrbit>>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
-        p_t_shift: usize,
+        scheduling_start_i: IndexedOrbitPosition,
     ) {
-        let computation_start = chrono::Utc::now();
+        let p_t_shift = scheduling_start_i.index();
+        let computation_start = scheduling_start_i.t();
         println!("[INFO] Calculating optimal orbit schedule...");
-        let (decisions, orbit_period) = {
+        let (result, orbit_period) = {
             let orbit = orbit_lock.read().await;
             (
                 Self::init_orbit_sched_calc(&orbit, p_t_shift, None, None),
@@ -417,7 +447,30 @@ impl TaskController {
         };
         let dt_calc = (chrono::Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
         println!("[INFO] Optimal Orbit Calculation complete after {dt_calc:.2}");
-        let mut dt = dt_calc.ceil() as usize;
+        let dt_shift = dt_calc.ceil() as usize;
+
+        self.schedule_optimal_orbit_result(
+            f_cont_lock,
+            computation_start,
+            result,
+            dt_shift,
+            true,
+        ).await;
+    }
+
+    #[allow(clippy::cast_possible_wrap)]
+    async fn schedule_optimal_orbit_result(
+        &self,
+        f_cont_lock: Arc<RwLock<FlightComputer>>,
+        base_t: chrono::DateTime<chrono::Utc>,
+        res: OptimalOrbitResult,
+        dt_sh: usize,
+        trunc: bool,
+    ) {
+        if trunc {
+            self.clear_schedule().await;
+        }
+
         let (batt_f32, mut state) = {
             let f_cont = f_cont_lock.read().await;
             let batt: f32 = f_cont.current_battery();
@@ -428,18 +481,16 @@ impl TaskController {
             };
             (batt, st)
         };
+
+        let mut dt = dt_sh;
         let (min_batt, max_batt) = (MIN_BATTERY_THRESHOLD, MAX_BATTERY_THRESHOLD);
         let max_mapped = (max_batt / Self::BATTERY_RESOLUTION - min_batt / Self::BATTERY_RESOLUTION)
             .round() as i32;
         let mut batt = ((batt_f32 - min_batt) / Self::BATTERY_RESOLUTION) as usize;
-
-        let pred_secs = Self::MAX_ORBIT_PREDICTION_SECS.min(orbit_period.0 as u32) as usize;
-        let mut decision_list: Vec<AtomicDecision> = Vec::new();
-        let mut self_t_cont = locked_self.read().await;
+        let pred_secs = res.decisions.dt_len();
+        let decisions = &res.decisions;
         while dt < pred_secs {
-            let decision = decisions.decisions.get(dt, batt, state);
-            decision_list.push(decision);
-
+            let decision = decisions.get(dt, batt, state);
             match decision {
                 AtomicDecision::StayInCharge => {
                     state = 0;
@@ -452,14 +503,14 @@ impl TaskController {
                     dt += 1;
                 }
                 AtomicDecision::SwitchToCharge => {
-                    let sched_t = computation_start + chrono::TimeDelta::seconds(dt as i64);
-                    self_t_cont.schedule_switch(FlightState::Charge, sched_t).await;
+                    let sched_t = base_t + chrono::TimeDelta::seconds(dt as i64);
+                    self.schedule_switch(FlightState::Charge, sched_t).await;
                     state = 0;
                     dt = (dt + 180).min(pred_secs);
                 }
                 AtomicDecision::SwitchToAcquisition => {
-                    let sched_t = computation_start + chrono::TimeDelta::seconds(dt as i64);
-                    self_t_cont.schedule_switch(FlightState::Acquisition, sched_t).await;
+                    let sched_t = base_t + chrono::TimeDelta::seconds(dt as i64);
+                    self.schedule_switch(FlightState::Acquisition, sched_t).await;
                     state = 1;
                     dt = (dt + 180).min(pred_secs);
                 }
@@ -467,7 +518,7 @@ impl TaskController {
         }
         println!(
             "[INFO] Number of tasks after scheduling: {}",
-            self_t_cont.task_schedule.read().await.len()
+            self.task_schedule.read().await.len()
         );
     }
 

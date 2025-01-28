@@ -134,19 +134,19 @@ async fn main() {
     });
 
     let c_orbit_lock = Arc::new(RwLock::new(c_orbit));
-    let t_cont_lock = Arc::new(RwLock::new(t_cont));
-    let sched = t_cont_lock.read().await.sched_arc();
+    let t_cont_arc = Arc::new(t_cont);
+    let sched = t_cont_arc.sched_arc();
     // orbit
     loop {
         let f_cont_rw_clone = Arc::clone(&f_cont_lock);
         let c_orbit_lock_clone = Arc::clone(&c_orbit_lock);
-        let t_cont_lock_clone = Arc::clone(&t_cont_lock);
+        let t_cont_arc_clone = Arc::clone(&t_cont_arc);
         let schedule_join_handle = tokio::spawn(async move {
             TaskController::schedule_optimal_orbit(
-                t_cont_lock_clone,
+                t_cont_arc_clone,
                 c_orbit_lock_clone,
                 f_cont_rw_clone,
-                i_entry.index(),
+                i_entry,
             )
             .await;
         });

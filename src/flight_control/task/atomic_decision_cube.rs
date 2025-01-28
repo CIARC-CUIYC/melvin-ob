@@ -24,4 +24,8 @@ impl AtomicDecisionCube {
     pub fn set(&mut self, dt: usize, e: usize, s: usize, decision: AtomicDecision) {
         self.decisions[dt * self.e_len * self.s_len + e * self.s_len + s] = decision;
     }
+    
+    pub fn dt_len(&self) -> usize {self.dt_len}
+    pub fn e_len(&self) -> usize {self.e_len}
+    pub fn s_len(&self) -> usize {self.s_len}
 }
