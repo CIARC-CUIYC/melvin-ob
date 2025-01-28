@@ -42,5 +42,5 @@ impl ScoreGrid {
         self.score[e * self.s_len + s] = score;
     }
     pub fn e_len(&self) -> usize { self.e_len }
-    pub fn s_len(&self) -> usize { self.s_len }
+    pub fn s_lenomm(&self) -> usize { self.s_len }
 }

@@ -192,6 +192,7 @@ async fn init(url: &str, c_cont_file: &str) -> (KeychainWithOrbit, OrbitCharacte
 
     let c_orbit: ClosedOrbit = {
         let f_cont_lock = init_k.f_cont();
+        f_cont_lock.write().await.reset();
         FlightComputer::set_state_wait(init_k.f_cont(), FlightState::Acquisition).await;
         FlightComputer::set_vel_wait(init_k.f_cont(), STATIC_ORBIT_VEL.into()).await;
         FlightComputer::set_angle_wait(init_k.f_cont(), CONST_ANGLE).await;
