@@ -33,8 +33,8 @@ impl Display for Task {
                 let res_pos = task.vel_change().sequence_pos().last().unwrap();
                 let angle_dev = task.vel_change().res_angle_dev();
                 &*format!(
-                    "Burn to velocity {} at pos {}, angle deviation will be {}",
-                    res_vel, res_pos, angle_dev
+                    "Burn to velocity {res_vel} at pos {res_pos}, \
+                angle deviation will be {angle_dev}",
                 )
             }
         };

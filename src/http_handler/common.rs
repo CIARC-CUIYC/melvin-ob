@@ -1,8 +1,8 @@
 use super::http_request::request_common::RequestError;
 use super::http_response::response_common::ResponseError;
-use strum_macros::Display;
 use crate::flight_control::camera_state::CameraAngle;
 use crate::flight_control::common::vec2d::Vec2D;
+use strum_macros::Display;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug)]
 pub struct ZonedObjective {
@@ -22,6 +22,36 @@ pub struct ZonedObjective {
 }
 
 impl ZonedObjective {
+    pub fn new(
+        id: usize,
+        start: chrono::DateTime<chrono::Utc>,
+        end: chrono::DateTime<chrono::Utc>,
+        name: String,
+        decrease_rate: i64,
+        enabled: bool,
+        zone: [i32; 4],
+        optic_required: String,
+        coverage_required: f32,
+        description: String,
+        sprite: String,
+        secret: bool,
+    ) -> Self {
+        Self {
+            id,
+            name,
+            start,
+            end,
+            decrease_rate,
+            enabled,
+            zone,
+            optic_required,
+            coverage_required,
+            description,
+            sprite,
+            secret,
+        }
+    }
+
     pub fn id(&self) -> usize { self.id }
     pub fn end(&self) -> chrono::DateTime<chrono::Utc> { self.end }
     pub fn name(&self) -> &str { &self.name }
@@ -44,11 +74,12 @@ impl ZonedObjective {
 
     #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
     pub fn min_images(&self) -> i32 {
-        let lens_square_side_length = CameraAngle::from(self.optic_required()).get_square_side_length();
+        let lens_square_side_length =
+            CameraAngle::from(self.optic_required()).get_square_side_length();
 
         let zone_width = self.zone[2] - self.zone[0];
         let zone_height = self.zone[3] - self.zone[1];
-        
+
         let total_zone_area_size = (zone_width * zone_height) as f32;
         let lens_area_size = f32::from(lens_square_side_length.pow(2));
 

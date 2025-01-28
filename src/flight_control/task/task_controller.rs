@@ -47,7 +47,7 @@ impl TaskController {
     const TIME_RESOLUTION: f32 = 1.0;
     const OBJECTIVE_SCHEDULE_MIN_DT: usize = 1000;
     const OBJECTIVE_MIN_RETRIEVAL_TOL: usize = 100;
-    const MANEUVER_INIT_BATT_TOL: f32 = 1.0;
+    const MANEUVER_INIT_BATT_TOL: f32 = 10.0;
     const OFF_ORBIT_DT_WEIGHT: f32 = 2.0;
     const FUEL_CONSUMPTION_WEIGHT: f32 = 1.0;
     const ANGLE_DEV_WEIGHT: f32 = 1.5;
@@ -124,7 +124,7 @@ impl TaskController {
         score_grid_default: &ScoreGrid,
         mut dec_cube: AtomicDecisionCube,
     ) -> OptimalOrbitResult {
-        let max_battery = score_grid_default.e_size();
+        let max_battery = score_grid_default.e_len() - 1;
         for t in (0..pred_dt).rev() {
             let mut cov_dt = score_grid_default.clone();
             let p_dt = u16::from(!*p_t_it.next().unwrap());
@@ -373,8 +373,8 @@ impl TaskController {
         self: Arc<TaskController>,
         orbit_lock: Arc<RwLock<ClosedOrbit>>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
-        objective: ZonedObjective,
         scheduling_start_i: IndexedOrbitPosition,
+        objective: ZonedObjective,
     ) {
         let computation_start = chrono::Utc::now();
         println!(
@@ -453,6 +453,13 @@ impl TaskController {
             "[INFO] Number of tasks after scheduling: {n_tasks}. \
             Calculation and processing took {dt_tot:.2}",
         );
+
+        {
+            let sched = self.task_schedule.read().await;
+            for task in &*sched {
+                println!("[INFO] Task: {task} at {}", task.dt().time_left());
+            }
+        }
     }
 
     #[allow(

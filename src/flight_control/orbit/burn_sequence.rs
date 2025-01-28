@@ -39,13 +39,13 @@ impl BurnSequence {
 
     pub fn start_i(&self) -> IndexedOrbitPosition {self.start_i}
 
-    pub fn sequence_pos(&self) -> &Box<[Vec2D<f32>]> {&self.sequence_pos}
+    pub fn sequence_pos(&self) -> &[Vec2D<f32>] {&self.sequence_pos}
 
-    pub fn sequence_vel(&self) -> &Box<[Vec2D<f32>]> {&self.sequence_vel}
+    pub fn sequence_vel(&self) -> &[Vec2D<f32>] {&self.sequence_vel}
 
     pub fn detumble_dt(&self) -> usize {self.detumble_dt}
 
     pub fn acc_dt(&self) -> usize {self.acc_dt}
-    
+
     pub fn res_angle_dev(&self) -> f32 {self.res_angle_dev}
 }

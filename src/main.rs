@@ -21,12 +21,9 @@ use crate::flight_control::{
     },
     task::{base_task::BaseTask, task_controller::TaskController},
 };
-use crate::http_handler::{
-    http_client::HTTPClient,
-    http_request::{observation_get::ObservationRequest, request_common::NoBodyHTTPRequestType},
-};
+use crate::http_handler::{http_client::HTTPClient, http_request::{observation_get::ObservationRequest, request_common::NoBodyHTTPRequestType}, ZonedObjective};
 use crate::keychain::{Keychain, KeychainWithOrbit};
-use crate::MappingModeEnd::{DT, JOIN};
+use crate::MappingModeEnd::{Timestamp, Join};
 use chrono::DateTime;
 use csv::Writer;
 use std::{env, fs::OpenOptions, io::Write, sync::Arc};
@@ -36,8 +33,8 @@ use tokio::{
 };
 
 enum MappingModeEnd {
-    DT(DateTime<chrono::Utc>),
-    JOIN(JoinHandle<()>),
+    Timestamp(DateTime<chrono::Utc>),
+    Join(JoinHandle<()>),
 }
 
 const DT_0: chrono::TimeDelta = chrono::TimeDelta::seconds(0);
@@ -62,6 +59,22 @@ async fn main() {
 
     let sched = k.t_cont().sched_arc();
 
+    let debug_objective = ZonedObjective::new(
+        0,
+        chrono::Utc::now(),
+        chrono::Utc::now() + chrono::TimeDelta::hours(7),
+        "Test Objective".to_string(),
+        0,
+        true,
+        
+        [6800, 9300, 7400, 9900],
+        "narrow".to_string(),
+        1.0,
+        "Test Objective".to_string(),
+        "test_objective.png".to_string(),
+        false,
+    );
+    
     loop {
         schedule_undisturbed_orbit(Arc::clone(&k), orbit_char).await;
         let mut phases = 0;
@@ -79,7 +92,7 @@ async fn main() {
                 let k_clone = Arc::clone(&k);
                 execute_mapping(
                     k_clone,
-                    DT(chrono::Utc::now() + due_time),
+                    Timestamp(chrono::Utc::now() + due_time),
                     orbit_char.img_dt(),
                     orbit_char.i_entry(),
                 )
@@ -128,6 +141,7 @@ async fn main() {
     // drop(console_messenger);
 }
 
+#[allow(clippy::cast_precision_loss)]
 async fn init(url: &str, c_cont_file: &str) -> (KeychainWithOrbit, OrbitCharacteristics) {
     let init_k = Keychain::new(url, c_cont_file).await;
     let init_k_f_cont_clone = init_k.f_cont();
@@ -216,11 +230,45 @@ async fn schedule_undisturbed_orbit(
         let k_clone_clone = Arc::clone(&k_clone);
         execute_mapping(
             k_clone_clone,
-            JOIN(schedule_join_handle),
+            Join(schedule_join_handle),
             orbit_char.img_dt(),
             orbit_char.i_entry(),
         )
         .await;
+    } else {
+        schedule_join_handle.await.ok();
+    }
+}
+
+async fn schedule_zoned_objective_retrieval(
+    k_clone: Arc<KeychainWithOrbit>,
+    orbit_char: OrbitCharacteristics,
+    objective: ZonedObjective,
+) {
+    let schedule_join_handle = {
+        let k_clone_clone = Arc::clone(&k_clone);
+        tokio::spawn(async move {
+            TaskController::schedule_zoned_objective(
+                k_clone_clone.t_cont(),
+                k_clone_clone.c_orbit(),
+                k_clone_clone.f_cont(),
+                orbit_char.i_entry(),
+                objective
+            )
+                .await;
+        })
+    };
+    let current_state = k_clone.f_cont().read().await.state();
+
+    if current_state == FlightState::Acquisition {
+        let k_clone_clone = Arc::clone(&k_clone);
+        execute_mapping(
+            k_clone_clone,
+            Join(schedule_join_handle),
+            orbit_char.img_dt(),
+            orbit_char.i_entry(),
+        )
+            .await;
     } else {
         schedule_join_handle.await.ok();
     }
@@ -234,14 +282,14 @@ async fn execute_mapping(
 ) {
     let end_t = {
         match end {
-            DT(dt) => dt,
-            JOIN(_) => chrono::Utc::now() + chrono::TimeDelta::seconds(10000),
+            Timestamp(dt) => dt,
+            Join(_) => chrono::Utc::now() + chrono::TimeDelta::seconds(10000),
         }
     };
     let k_clone_clone = Arc::clone(&k_clone);
     let acq_phase =
         start_periodic_imaging(k_clone_clone, end_t, img_dt, CONST_ANGLE, i_entry).await;
-    if let JOIN(join_handle) = end {
+    if let Join(join_handle) = end {
         join_handle.await.ok();
         acq_phase.1.notify_one();
     }
