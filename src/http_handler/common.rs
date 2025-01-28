@@ -81,7 +81,8 @@ impl ZonedObjective {
         let zone_height = self.zone[3] - self.zone[1];
 
         let total_zone_area_size = (zone_width * zone_height) as f32;
-        let lens_area_size = f32::from(lens_square_side_length.pow(2));
+        let lens_area_size = f32::from(lens_square_side_length).powi(2)
+            ;
 
         let min_area_required = total_zone_area_size * self.coverage_required;
 

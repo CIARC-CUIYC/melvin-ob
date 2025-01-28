@@ -64,7 +64,7 @@ async fn main() {
         "Test Objective".to_string(),
         0,
         true,
-        
+
         [6800, 9300, 7400, 9900],
         "narrow".to_string(),
         1.0,
@@ -72,9 +72,9 @@ async fn main() {
         "test_objective.png".to_string(),
         false,
     );
-    
+    schedule_zoned_objective_retrieval(Arc::clone(&k), orbit_char, debug_objective).await;
     loop {
-        schedule_undisturbed_orbit(Arc::clone(&k), orbit_char).await;
+        //schedule_undisturbed_orbit(Arc::clone(&k), orbit_char).await;
         
         let mut phases = 0;
         while let Some(task) = { (*sched).write().await.pop_front() } {

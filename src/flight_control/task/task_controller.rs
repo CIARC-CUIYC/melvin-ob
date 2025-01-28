@@ -510,6 +510,7 @@ impl TaskController {
             let st: usize = match f_cont.state() {
                 FlightState::Acquisition => 1,
                 FlightState::Charge => 0,
+                // TODO: transition is possible here too!
                 state => panic!("[FATAL] Unexpected flight state: {state}"),
             };
             (batt, st)
