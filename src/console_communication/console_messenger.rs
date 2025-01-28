@@ -23,12 +23,14 @@ impl ConsoleMessenger {
                     ConsoleEvent::Message(
                         melvin_messages::UpstreamContent::CreateSnapshotImage(_),
                     ) => {
-                        camera_controller_local.create_snapshot_thumb().await.unwrap();
+                        camera_controller_local.create_thumb_snapshot().await.unwrap();
                     }
                     ConsoleEvent::Message(
                         melvin_messages::UpstreamContent::GetSnapshotDiffImage(_),
                     ) => {
-                        if let Ok(encoded_image) = camera_controller_local.diff_snapshot().await {
+                        if let Ok(encoded_image) =
+                            camera_controller_local.diff_thumb_snapshot().await
+                        {
                             endpoint_local.send_downstream(
                                 melvin_messages::DownstreamContent::Image(
                                     melvin_messages::Image::from_encoded_image_extract(
@@ -59,16 +61,13 @@ impl ConsoleMessenger {
                         tokio::spawn(async move {
                             let objective_id = submit_objective.objective_id;
                             let result = camera_controller_local
-                                .upload_objective_png(
+                                .export_and_upload_objective_png(
                                     objective_id as usize,
                                     Vec2D::new(
                                         submit_objective.offset_x,
                                         submit_objective.offset_y,
                                     ),
-                                    Vec2D::new(
-                                        submit_objective.width,
-                                        submit_objective.height,
-                                    ),
+                                    Vec2D::new(submit_objective.width, submit_objective.height),
                                 )
                                 .await;
                             println!("[Info] Submitted objective '{objective_id}' with result: {result:?}");
@@ -88,9 +87,10 @@ impl ConsoleMessenger {
                         let endpoint_local = endpoint_local.clone();
                         tokio::spawn(async move {
                             let mut success =
-                                camera_controller_local.create_snapshot_full().await.is_ok();
+                                camera_controller_local.create_full_snapshot().await.is_ok();
                             if success {
-                                success = camera_controller_local.upload_daily_map().await.is_ok();
+                                success =
+                                    camera_controller_local.upload_daily_map_png().await.is_ok();
                             }
                             endpoint_local.send_downstream(
                                 melvin_messages::DownstreamContent::SubmitResponse(

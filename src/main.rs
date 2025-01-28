@@ -33,7 +33,6 @@ const STATIC_ORBIT_VEL: (f32, f32) = (6.4f32, 7.4f32);
 pub const MIN_BATTERY_THRESHOLD: f32 = 10.0;
 pub const MAX_BATTERY_THRESHOLD: f32 = 100.0;
 const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
-const BIN_FILEPATH: &str = "camera_controller_narrow.bin";
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::too_many_lines)]
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
@@ -43,12 +42,7 @@ async fn main() {
     let client = Arc::new(HTTPClient::new(base_url));
 
     let t_cont = TaskController::new();
-    let c_cont = Arc::new(
-        CameraController::from_file(BIN_FILEPATH, client.clone()).await.unwrap_or_else(|e| {
-            println!("[WARN] Failed to read from binary file: {e}");
-            CameraController::new(client.clone())
-        }),
-    );
+    let c_cont = Arc::new(CameraController::start("./".to_string(), client.clone()));
     let f_cont_lock = Arc::new(RwLock::new(FlightComputer::new(Arc::clone(&client)).await));
     let console_messenger = Arc::new(ConsoleMessenger::start(c_cont.clone()));
     let f_cont_lock_clone = Arc::clone(&f_cont_lock);
@@ -181,7 +175,7 @@ async fn main() {
                         let c_cont_local = c_cont.clone();
                         let handle = tokio::spawn(async move {
                             c_cont_local
-                                .create_snapshot_full()
+                                .create_full_snapshot()
                                 .await
                                 .expect("[WARN] Export failed!");
                         });
