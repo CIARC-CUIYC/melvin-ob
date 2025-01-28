@@ -14,8 +14,8 @@ impl HTTPResponseType for ShootImageResponse {
     async fn read_response(
         response: reqwest::Response,
     ) -> Result<Self::ParsedResponseType, ResponseError> {
-        let response = Self::unwrap_return_code(response).await?;
-        let stream = response.bytes_stream();
+        let resp = Self::unwrap_return_code(response).await?;
+        let stream = resp.bytes_stream();
         Ok(stream.boxed())
     }
 }

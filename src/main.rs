@@ -1,9 +1,5 @@
 #![allow(dead_code, unused)]
-#![warn(
-    clippy::shadow_reuse,
-    clippy::shadow_same,
-    clippy::builtin_type_shadow
-)]
+#![warn(clippy::shadow_reuse, clippy::shadow_same, clippy::builtin_type_shadow)]
 
 mod console_communication;
 mod flight_control;
@@ -21,8 +17,7 @@ use crate::flight_control::{
         index::IndexedOrbitPosition,
         orbit_base::OrbitBase,
     },
-    task::base_task::BaseTask,
-    task_controller::TaskController,
+    task::{base_task::BaseTask, task_controller::TaskController},
 };
 use crate::http_handler::{
     http_client::HTTPClient,
@@ -138,19 +133,22 @@ async fn main() {
         f_cont_lock.read().await.current_pos()
     });
 
-    let c_orbit_lock = Arc::new(Mutex::new(c_orbit));
-    let t_cont_lock = Arc::new(Mutex::new(t_cont));
-
+    let c_orbit_lock = Arc::new(RwLock::new(c_orbit));
+    let t_cont_lock = Arc::new(RwLock::new(t_cont));
+    let sched = t_cont_lock.read().await.sched_arc();
     // orbit
     loop {
         let f_cont_rw_clone = Arc::clone(&f_cont_lock);
         let c_orbit_lock_clone = Arc::clone(&c_orbit_lock);
         let t_cont_lock_clone = Arc::clone(&t_cont_lock);
         let schedule_join_handle = tokio::spawn(async move {
-            let mut t_cont = t_cont_lock_clone.lock().await;
-            t_cont
-                .schedule_optimal_orbit(c_orbit_lock_clone, f_cont_rw_clone, i_entry.index())
-                .await;
+            TaskController::schedule_optimal_orbit(
+                t_cont_lock_clone,
+                c_orbit_lock_clone,
+                f_cont_rw_clone,
+                i_entry.index(),
+            )
+            .await;
         });
         let current_state = f_cont_lock.read().await.state();
 
@@ -184,7 +182,7 @@ async fn main() {
             }
             println!();
             tokio::spawn(async move {
-                let mut c_orbit = c_orbit_lock_clone.lock().await;
+                let mut c_orbit = c_orbit_lock_clone.write().await;
                 for (start, end) in &ranges {
                     c_orbit.mark_done(*start, *end);
                 }
@@ -193,13 +191,7 @@ async fn main() {
 
         let mut phases = 0;
 
-        while let Some(task) = {
-            let start = chrono::Utc::now();
-            let t_cont = t_cont_lock.lock().await;
-            let sched = t_cont.sched_arc();
-            let mut sched_lock = sched.lock().await;
-            sched_lock.pop_front()
-        } {
+        while let Some(task) = { (*sched).write().await.pop_front() } {
             phases += 1;
             let task_type = task.task_type();
             let due_time = task.dt().time_left();
@@ -229,7 +221,7 @@ async fn main() {
                 }
                 println!();
                 tokio::spawn(async move {
-                    let mut c_orbit = c_orbit_lock_clone.lock().await;
+                    let mut c_orbit = c_orbit_lock_clone.write().await;
                     for (start, end) in &ranges {
                         c_orbit.mark_done(*start, *end);
                     }
@@ -241,13 +233,13 @@ async fn main() {
                 panic!("[FATAL] Illegal state ({current_state}) or too little time left for task ({due_time})!")
             }
             match task_type {
-                BaseTask::TASKImageTask(_) => {
+                BaseTask::TakeImage(_) => {
                     todo!()
                 }
-                BaseTask::TASKChangeVelocity(_) => {
+                BaseTask::ChangeVelocity(_) => {
                     todo!()
                 }
-                BaseTask::TASKSwitchState(switch) => match switch.target_state() {
+                BaseTask::SwitchState(switch) => match switch.target_state() {
                     FlightState::Acquisition => {
                         FlightComputer::set_state_wait(&f_cont_lock, FlightState::Acquisition)
                             .await;

@@ -16,17 +16,17 @@ pub struct Task {
 
 #[derive(Display, Debug)]
 pub enum BaseTask {
-    TASKImageTask(ImageTask),
-    TASKSwitchState(SwitchStateTask),
-    TASKChangeVelocity(VelocityChangeTask),
+    TakeImage(ImageTask),
+    SwitchState(SwitchStateTask),
+    ChangeVelocity(VelocityChangeTask),
 }
 
 impl Display for Task {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let task_type_str = match &self.task_type {
-            BaseTask::TASKImageTask(_) => "Image Task",
-            BaseTask::TASKSwitchState(task) => &*format!("Switch to {}", task.target_state()),
-            BaseTask::TASKChangeVelocity(task) => match task.vel_change() {
+            BaseTask::TakeImage(_) => "Image Task",
+            BaseTask::SwitchState(task) => &*format!("Switch to {}", task.target_state()),
+            BaseTask::ChangeVelocity(task) => match task.vel_change() {
                 VelocityChangeType::AtomicVelChange(ch) => &*format!("Atomic vel change to {ch}."),
                 VelocityChangeType::SequentialVelChange(ch) => {
                     &*format!("Atomic vel change to {}.", ch.last().unwrap())
@@ -41,7 +41,7 @@ impl Display for Task {
 impl Task {
     pub fn switch_target(target_state: FlightState, dt: PinnedTimeDelay) -> Self {
         Self {
-            task_type: BaseTask::TASKSwitchState(
+            task_type: BaseTask::SwitchState(
                 SwitchStateTask::new(target_state)
                     .expect("[FATAL] Tried to schedule invalid state switch"),
             ),
@@ -51,14 +51,14 @@ impl Task {
 
     pub fn image_task(planned_pos: Vec2D<u32>, lens: CameraAngle, dt: PinnedTimeDelay) -> Self {
         Self {
-            task_type: BaseTask::TASKImageTask(ImageTask::new(planned_pos, lens)),
+            task_type: BaseTask::TakeImage(ImageTask::new(planned_pos, lens)),
             dt,
         }
     }
 
     pub fn vel_change_task(vel_change: VelocityChangeType, dt: PinnedTimeDelay) -> Self {
         Self {
-            task_type: BaseTask::TASKChangeVelocity(VelocityChangeTask::new(vel_change)),
+            task_type: BaseTask::ChangeVelocity(VelocityChangeTask::new(vel_change)),
             dt,
         }
     }

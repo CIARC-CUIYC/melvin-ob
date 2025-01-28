@@ -1,6 +1,7 @@
 use super::http_request::request_common::RequestError;
 use super::http_response::response_common::ResponseError;
 use strum_macros::Display;
+use crate::flight_control::camera_state::CameraAngle;
 use crate::flight_control::common::vec2d::Vec2D;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug)]
@@ -14,7 +15,7 @@ pub struct ZonedObjective {
     zone: [i32; 4],
     // TODO: make an enum out of optic_required
     optic_required: String,
-    coverage_required: usize,
+    coverage_required: f32,
     description: String,
     sprite: String,
     secret: bool,
@@ -28,7 +29,7 @@ impl ZonedObjective {
     pub fn is_enabled(&self) -> bool { self.enabled }
     pub fn zone(&self) -> &[i32; 4] { &self.zone }
     pub fn optic_required(&self) -> &str { &self.optic_required }
-    pub fn coverage_required(&self) -> usize { self.coverage_required }
+    pub fn coverage_required(&self) -> f32 { self.coverage_required }
     pub fn sprite(&self) -> &str { &self.sprite }
     pub fn is_secret(&self) -> bool { self.secret }
 
@@ -39,6 +40,23 @@ impl ZonedObjective {
         let pos = Vec2D::new(self.zone[0] + x_size, self.zone[1] + y_size);
         let pos_f32 = pos.cast::<f32>().wrap_around_map();
         vec![pos_f32]
+    }
+
+    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+    pub fn min_images(&self) -> i32 {
+        let lens_square_side_length = CameraAngle::from(self.optic_required()).get_square_side_length();
+
+        let zone_width = self.zone[2] - self.zone[0];
+        let zone_height = self.zone[3] - self.zone[1];
+        
+        let total_zone_area_size = (zone_width * zone_height) as f32;
+        let lens_area_size = f32::from(lens_square_side_length.pow(2));
+
+        let min_area_required = total_zone_area_size * self.coverage_required;
+
+        let min_number_of_images_required = (min_area_required / lens_area_size).ceil();
+
+        min_number_of_images_required as i32
     }
 }
 

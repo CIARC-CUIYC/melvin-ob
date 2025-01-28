@@ -198,7 +198,7 @@ impl CameraController {
                     Vec2D::new(pos.x() as u32, pos.y() as u32),
                     Vec2D::new(decoded_image.width(), decoded_image.height()),
                 );
-                let score: i32 = map_image_view
+                let mut score: i32 = map_image_view
                     .pixels()
                     .zip(decoded_image.pixels())
                     .map(|((_, _, existing_pixel), new_pixel)| {
@@ -211,7 +211,7 @@ impl CameraController {
                     })
                     .sum();
 
-                let score = score - additional_offset_x.abs() - additional_offset_y.abs();
+                score = score - additional_offset_x.abs() - additional_offset_y.abs();
                 if score > best_score {
                     best_additional_offset = Vec2D::new(additional_offset_x, additional_offset_y);
                     best_score = score;
@@ -336,12 +336,12 @@ impl CameraController {
         offset: Vec2D<u32>,
         angle: CameraAngle,
     ) -> Result<EncodedImageExtract, Box<dyn std::error::Error>> {
-        let offset = offset / MapImage::THUMBNAIL_SCALE_FACTOR;
+        let offset_vec = offset / MapImage::THUMBNAIL_SCALE_FACTOR;
         let size = u32::from(angle.get_square_side_length());
-        let size = Vec2D::new(size, size) / MapImage::THUMBNAIL_SCALE_FACTOR;
+        let size_vec = Vec2D::new(size, size) / MapImage::THUMBNAIL_SCALE_FACTOR;
         let map_image = self.map_image.read().await;
 
-        let thumbnail = map_image.thumbnail_view(offset, size);
+        let thumbnail = map_image.thumbnail_view(offset_vec, size_vec);
 
         let mut thumbnail_image = RgbaImage::new(thumbnail.width(), thumbnail.width());
         thumbnail_image.copy_from(&thumbnail, 0, 0).unwrap();
@@ -349,8 +349,8 @@ impl CameraController {
         thumbnail_image.write_with_encoder(PngEncoder::new(&mut writer))?;
 
         Ok(EncodedImageExtract {
-            offset: offset.cast(),
-            size: size.cast(),
+            offset: offset_vec.cast(),
+            size: size_vec.cast(),
             data: writer.into_inner(),
         })
     }
@@ -484,8 +484,8 @@ impl CameraController {
             };
 
             let offset = img_handle.await;
-            if let Some(offset) = offset.ok().flatten() {
-                console_messenger.send_thumbnail(offset, lens);
+            if let Some(off) = offset.ok().flatten() {
+                console_messenger.send_thumbnail(off, lens);
             }
             if last_image_flag {
                 return;

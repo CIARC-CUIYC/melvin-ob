@@ -55,8 +55,8 @@ pub(crate) trait JSONBodyHTTPRequestType: HTTPRequestType {
             .json(&self.body())
             .send()
             .await;
-        let response = response.map_err(ResponseError::from);
-        Self::Response::read_response(response.map_err(HTTPError::HTTPResponseError)?)
+        let resp = response.map_err(ResponseError::from);
+        Self::Response::read_response(resp.map_err(HTTPError::HTTPResponseError)?)
             .await
             .map_err(HTTPError::HTTPResponseError)
     }
@@ -73,8 +73,8 @@ pub(crate) trait NoBodyHTTPRequestType: HTTPRequestType {
             .query(&self.query_params())
             .send()
             .await;
-        let response = response.map_err(ResponseError::from);
-        Self::Response::read_response(response.map_err(HTTPError::HTTPResponseError)?)
+        let resp = response.map_err(ResponseError::from);
+        Self::Response::read_response(resp.map_err(HTTPError::HTTPResponseError)?)
             .await
             .map_err(HTTPError::HTTPResponseError)
     }
@@ -101,8 +101,8 @@ pub(crate) trait MultipartBodyHTTPRequestType: HTTPRequestType {
             .multipart(self.body().await.map_err(HTTPError::HTTPRequestError)?)
             .send()
             .await;
-        let response = response.map_err(ResponseError::from);
-        Self::Response::read_response(response.map_err(HTTPError::HTTPResponseError)?)
+        let resp = response.map_err(ResponseError::from);
+        Self::Response::read_response(resp.map_err(HTTPError::HTTPResponseError)?)
             .await
             .map_err(HTTPError::HTTPResponseError)
     }
