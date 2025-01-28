@@ -226,7 +226,7 @@ impl FlightComputer {
     }
 
     async fn wait_for_condition<F>(
-        locked_self: &RwLock<Self>,
+        locked_self: Arc<RwLock<Self>>,
         (condition, rationale): (F, String),
         timeout_millis: u16,
         poll_interval: u16,
@@ -254,7 +254,7 @@ impl FlightComputer {
     /// # Arguments
     /// - `locked_self`: A `RwLock<Self>` reference to the active flight computer.
     /// - `new_state`: The target operational state.
-    pub async fn set_state_wait(locked_self: &RwLock<Self>, new_state: FlightState) {
+    pub async fn set_state_wait(locked_self: Arc<RwLock<Self>>, new_state: FlightState) {
         let init_state = { locked_self.read().await.current_state };
         if new_state == init_state {
             println!("[LOG] State already set to {new_state}");
@@ -286,7 +286,7 @@ impl FlightComputer {
     /// # Arguments
     /// - `locked_self`: A `RwLock<Self>` reference to the active flight computer.
     /// - `new_vel`: The target velocity vector.
-    pub async fn set_vel_wait(locked_self: &RwLock<Self>, new_vel: Vec2D<f32>) {
+    pub async fn set_vel_wait(locked_self: Arc<RwLock<Self>>, new_vel: Vec2D<f32>) {
         let (current_state, current_vel) = {
             let f_cont_read = locked_self.read().await;
             (f_cont_read.state(), f_cont_read.current_vel())
@@ -309,7 +309,7 @@ impl FlightComputer {
         Self::wait_for_condition(locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
     }
 
-    pub async fn set_angle_wait(locked_self: &RwLock<Self>, new_angle: CameraAngle) {
+    pub async fn set_angle_wait(locked_self: Arc<RwLock<Self>>, new_angle: CameraAngle) {
         let (current_angle, current_state) = {
             let f_cont_read = locked_self.read().await;
             (f_cont_read.current_angle, f_cont_read.state())
