@@ -50,12 +50,7 @@ const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 const POS_FILEPATH: &str = "pos.csv";
 const BIN_FILEPATH: &str = "camera_controller_narrow.bin";
 
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    clippy::too_many_lines,
-    clippy::cast_precision_loss
-)]
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
     let base_url_var = env::var("DRS_BASE_URL");
