@@ -92,11 +92,6 @@ impl ZonedObjective {
     }
 }
 
-impl Timed for ZonedObjective {
-    fn start(&self) -> chrono::DateTime<chrono::Utc> { self.start }
-    fn end(&self) -> chrono::DateTime<chrono::Utc> { self.end }
-}
-
 #[derive(serde::Deserialize, serde::Serialize, Debug)]
 pub struct BeaconObjective {
     id: usize,
@@ -110,10 +105,6 @@ impl BeaconObjective {
     fn id(&self) -> usize { self.id }
 }
 
-impl Timed for BeaconObjective {
-    fn start(&self) -> chrono::DateTime<chrono::Utc> { self.start }
-    fn end(&self) -> chrono::DateTime<chrono::Utc> { self.end }
-}
 
 #[derive(serde::Deserialize, Debug)]
 pub struct CommunicationSlot {
@@ -126,11 +117,6 @@ pub struct CommunicationSlot {
 impl CommunicationSlot {
     fn is_enabled(&self) -> bool { self.enabled }
     fn id(&self) -> usize { self.id }
-}
-
-impl Timed for CommunicationSlot {
-    fn start(&self) -> chrono::DateTime<chrono::Utc> { self.start }
-    fn end(&self) -> chrono::DateTime<chrono::Utc> { self.end }
 }
 
 #[derive(serde::Deserialize, Debug)]
@@ -150,33 +136,6 @@ impl Achievement {
     fn description(&self) -> &str { &self.description }
     fn is_goal_parameter_threshold(&self) -> bool { self.goal_parameter_threshold }
     fn is_goal_parameter(&self) -> bool { self.goal_parameter }
-}
-
-trait Timed {
-    fn start(&self) -> chrono::DateTime<chrono::Utc>;
-    fn end(&self) -> chrono::DateTime<chrono::Utc>;
-
-    fn time_to_start(&self) -> Option<chrono::TimeDelta> {
-        let now = chrono::Utc::now();
-        if now < self.start() {
-            Some(self.start() - now)
-        } else {
-            None
-        }
-    }
-
-    fn time_to_end(&self) -> Option<chrono::TimeDelta> {
-        let now = chrono::Utc::now();
-        if now < self.end() {
-            Some(self.end() - now)
-        } else {
-            None
-        }
-    }
-
-    fn is_in_time_window(&self) -> bool {
-        chrono::Utc::now() >= self.start() && chrono::Utc::now() <= self.end()
-    }
 }
 
 #[derive(Debug, Display)]
