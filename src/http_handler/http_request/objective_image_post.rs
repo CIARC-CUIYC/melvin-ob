@@ -4,8 +4,6 @@ use super::request_common::{
 };
 use bytes::Bytes;
 use std::collections::HashMap;
-use std::io;
-use std::path::Path;
 
 #[derive(Debug)]
 pub struct ObjectiveImageRequest {

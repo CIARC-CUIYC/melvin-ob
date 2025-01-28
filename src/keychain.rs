@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use crate::BIN_FILEPATH;
 use crate::console_communication::console_messenger::ConsoleMessenger;
 use crate::flight_control::camera_controller::CameraController;
 use crate::flight_control::flight_computer::FlightComputer;

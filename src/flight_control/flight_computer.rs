@@ -3,7 +3,6 @@ use super::{
     common::vec2d::Vec2D,
     flight_state::{FlightState, TRANSITION_DELAY_LOOKUP},
 };
-use crate::flight_control::common::pinned_dt::PinnedTimeDelay;
 use crate::flight_control::orbit::index::IndexedOrbitPosition;
 use crate::http_handler::{
     http_client,
@@ -14,11 +13,8 @@ use crate::http_handler::{
         reset_get::ResetRequest,
     },
 };
-use num::traits::float::FloatCore;
-use std::ops::Index;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::RwLock;
-use crate::flight_control::common::math;
 
 type TurnsClockCClockTup = (Vec<(Vec2D<f32>, Vec2D<f32>)>, Vec<(Vec2D<f32>, Vec2D<f32>)>);
 

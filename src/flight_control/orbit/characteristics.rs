@@ -19,7 +19,7 @@ impl OrbitCharacteristics {
             + chrono::TimeDelta::seconds(c_orbit.period().0 as i64);
         let orbit_full_period = c_orbit.period().0 as usize;
         let i_entry =
-            IndexedOrbitPosition::new(0, orbit_full_period, { f_cont.read().await.current_pos() });
+            IndexedOrbitPosition::new(0, orbit_full_period, f_cont.read().await.current_pos());
         Self {
             img_dt,
             orbit_s_end,

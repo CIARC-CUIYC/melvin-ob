@@ -9,7 +9,7 @@ use crate::http_handler::http_request::daily_map_post::DailyMapRequest;
 use crate::http_handler::http_request::objective_image_post::ObjectiveImageRequest;
 use crate::http_handler::http_request::request_common::MultipartBodyHTTPRequestType;
 use crate::http_handler::{
-    http_client, http_client::HTTPClient, http_request::request_common::NoBodyHTTPRequestType,
+    http_client::HTTPClient, http_request::request_common::NoBodyHTTPRequestType,
     http_request::shoot_image_get::ShootImageRequest,
 };
 use bitvec::boxed::BitBox;
@@ -20,7 +20,6 @@ use image::{
     DynamicImage, GenericImage, GenericImageView, ImageBuffer, ImageReader, Pixel, Rgb, RgbImage,
     Rgba, RgbaImage,
 };
-use num::traits::Float;
 use std::{io::Cursor, sync::Arc};
 use tokio::{
     fs::File,
@@ -364,7 +363,6 @@ impl CameraController {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let map_image = self.map_image.read().await;
         let sub_image = map_image.view(offset.x(), offset.y(), size.x(), size.y());
-        let mut thumbnail_image = RgbaImage::new(sub_image.width(), sub_image.width());
         let mut writer = Cursor::new(Vec::<u8>::new());
         sub_image.to_image().write_with_encoder(PngEncoder::new(&mut writer))?;
         ObjectiveImageRequest::new(objective_id, writer.into_inner())

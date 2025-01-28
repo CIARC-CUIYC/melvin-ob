@@ -1,4 +1,4 @@
-#![allow(dead_code, unused)]
+#![allow(dead_code)]
 #![warn(clippy::shadow_reuse, clippy::shadow_same, clippy::builtin_type_shadow)]
 
 mod console_communication;
@@ -6,10 +6,8 @@ mod flight_control;
 mod http_handler;
 mod keychain;
 
-use crate::console_communication::console_messenger::ConsoleMessenger;
 use crate::flight_control::orbit::characteristics::OrbitCharacteristics;
 use crate::flight_control::{
-    camera_controller::CameraController,
     camera_state::CameraAngle,
     common::vec2d::Vec2D,
     flight_computer::FlightComputer,
@@ -21,14 +19,14 @@ use crate::flight_control::{
     },
     task::{base_task::BaseTask, task_controller::TaskController},
 };
-use crate::http_handler::{http_client::HTTPClient, http_request::{observation_get::ObservationRequest, request_common::NoBodyHTTPRequestType}, ZonedObjective};
+use crate::http_handler::ZonedObjective;
 use crate::keychain::{Keychain, KeychainWithOrbit};
 use crate::MappingModeEnd::{Timestamp, Join};
 use chrono::DateTime;
 use csv::Writer;
-use std::{env, fs::OpenOptions, io::Write, sync::Arc};
+use std::{env, fs::OpenOptions, sync::Arc};
 use tokio::{
-    sync::{Mutex, Notify, RwLock},
+    sync::Notify,
     task::JoinHandle,
 };
 
@@ -77,6 +75,7 @@ async fn main() {
     
     loop {
         schedule_undisturbed_orbit(Arc::clone(&k), orbit_char).await;
+        
         let mut phases = 0;
         while let Some(task) = { (*sched).write().await.pop_front() } {
             phases += 1;
@@ -120,7 +119,7 @@ async fn main() {
                             FlightComputer::set_state_wait(k.f_cont(), FlightState::Charge).await;
                         };
                         let k_clone = Arc::clone(&k);
-                        let handle = tokio::spawn(async move {
+                        tokio::spawn(async move {
                             k_clone
                                 .c_cont()
                                 .create_snapshot_full()
@@ -192,7 +191,7 @@ async fn init(url: &str, c_cont_file: &str) -> (KeychainWithOrbit, OrbitCharacte
 
     let c_orbit: ClosedOrbit = {
         let f_cont_lock = init_k.f_cont();
-        f_cont_lock.write().await.reset();
+        f_cont_lock.write().await.reset().await;
         FlightComputer::set_state_wait(init_k.f_cont(), FlightState::Acquisition).await;
         FlightComputer::set_vel_wait(init_k.f_cont(), STATIC_ORBIT_VEL.into()).await;
         FlightComputer::set_angle_wait(init_k.f_cont(), CONST_ANGLE).await;
@@ -323,7 +322,7 @@ async fn start_periodic_imaging(
     let last_image_notify = Arc::new(Notify::new());
     let last_image_notify_cloned = Arc::clone(&last_image_notify);
 
-    let i_start = i_shift.new_from_pos({ f_cont_lock.read().await.current_pos() });
+    let i_start = i_shift.new_from_pos(f_cont_lock.read().await.current_pos());
 
     let handle = tokio::spawn(async move {
         k_clone

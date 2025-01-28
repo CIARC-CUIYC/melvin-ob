@@ -1,24 +1,23 @@
 use crate::flight_control::{
     common::{linked_box::LinkedBox, math, pinned_dt::PinnedTimeDelay, vec2d::Vec2D},
     flight_computer::FlightComputer,
-    flight_state::{FlightState, TRANSITION_DELAY_LOOKUP},
+    flight_state::FlightState,
     orbit::{burn_sequence::BurnSequence, closed_orbit::ClosedOrbit, index::IndexedOrbitPosition},
     task::{
         atomic_decision::AtomicDecision, atomic_decision_cube::AtomicDecisionCube,
-        base_task::BaseTask::SwitchState, base_task::Task, score_grid::ScoreGrid,
-        switch_state_task::SwitchStateTask,
+        base_task::Task, score_grid::ScoreGrid
     },
 };
 use crate::http_handler::ZonedObjective;
 use crate::{MAX_BATTERY_THRESHOLD, MIN_BATTERY_THRESHOLD};
 use bitvec::prelude::BitRef;
-use num::{traits::float::FloatCore, Integer};
+use num::traits::float::FloatCore;
 use std::{
     collections::VecDeque,
-    fmt::{Debug, Display},
+    fmt::Debug,
     sync::{Arc, Condvar},
 };
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 
 /// `TaskController` manages and schedules image capture tasks for a satellite.
 /// It leverages a thread-safe task queue and notifies waiting threads when
@@ -88,10 +87,10 @@ impl TaskController {
             }
         };
 
-        let mut p_t_iter =
+        let p_t_iter =
             orbit.get_p_t_reordered(p_t_shift, orbit.period().0 as usize - prediction_secs);
 
-        let mut decision_buffer =
+        let decision_buffer =
             AtomicDecisionCube::new(prediction_secs, max_battery + 1, states.len());
         let cov_dt_temp = ScoreGrid::new(max_battery + 1, states.len());
         let cov_dt_first = {
@@ -134,7 +133,7 @@ impl TaskController {
                     let new_e = (e as isize + de) as usize;
                     let stay = {
                         if s == 0 {
-                            score_cube.front().unwrap().get((new_e).min(max_battery), s)
+                            score_cube.front().unwrap().get(new_e.min(max_battery), s)
                         } else if e > 0 {
                             score_cube.front().unwrap().get(new_e, s) + i32::from(p_dt)
                         } else {
@@ -178,7 +177,7 @@ impl TaskController {
             let mut res_vel_diff = Vec2D::<f32>::zero();
             let mut remaining_deviation = deviation;
             let mut current_burn_sequence = Vec::new();
-            for acc_secs in 0..max_acc_secs {
+            for _ in 0..max_acc_secs {
                 let perp_acc = last_vel.perp_unit(is_clockwise) * FlightComputer::ACC_CONST;
                 let new_vel = FlightComputer::trunc_vel(last_vel + perp_acc);
                 current_burn_sequence.push(new_vel);
@@ -190,14 +189,14 @@ impl TaskController {
 
             let x_vel_hold_dt = (remaining_deviation.x() / res_vel_diff.x()).floor();
             let y_vel_hold_dt = (remaining_deviation.y() / res_vel_diff.y()).floor();
-            let min_vel_hold_dt = (x_vel_hold_dt.min(y_vel_hold_dt)) as i64;
+            let min_vel_hold_dt = x_vel_hold_dt.min(y_vel_hold_dt) as i64;
 
             if min_vel_hold_dt + max_acc_secs > due.time_left().num_seconds() {
                 continue;
             }
 
-            let max_x_dev = (remaining_deviation - res_vel_diff * x_vel_hold_dt);
-            let max_y_dev = (remaining_deviation - res_vel_diff * y_vel_hold_dt);
+            let max_x_dev = remaining_deviation - res_vel_diff * x_vel_hold_dt;
+            let max_y_dev = remaining_deviation - res_vel_diff * y_vel_hold_dt;
 
             let (min_t, res_dev) = math::find_min_y_for_x_range(
                 x_vel_hold_dt,
@@ -233,16 +232,15 @@ impl TaskController {
         target_pos: Vec2D<f32>,
         target_end_time: chrono::DateTime<chrono::Utc>,
     ) -> BurnSequence {
-        let computation_start = chrono::Utc::now();
         let time_left = target_end_time - chrono::Utc::now();
         let max_dt = {
             let max = usize::try_from(time_left.num_seconds()).unwrap_or(0);
             max - Self::OBJECTIVE_MIN_RETRIEVAL_TOL
         };
 
-        let (due_i, orbit_vel) = {
+        let orbit_vel = {
             let f_cont = f_cont_lock.read().await;
-            (f_cont.pos_in_dt(curr_i, time_left), f_cont.current_vel())
+            f_cont.current_vel()
         };
 
         let max_off_orbit_t = max_dt - Self::OBJECTIVE_SCHEDULE_MIN_DT;
@@ -263,8 +261,7 @@ impl TaskController {
             }
         }
 
-        let remaining_range = (Self::OBJECTIVE_SCHEDULE_MIN_DT..=last_possible_dt);
-        let offset = *remaining_range.start();
+        let remaining_range = Self::OBJECTIVE_SCHEDULE_MIN_DT..=last_possible_dt;
         let mut best_burn_sequence = BurnSequence::new(
             curr_i,
             Vec::new().into_boxed_slice(),
@@ -283,8 +280,6 @@ impl TaskController {
         let turns = turns_handle.await.unwrap();
         for dt in remaining_range.rev() {
             let mut next_pos = (curr_i.pos() + orbit_vel * dt).wrap_around_map();
-            let burn_sequence_start =
-                curr_i.new_from_future_pos(next_pos, chrono::TimeDelta::seconds(dt as i64));
             let burn_sequence_i =
                 curr_i.new_from_future_pos(next_pos, chrono::TimeDelta::seconds(dt as i64));
             let direction_vec = next_pos.unwrapped_to(&target_pos);
@@ -477,12 +472,10 @@ impl TaskController {
         let p_t_shift = scheduling_start_i.index();
         let computation_start = scheduling_start_i.t();
         println!("[INFO] Calculating optimal orbit schedule...");
-        let (result, orbit_period) = {
+        let result = {
             let orbit = orbit_lock.read().await;
-            (
-                Self::init_orbit_sched_calc(&orbit, p_t_shift, None, None),
-                orbit.period(),
-            )
+
+            Self::init_orbit_sched_calc(&orbit, p_t_shift, None, None)
         };
         let dt_calc = (chrono::Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
         println!("[INFO] Optimal Orbit Calculation complete after {dt_calc:.2}");

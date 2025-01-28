@@ -87,7 +87,6 @@ pub fn find_min_y_for_x_range(
     // Coefficients for the quadratic function f(t) = c2 * t^2 + c1 * t + c0
     let c2 = (dx / dt).powi(2) + (dy / dt).powi(2);
     let c1 = 2.0 * ((min_x * dx / dt) + (min_y * dy / dt));
-    let c0 = min_x.powi(2) + min_y.powi(2);
 
     // Minimize f(t) -> t_min = -c1 / (2 * c2)
     let t_min = -c1 / (2.0 * c2);

@@ -1,9 +1,7 @@
 use crate::flight_control::{
-    camera_state::CameraAngle, common::vec2d::Vec2D, orbit::orbit_base::OrbitBase,
+    camera_state::CameraAngle, orbit::orbit_base::OrbitBase,
 };
-use bitvec::slice::Iter;
 use bitvec::{bitbox, order::Lsb0, prelude::BitBox};
-use std::iter::Chain;
 use bitvec::prelude::BitRef;
 use strum_macros::Display;
 

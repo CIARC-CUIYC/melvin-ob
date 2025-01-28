@@ -1,5 +1,3 @@
-use crate::flight_control::flight_state::FlightState;
-
 #[derive(Debug, Clone, Copy)]
 pub enum AtomicDecision {
     StayInCharge,
