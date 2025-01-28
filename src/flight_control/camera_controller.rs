@@ -13,6 +13,7 @@ use crate::http_handler::{
     http_request::shoot_image_get::ShootImageRequest,
 };
 use bitvec::boxed::BitBox;
+use core::slice;
 use futures::StreamExt;
 use image::{
     codecs::png::{CompressionType, FilterType, PngDecoder, PngEncoder},
@@ -21,6 +22,10 @@ use image::{
     Rgba, RgbaImage,
 };
 use num::traits::Float;
+use std::ffi::c_void;
+use std::ops::{Deref, DerefMut};
+use std::os::fd::AsRawFd;
+use std::ptr::null_mut;
 use std::{io::Cursor, sync::Arc};
 use tokio::{
     fs::File,
@@ -34,15 +39,81 @@ pub struct EncodedImageExtract {
     pub(crate) data: Vec<u8>,
 }
 
+pub(crate) struct FileBasedBuffer {
+    file: std::fs::File,
+    ptr: *mut u8,
+    length: usize,
+}
+
+impl FileBasedBuffer {
+    fn open(path: &str, length: usize) -> Self {
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .read(true)
+            .truncate(false)
+            .open(path)
+            .unwrap();
+        let res = unsafe {
+            libc::ftruncate(file.as_raw_fd(), length as i64)
+        };
+        if res != 0 {
+            panic!("ftruncate failed");
+        }
+        let ptr = unsafe {
+            libc::mmap(
+                null_mut(),
+                length,
+                libc::PROT_READ | libc::PROT_WRITE,
+                libc::MAP_SHARED | libc::MAP_FILE,
+                file.as_raw_fd(),
+                0,
+            )
+        };
+        if ptr == libc::MAP_FAILED {
+            panic!("mmap failed");
+        }
+        FileBasedBuffer {
+            file,
+            length,
+            ptr: ptr as *mut u8,
+        }
+    }
+}
+
+impl Drop for FileBasedBuffer {
+    fn drop(&mut self) {
+        unsafe {
+            libc::munmap(self.ptr as *mut c_void, self.length);
+        }
+    }
+}
+
+unsafe impl Send for FileBasedBuffer {}
+unsafe impl Sync for FileBasedBuffer {}
+
+impl Deref for FileBasedBuffer {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        return unsafe { slice::from_raw_parts(self.ptr, self.length) };
+    }
+}
+
+impl DerefMut for FileBasedBuffer {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        return unsafe { slice::from_raw_parts_mut(self.ptr, self.length) };
+    }
+}
+
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct MapImageStorage {
     coverage: Bitmap,
-    fullsize_buffer: Vec<u8>,
 }
 
 pub struct MapImage {
     coverage: Bitmap,
-    fullsize_buffer: RgbImage,
+    fullsize_buffer: ImageBuffer<Rgb<u8>, FileBasedBuffer>,
     thumbnail_buffer: RgbaImage,
 }
 
@@ -52,9 +123,17 @@ impl MapImage {
     fn thumbnail_size() -> Vec2D<u32> { Vec2D::map_size() / Self::THUMBNAIL_SCALE_FACTOR }
 
     fn new() -> Self {
+        let fullsize_buffer_size: usize =
+            Vec2D::<usize>::map_size().x() * Vec2D::<usize>::map_size().y() * 3;
+        let mut file_based_buffer = FileBasedBuffer::open(MAP_BUFFER_PATH, fullsize_buffer_size);
         Self {
             coverage: Bitmap::from_map_size(),
-            fullsize_buffer: ImageBuffer::new(Vec2D::map_size().x(), Vec2D::map_size().y()),
+            fullsize_buffer: ImageBuffer::from_raw(
+                Vec2D::map_size().x(),
+                Vec2D::map_size().y(),
+                file_based_buffer,
+            )
+            .unwrap(),
             thumbnail_buffer: ImageBuffer::new(
                 Self::thumbnail_size().x(),
                 Self::thumbnail_size().y(),
@@ -74,7 +153,7 @@ impl MapImage {
     pub fn fullsize_mut_view(
         &mut self,
         offset: Vec2D<u32>,
-    ) -> SubBuffer<&mut ImageBuffer<Rgb<u8>, Vec<u8>>> {
+    ) -> SubBuffer<&mut ImageBuffer<Rgb<u8>, FileBasedBuffer>> {
         SubBuffer {
             buffer: &mut self.fullsize_buffer,
             buffer_size: Vec2D::map_size(),
@@ -129,6 +208,7 @@ pub struct CameraController {
     request_client: Arc<HTTPClient>,
 }
 
+const MAP_BUFFER_PATH: &str = "map.bin";
 const SNAPSHOT_FULL_PATH: &str = "snapshot_full.png";
 
 impl CameraController {
@@ -147,16 +227,21 @@ impl CameraController {
         let mut file_buffer = Vec::new();
         file.read_to_end(&mut file_buffer).await?;
 
-        let image: MapImageStorage = bincode::deserialize(&file_buffer)?;
+        let fullsize_buffer_size: usize =
+            Vec2D::<usize>::map_size().x() * Vec2D::<usize>::map_size().y() * 3;
+
+        let coverage: Bitmap = bincode::deserialize(&file_buffer)?;
+        let mut file_based_buffer = FileBasedBuffer::open(MAP_BUFFER_PATH, fullsize_buffer_size);
+
         let fullsize_buffer = ImageBuffer::from_raw(
             Vec2D::map_size().x(),
             Vec2D::map_size().y(),
-            image.fullsize_buffer,
+            file_based_buffer,
         )
         .unwrap();
 
         let mut map_image = MapImage {
-            coverage: image.coverage,
+            coverage,
             fullsize_buffer,
             thumbnail_buffer: ImageBuffer::new(0, 0),
         };
@@ -450,10 +535,7 @@ impl CameraController {
             let pic_count_lock_clone = Arc::clone(&pic_count_lock);
             let self_clone = Arc::clone(&self);
             let img_handle = tokio::spawn(async move {
-                match self_clone
-                    .shoot_image_to_buffer(Arc::clone(&f_cont_lock_clone), lens)
-                    .await
-                {
+                match self_clone.shoot_image_to_buffer(Arc::clone(&f_cont_lock_clone), lens).await {
                     Ok(offset) => {
                         let pic_num = {
                             let mut lock = pic_count_lock_clone.lock().await;
@@ -472,7 +554,7 @@ impl CameraController {
                     }
                 }
             });
-            
+
             let next_img_due = {
                 let next_max_dt =
                     chrono::Utc::now() + chrono::TimeDelta::seconds(image_max_dt as i64);
@@ -483,7 +565,7 @@ impl CameraController {
                     next_max_dt
                 }
             };
-            
+
             let offset = img_handle.await;
             if let Some(offset) = offset.ok().flatten() {
                 console_messenger.send_thumbnail(offset, lens);
