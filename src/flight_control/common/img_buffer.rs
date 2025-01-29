@@ -2,14 +2,6 @@ use super::vec2d::Vec2D;
 use image::{GenericImage, GenericImageView};
 use std::ops::{Deref, DerefMut};
 
-// TODO: this could be useful as soon as metadata for pixels is necessary
-/*
-pub struct PixelData {
-    rgb: [u8; 3],
-    // NOTE: possible Metadata field could be useful here
-}
- */
-
 /// A 2D raster buffer to store pixel data. Each pixel is represented by an RGB triplet.
 ///
 /// # Fields
