@@ -361,6 +361,24 @@ impl FlightComputer {
         Self::wait_for_condition(locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
     }
 
+    pub async fn evaluate_burn(
+        locked_self: Arc<RwLock<Self>>,
+        burn_sequence: &BurnSequence,
+        target_pos: Vec2D<f32>,
+    ) -> (Vec2D<f32>, Vec2D<f32>) {
+        let (act_pos, act_vel) = {
+            let f_cont = locked_self.read().await;
+            (f_cont.current_pos(), f_cont.current_vel())
+        };
+        let projected_res_pos = act_pos + act_vel * burn_sequence.detumble_dt();
+        let deviation = projected_res_pos.to(&target_pos);
+        println!(
+            "[LOG] Evaluated Velocity change. Expected target position: {target_pos}, \
+            resulting position: {projected_res_pos}, deviation: {deviation}"
+        );
+        (act_vel, deviation)        
+    }
+
     /// Updates the satellite's internal fields with the latest observation data.
     pub async fn update_observation(&mut self) {
         loop {

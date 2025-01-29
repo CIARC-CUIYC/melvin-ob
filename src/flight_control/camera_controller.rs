@@ -13,6 +13,7 @@ use crate::http_handler::{
     http_request::shoot_image_get::ShootImageRequest,
 };
 use bitvec::boxed::BitBox;
+use chrono::TimeDelta;
 use futures::StreamExt;
 use image::{
     codecs::png::{CompressionType, FilterType, PngDecoder, PngEncoder},
@@ -20,6 +21,7 @@ use image::{
     DynamicImage, GenericImage, GenericImageView, ImageBuffer, ImageReader, Pixel, Rgb, RgbImage,
     Rgba, RgbaImage,
 };
+use std::cmp::max;
 use std::{io::Cursor, sync::Arc};
 use tokio::{
     fs::File,
@@ -234,7 +236,7 @@ impl CameraController {
             (f_cont.current_pos(), collected_png)
         };
         let decoded_image = Self::decode_png_data(
-            &collected_png.unwrap_or_else(|e| panic!("[ERROR] PNG couldn't be unwrapped: {e}")),
+            &collected_png?,
             angle,
         )?;
         let angle_const = angle.get_square_side_length() / 2;
@@ -435,18 +437,30 @@ impl CameraController {
         self: Arc<Self>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
         console_messenger: Arc<ConsoleMessenger>,
-        end_time: chrono::DateTime<chrono::Utc>,
-        last_img_kill: Arc<Notify>,
+        (end_time, last_img_kill): (chrono::DateTime<chrono::Utc>, Arc<Notify>),
         image_max_dt: f32,
         lens: CameraAngle,
-    ) {
+        start_index: usize,
+    ) -> Vec<(isize, isize)> {
         let mut last_image_flag = false;
+        let st = start_index as isize;
         let pic_count = 0;
         let pic_count_lock = Arc::new(Mutex::new(pic_count));
+        let mut done_ranges: Vec<(isize, isize)> = Vec::new();
+        let overlap = {
+            let overlap_dt = (image_max_dt.floor() / 2.0) as isize;
+            TimeDelta::seconds(overlap_dt as i64)
+        };        
+        let mut last_mark = (
+            st - overlap.num_seconds() as isize,
+            chrono::Utc::now() - overlap,
+        );
+        let mut last_pic = chrono::Utc::now();
         loop {
             let f_cont_lock_clone = Arc::clone(&f_cont_lock);
             let pic_count_lock_clone = Arc::clone(&pic_count_lock);
             let self_clone = Arc::clone(&self);
+            let last_pic = chrono::Utc::now();
             let img_init_timestamp = chrono::Utc::now();
             let img_handle = tokio::spawn(async move {
                 match self_clone.shoot_image_to_buffer(Arc::clone(&f_cont_lock_clone), lens).await {
@@ -481,13 +495,20 @@ impl CameraController {
                     next_max_dt
                 }
             };
-
+            
             let offset = img_handle.await;
             if let Some(off) = offset.ok().flatten() {
                 console_messenger.send_thumbnail(off, lens);
+            } else {
+                let passed_secs = (last_pic - last_mark.1 + overlap).num_seconds();
+                done_ranges.push((last_mark.0, last_mark.0 + passed_secs as isize));
+                last_mark = (st + done_ranges.len() as isize, chrono::Utc::now());
             }
+            
             if last_image_flag {
-                return;
+                let passed_secs = (chrono::Utc::now() - last_mark.1 + overlap).num_seconds();
+                done_ranges.push((last_mark.0, last_mark.0 + passed_secs as isize));
+                last_mark = (st + done_ranges.len() as isize, chrono::Utc::now());
             }
             let sleep_time = next_img_due - chrono::Utc::now();
             tokio::select! {

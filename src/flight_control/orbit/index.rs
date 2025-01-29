@@ -23,14 +23,37 @@ impl IndexedOrbitPosition {
     pub fn pos(&self) -> Vec2D<f32> { self.pos }
 
     pub fn index(&self) -> usize { self.index }
+    
+    pub fn period(&self) -> usize { self.period }
 
-    pub fn get_ranges_to_now(&self) -> Vec<(usize, usize)> {
-        let end = self.index_now() % self.period;
+    pub fn get_ranges_to_now(&self, shift: Option<usize>) -> Vec<(usize, usize)> {
+        let end = {
+            if let Some(shift) = shift {
+                (((self.index_now() - shift) % self.period) + self.period) % self.period
+            } else {
+                self.index_now() % self.period
+            }
+        };
         if end < self.index {
             vec![(self.index, self.period), (0, end)]
         } else {
             vec![(self.index, self.index_now() % self.period)]
         }
+    }
+    
+    pub fn map_ranges(ranges: &Vec<(isize, isize)>, max: isize) -> Vec<(usize, usize)> {
+        let mut mapped_ranges = Vec::new();
+        for range in ranges {
+            let start = (((range.0 % max) + max) % max) as usize;
+            let end = (((range.0 % max) + max) % max) as usize;
+            if start < end {
+                mapped_ranges.push((start, end));
+            } else {
+                mapped_ranges.push((start, (max - 1) as usize));
+                mapped_ranges.push((0, end));
+            }
+        }
+        mapped_ranges
     }
 
     pub fn new_from_pos(&self, pos: Vec2D<f32>) -> Self {

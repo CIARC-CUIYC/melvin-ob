@@ -6,6 +6,7 @@ mod flight_control;
 mod http_handler;
 mod keychain;
 
+use crate::flight_control::common::pinned_dt::PinnedTimeDelay;
 use crate::flight_control::orbit::characteristics::OrbitCharacteristics;
 use crate::flight_control::{
     camera_state::CameraAngle,
@@ -21,9 +22,11 @@ use crate::flight_control::{
 };
 use crate::http_handler::ZonedObjective;
 use crate::keychain::{Keychain, KeychainWithOrbit};
+use crate::GlobalMode::ZonedObjectiveMode;
 use crate::MappingModeEnd::{Join, Timestamp};
-use chrono::DateTime;
+use chrono::{DateTime, TimeDelta};
 use csv::Writer;
+use std::collections::VecDeque;
 use std::{env, fs::OpenOptions, sync::Arc};
 use tokio::{sync::Notify, task::JoinHandle};
 
@@ -32,7 +35,15 @@ enum MappingModeEnd {
     Join(JoinHandle<()>),
 }
 
-const DT_0: chrono::TimeDelta = chrono::TimeDelta::seconds(0);
+enum GlobalMode {
+    MappingMode,
+    ZonedObjectiveMode(ZonedObjective),
+}
+
+const DT_MIN: TimeDelta = TimeDelta::seconds(5);
+const DT_0: TimeDelta = TimeDelta::seconds(0);
+const DT_0_STD: std::time::Duration = std::time::Duration::from_secs(0);
+const DETUMBLE_TOL: TimeDelta = DT_MIN;
 
 const STATIC_ORBIT_VEL: (f32, f32) = (6.4f32, 7.4f32);
 pub const MIN_BATTERY_THRESHOLD: f32 = 10.0;
@@ -42,7 +53,12 @@ const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 const POS_FILEPATH: &str = "pos.csv";
 const BIN_FILEPATH: &str = "camera_controller_narrow.bin";
 
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss,
+    clippy::too_many_lines
+)]
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
     let base_url_var = env::var("DRS_BASE_URL");
@@ -61,40 +77,53 @@ async fn main() {
         "Test Objective".to_string(),
         0,
         true,
-        [13200, 5900, 13800, 6500],
+        [4750, 5300, 5350, 5900],
         "narrow".to_string(),
         1.0,
         "Test Objective".to_string(),
         "test_objective.png".to_string(),
         false,
     );
-    schedule_zoned_objective_retrieval(Arc::clone(&k), orbit_char, debug_objective).await;
+
+    let mut objective_queue = VecDeque::new();
+    objective_queue.push_back(debug_objective.clone());
+
+    //schedule_zoned_objective_retrieval(Arc::clone(&k), orbit_char, debug_objective).await;
+    let mut global_mode = GlobalMode::MappingMode;
     loop {
-        //schedule_undisturbed_orbit(Arc::clone(&k), orbit_char).await;
+        schedule_undisturbed_orbit(Arc::clone(&k), orbit_char).await;
 
         let mut phases = 0;
         while let Some(task) = { (*sched).write().await.pop_front() } {
             phases += 1;
             let task_type = task.task_type();
-            let due_time = task.dt().time_left();
+            let mut due_time = task.dt().time_left();
             println!(
                 "[INFO] Iteration {phases}: {task_type} in  {}s!",
                 due_time.num_seconds()
             );
 
             let current_state = { k.f_cont().read().await.state() };
-            if current_state == FlightState::Acquisition && due_time > DT_0 {
-                let k_clone = Arc::clone(&k);
-                execute_mapping(
-                    k_clone,
-                    Timestamp(chrono::Utc::now() + due_time),
-                    orbit_char.img_dt(),
-                    orbit_char.i_entry(),
-                )
-                .await;
+            if current_state == FlightState::Acquisition {
+                match global_mode {
+                    GlobalMode::MappingMode => {
+                        if due_time > DT_MIN {
+                            let k_clone = Arc::clone(&k);
+                            execute_mapping(
+                                k_clone,
+                                Timestamp(chrono::Utc::now() + due_time),
+                                orbit_char.img_dt(),
+                                orbit_char.i_entry(),
+                            )
+                            .await;
+                        }
+                    }
+                    GlobalMode::ZonedObjectiveMode(_) => {}
+                }
+                due_time = task.dt().time_left();
+                FlightComputer::wait_for_duration(due_time.to_std().unwrap_or(DT_0_STD)).await;
             } else if current_state == FlightState::Charge && due_time > DT_0 {
-                let task_due = task.dt().time_left();
-                FlightComputer::wait_for_duration(task_due.to_std().unwrap()).await;
+                FlightComputer::wait_for_duration(due_time.to_std().unwrap_or(DT_0_STD)).await;
             } else {
                 panic!("[FATAL] Illegal state ({current_state}) or too little time left for task ({due_time})!")
             }
@@ -117,8 +146,20 @@ async fn main() {
                     let exp_pos = burn.sequence_pos().last().unwrap();
                     let current_pos = k.f_cont().read().await.current_pos();
                     let diff = *exp_pos - current_pos;
+                    let detumble_time_delta = TimeDelta::seconds(burn.detumble_dt() as i64);
+                    let detumble_dt = PinnedTimeDelay::new(detumble_time_delta - DETUMBLE_TOL);
                     println!("[INFO] Velocity change done! Expected position {exp_pos}, Actual Position {current_pos}, Diff {diff}");
-                    // TODO: here orbit detumbling should be initiated
+                    let objective = objective_queue.pop_front().unwrap();
+                    // TODO: here we shouldnt use objective.get_imaging_points but something already created,
+                    // TODO: also the mode change to global mode should happen sometime else
+                    let (vel, dev) = FlightComputer::evaluate_burn(
+                        k.f_cont(),
+                        burn,
+                        objective.get_imaging_points()[0],
+                    )
+                    .await;
+                    TaskController::calculate_orbit_correction_burn(vel, dev, detumble_dt);
+                    global_mode = ZonedObjectiveMode(objective);
                 }
                 BaseTask::SwitchState(switch) => match switch.target_state() {
                     FlightState::Acquisition => {
@@ -303,8 +344,8 @@ async fn execute_mapping(
         join_handle.await.ok();
         acq_phase.1.notify_one();
     }
-    acq_phase.0.await.ok();
-    let ranges = acq_phase.2.get_ranges_to_now();
+    let ranges = acq_phase.0.await.ok().unwrap_or(Vec::new());
+    let fixed_ranges = IndexedOrbitPosition::map_ranges(&ranges, i_entry.period() as isize);
     print!("[INFO] Marking done: {} - {}", ranges[0].0, ranges[0].1);
     if let Some(r) = ranges.get(1) {
         print!(" and {} - {}", r.0, r.1);
@@ -314,7 +355,7 @@ async fn execute_mapping(
     tokio::spawn(async move {
         let c_orbit_lock = k_loc.c_orbit();
         let mut c_orbit = c_orbit_lock.write().await;
-        for (start, end) in &ranges {
+        for (start, end) in &fixed_ranges {
             c_orbit.mark_done(*start, *end);
         }
     });
@@ -327,7 +368,7 @@ async fn start_periodic_imaging(
     img_dt: f32,
     angle: CameraAngle,
     i_shift: IndexedOrbitPosition,
-) -> (JoinHandle<()>, Arc<Notify>, IndexedOrbitPosition) {
+) -> (JoinHandle<Vec<(isize, isize)>>, Arc<Notify>) {
     let f_cont_lock = Arc::clone(&k_clone.f_cont());
     let last_image_notify = Arc::new(Notify::new());
     let last_image_notify_cloned = Arc::clone(&last_image_notify);
@@ -340,12 +381,12 @@ async fn start_periodic_imaging(
             .execute_acquisition_cycle(
                 f_cont_lock,
                 k_clone.con(),
-                end_time,
-                last_image_notify_cloned,
+                (end_time, last_image_notify_cloned),
                 img_dt,
                 angle,
+                i_start.index(),
             )
-            .await;
+            .await
     });
-    (handle, last_image_notify, i_start)
+    (handle, last_image_notify)
 }

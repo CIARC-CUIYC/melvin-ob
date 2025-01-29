@@ -82,6 +82,7 @@ impl TaskController {
             let max_pred_secs =
                 Self::MAX_ORBIT_PREDICTION_SECS.min(orbit.period().0 as u32) as usize;
             if let Some(pred_secs) = dt {
+                // TODO: this could become a problem if an objectives end time is further in the future than max_pred_secs
                 max_pred_secs.min(pred_secs)
             } else {
                 max_pred_secs

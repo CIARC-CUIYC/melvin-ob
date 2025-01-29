@@ -4,7 +4,7 @@ use crate::flight_control::camera_state::CameraAngle;
 use crate::flight_control::common::vec2d::Vec2D;
 use strum_macros::Display;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct ZonedObjective {
     id: usize,
     name: String,
