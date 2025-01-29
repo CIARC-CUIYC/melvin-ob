@@ -24,9 +24,9 @@ use crate::http_handler::ZonedObjective;
 use crate::keychain::{Keychain, KeychainWithOrbit};
 use crate::MappingModeEnd::{Join, Timestamp};
 use chrono::{DateTime, TimeDelta};
-use csv::Writer;
 use std::collections::VecDeque;
 use std::{env, fs::OpenOptions, sync::Arc};
+use bytes::buf::Writer;
 use tokio::{sync::Notify, task::JoinHandle};
 
 enum MappingModeEnd {
@@ -49,9 +49,6 @@ pub const MIN_BATTERY_THRESHOLD: f32 = 10.0;
 pub const MAX_BATTERY_THRESHOLD: f32 = 100.0;
 const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 
-const POS_FILEPATH: &str = "pos.csv";
-const BIN_FILEPATH: &str = "camera_controller_narrow.bin";
-
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
@@ -63,7 +60,7 @@ async fn main() {
     let base_url_var = env::var("DRS_BASE_URL");
     let base_url = base_url_var.as_ref().map_or("http://localhost:33000", |v| v.as_str());
     let (k, orbit_char) = {
-        let res = init(base_url, BIN_FILEPATH).await;
+        let res = init(base_url).await;
         (Arc::new(res.0), res.1)
     };
 
@@ -172,7 +169,7 @@ async fn main() {
                         tokio::spawn(async move {
                             k_clone
                                 .c_cont()
-                                .create_snapshot_full()
+                                .create_full_snapshot()
                                 .await
                                 .expect("[WARN] Export failed!");
                         });
@@ -191,13 +188,10 @@ async fn main() {
 }
 
 #[allow(clippy::cast_precision_loss)]
-async fn init(url: &str, c_cont_file: &str) -> (KeychainWithOrbit, OrbitCharacteristics) {
-    let init_k = Keychain::new(url, c_cont_file).await;
+async fn init(url: &str) -> (KeychainWithOrbit, OrbitCharacteristics) {
+    let init_k = Keychain::new(url).await;
     let init_k_f_cont_clone = init_k.f_cont();
     tokio::spawn(async move {
-        let file =
-            OpenOptions::new().write(true).create(true).truncate(true).open(POS_FILEPATH).unwrap();
-        let mut wrt = Writer::from_writer(file);
         let mut first = true; // DEBUG ARTIFACT
         let mut last_pos: Vec2D<f32> = Vec2D::new(-100.0, -100.0);
         let mut last_timestamp = chrono::Utc::now();
@@ -222,16 +216,7 @@ async fn init(url: &str, c_cont_file: &str) -> (KeychainWithOrbit, OrbitCharacte
                             / 1000.0;
                     expected_pos = expected_pos.wrap_around_map();
                     let diff = current_pos - expected_pos;
-                    wrt.write_record(&[
-                        current_pos.x().to_string(),
-                        current_pos.y().to_string(),
-                        expected_pos.x().to_string(),
-                        expected_pos.y().to_string(),
-                        diff.x().to_string(),
-                        diff.y().to_string(),
-                        current_state_str,
-                    ])
-                    .unwrap();
+                    // TODO: do something with thos informations
                     last_pos = expected_pos;
                 }
             };

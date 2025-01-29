@@ -17,13 +17,10 @@ pub struct Keychain {
 }
 
 impl Keychain {
-    pub async fn new(url: &str, c_cont_file: &str) -> Self {
+    pub async fn new(url: &str) -> Self {
         let client = Arc::new(HTTPClient::new(url));
         let c_cont = Arc::new(
-            CameraController::from_file(c_cont_file, Arc::clone(&client)).await.unwrap_or_else(|e| {
-                println!("[WARN] Failed to read from binary file: {e}");
-                CameraController::new(Arc::clone(&client))
-            }),
+            CameraController::start("./".to_string(), Arc::clone(&client))
         );
         let t_cont = Arc::new(TaskController::new());
         let f_cont = Arc::new(RwLock::new(FlightComputer::new(Arc::clone(&client)).await));
