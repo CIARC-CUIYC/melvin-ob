@@ -41,6 +41,7 @@ impl IndexedOrbitPosition {
         }
     }
     
+    #[allow(clippy::cast_sign_loss)]
     pub fn map_ranges(ranges: &Vec<(isize, isize)>, max: isize) -> Vec<(usize, usize)> {
         let mut mapped_ranges = Vec::new();
         for range in ranges {

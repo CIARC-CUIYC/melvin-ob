@@ -3,9 +3,10 @@ use super::{
     common::vec2d::Vec2D,
     flight_state::{FlightState, TRANSITION_DELAY_LOOKUP},
 };
-use crate::flight_control::orbit::burn_sequence::BurnSequence;
-use crate::flight_control::orbit::index::IndexedOrbitPosition;
-use crate::flight_control::task::task_controller::TaskController;
+use crate::flight_control::{
+    orbit::{burn_sequence::BurnSequence, index::IndexedOrbitPosition},
+    task::task_controller::TaskController,
+};
 use crate::http_handler::{
     http_client,
     http_request::{
@@ -376,7 +377,7 @@ impl FlightComputer {
             "[LOG] Evaluated Velocity change. Expected target position: {target_pos}, \
             resulting position: {projected_res_pos}, deviation: {deviation}"
         );
-        (act_vel, deviation)        
+        (act_vel, deviation)
     }
 
     /// Updates the satellite's internal fields with the latest observation data.

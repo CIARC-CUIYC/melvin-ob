@@ -1,5 +1,4 @@
-use crate::flight_control::common::vec2d::Vec2D;
-use crate::flight_control::orbit::index::IndexedOrbitPosition;
+use crate::flight_control::{common::vec2d::Vec2D, orbit::index::IndexedOrbitPosition};
 
 #[derive(Debug, Clone)]
 pub struct BurnSequence {
@@ -29,23 +28,21 @@ impl BurnSequence {
             acc_dt,
             detumble_dt,
             cost_factor,
-            res_angle_dev
+            res_angle_dev,
         }
     }
 
-    pub fn cost(&self) -> f32 {
-        self.cost_factor
-    }
+    pub fn cost(&self) -> f32 { self.cost_factor }
 
-    pub fn start_i(&self) -> IndexedOrbitPosition {self.start_i}
+    pub fn start_i(&self) -> IndexedOrbitPosition { self.start_i }
 
-    pub fn sequence_pos(&self) -> &[Vec2D<f32>] {&self.sequence_pos}
+    pub fn sequence_pos(&self) -> &[Vec2D<f32>] { &self.sequence_pos }
 
-    pub fn sequence_vel(&self) -> &[Vec2D<f32>] {&self.sequence_vel}
+    pub fn sequence_vel(&self) -> &[Vec2D<f32>] { &self.sequence_vel }
 
-    pub fn detumble_dt(&self) -> usize {self.detumble_dt}
+    pub fn detumble_dt(&self) -> usize { self.detumble_dt }
 
-    pub fn acc_dt(&self) -> usize {self.acc_dt}
+    pub fn acc_dt(&self) -> usize { self.acc_dt }
 
-    pub fn res_angle_dev(&self) -> f32 {self.res_angle_dev}
+    pub fn res_angle_dev(&self) -> f32 { self.res_angle_dev }
 }

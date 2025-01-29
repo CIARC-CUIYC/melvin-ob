@@ -1,9 +1,6 @@
 use super::response_common::{HTTPResponseType, ResponseError};
-use crate::http_handler::http_client::HTTPClient;
-use crate::http_handler::HTTPError;
-use std::collections::HashMap;
-use std::fmt::Debug;
-use std::io::ErrorKind;
+use crate::http_handler::{http_client::HTTPClient, HTTPError};
+use std::{collections::HashMap, fmt::Debug, io::ErrorKind};
 use strum_macros::Display;
 
 #[derive(Debug)]

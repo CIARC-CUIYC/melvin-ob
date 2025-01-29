@@ -6,27 +6,25 @@ mod flight_control;
 mod http_handler;
 mod keychain;
 
-use crate::flight_control::common::pinned_dt::PinnedTimeDelay;
-use crate::flight_control::orbit::characteristics::OrbitCharacteristics;
 use crate::flight_control::{
     camera_state::CameraAngle,
-    common::vec2d::Vec2D,
+    task::{base_task::BaseTask, task_controller::TaskController},
+    common::{vec2d::Vec2D, pinned_dt::PinnedTimeDelay},
     flight_computer::FlightComputer,
     flight_state::FlightState,
     orbit::{
         closed_orbit::{ClosedOrbit, OrbitUsabilityError},
         index::IndexedOrbitPosition,
         orbit_base::OrbitBase,
+        characteristics::OrbitCharacteristics
     },
-    task::{base_task::BaseTask, task_controller::TaskController},
+    
 };
 use crate::http_handler::ZonedObjective;
 use crate::keychain::{Keychain, KeychainWithOrbit};
 use crate::MappingModeEnd::{Join, Timestamp};
 use chrono::{DateTime, TimeDelta};
-use std::collections::VecDeque;
-use std::{env, fs::OpenOptions, sync::Arc};
-use bytes::buf::Writer;
+use std::{collections::VecDeque, {env, sync::Arc}};
 use tokio::{sync::Notify, task::JoinHandle};
 
 enum MappingModeEnd {
@@ -51,6 +49,7 @@ const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 
 #[allow(
     clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
     clippy::cast_sign_loss,
     clippy::cast_precision_loss,
     clippy::too_many_lines
@@ -206,7 +205,7 @@ async fn init(url: &str) -> (KeychainWithOrbit, OrbitCharacteristics) {
                     first = false;
                 } else if !first {
                     let current_pos = f_cont.current_pos();
-                    let current_state_str = f_cont.state().to_string();
+                    
                     drop(f_cont);
                     let dt = chrono::Utc::now() - last_timestamp;
                     last_timestamp = chrono::Utc::now();
@@ -216,7 +215,7 @@ async fn init(url: &str) -> (KeychainWithOrbit, OrbitCharacteristics) {
                             / 1000.0;
                     expected_pos = expected_pos.wrap_around_map();
                     let diff = current_pos - expected_pos;
-                    // TODO: do something with thos informations
+                    // TODO: do something with those informations
                     last_pos = expected_pos;
                 }
             };
@@ -309,6 +308,7 @@ async fn schedule_zoned_objective_retrieval(
     }
 }
 
+#[allow(clippy::cast_possible_wrap)]
 async fn execute_mapping(
     k_clone: Arc<KeychainWithOrbit>,
     end: MappingModeEnd,

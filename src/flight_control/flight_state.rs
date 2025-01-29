@@ -1,6 +1,4 @@
-use std::collections::HashMap;
-use std::sync::LazyLock;
-use std::time::Duration;
+use std::{collections::HashMap, sync::LazyLock, time::Duration};
 use strum_macros::Display;
 
 /// Represents the various states of a flight system.

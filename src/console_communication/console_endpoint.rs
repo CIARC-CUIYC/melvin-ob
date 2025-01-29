@@ -1,11 +1,11 @@
 use super::melvin_messages;
 use prost::Message;
 use std::io::{Cursor, ErrorKind};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::tcp::{ReadHalf, WriteHalf};
-use tokio::net::TcpListener;
-use tokio::sync::broadcast;
-use tokio::sync::oneshot;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{tcp::{ReadHalf, WriteHalf}, TcpListener},
+    sync::{broadcast, oneshot},
+};
 
 #[derive(Debug, Clone)]
 pub enum ConsoleEvent {

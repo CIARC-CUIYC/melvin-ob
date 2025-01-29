@@ -5,16 +5,19 @@ use crate::flight_control::{
     common::{bitmap::Bitmap, vec2d::Vec2D},
     flight_computer::FlightComputer,
 };
-use crate::http_handler::http_request::daily_map_post::DailyMapRequest;
-use crate::http_handler::http_request::objective_image_post::ObjectiveImageRequest;
-use crate::http_handler::http_request::request_common::MultipartBodyHTTPRequestType;
 use crate::http_handler::{
-    http_client::HTTPClient, http_request::request_common::NoBodyHTTPRequestType,
-    http_request::shoot_image_get::ShootImageRequest,
+    http_client::HTTPClient,
+    http_request::{
+        daily_map_post::DailyMapRequest,
+        objective_image_post::ObjectiveImageRequest,
+        request_common::{MultipartBodyHTTPRequestType, NoBodyHTTPRequestType},
+        shoot_image_get::ShootImageRequest,
+    },
 };
+use crate::DT_0_STD;
 use bitvec::boxed::BitBox;
-use core::slice;
 use chrono::TimeDelta;
+use core::slice;
 use futures::StreamExt;
 use image::{
     codecs::png::{CompressionType, FilterType, PngDecoder, PngEncoder},
@@ -22,19 +25,19 @@ use image::{
     DynamicImage, GenericImage, GenericImageView, ImageBuffer, ImageReader, Pixel, Rgb, RgbImage,
     Rgba, RgbaImage,
 };
-use num::traits::Float;
-use std::ffi::c_void;
-use std::ops::{Deref, DerefMut};
-use std::os::fd::AsRawFd;
-use std::path::Path;
-use std::ptr::null_mut;
-use std::{io::Cursor, sync::Arc};
+use std::{
+    ffi::c_void,
+    ops::{Deref, DerefMut},
+    os::fd::AsRawFd,
+    path::Path,
+    ptr::null_mut,
+    {io::Cursor, sync::Arc},
+};
 use tokio::{
     fs::File,
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::AsyncReadExt,
     sync::{Mutex, Notify, RwLock},
 };
-use crate::DT_0_STD;
 
 pub struct EncodedImageExtract {
     pub(crate) offset: Vec2D<u32>,
@@ -49,6 +52,7 @@ pub(crate) struct FileBasedBuffer {
 }
 
 impl FileBasedBuffer {
+    #[allow(clippy::cast_possible_wrap)]
     fn open<T: AsRef<Path>>(path: T, length: usize) -> Self {
         let file = std::fs::OpenOptions::new()
             .create(true)
@@ -77,7 +81,7 @@ impl FileBasedBuffer {
         FileBasedBuffer {
             file,
             length,
-            ptr: ptr as *mut u8,
+            ptr: ptr.cast::<u8>(),
         }
     }
 }
@@ -85,7 +89,7 @@ impl FileBasedBuffer {
 impl Drop for FileBasedBuffer {
     fn drop(&mut self) {
         unsafe {
-            libc::munmap(self.ptr as *mut c_void, self.length);
+            libc::munmap(self.ptr.cast::<c_void>(), self.length);
         }
     }
 }
@@ -97,13 +101,13 @@ impl Deref for FileBasedBuffer {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
-        return unsafe { slice::from_raw_parts(self.ptr, self.length) };
+        unsafe { slice::from_raw_parts(self.ptr, self.length) }
     }
 }
 
 impl DerefMut for FileBasedBuffer {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        return unsafe { slice::from_raw_parts_mut(self.ptr, self.length) };
+        unsafe { slice::from_raw_parts_mut(self.ptr, self.length) }
     }
 }
 
@@ -227,9 +231,9 @@ const SNAPSHOT_THUMBNAIL_PATH: &str = "snapshot_thumb.png";
 
 impl CameraController {
     pub fn start(base_path: String, request_client: Arc<HTTPClient>) -> Self {
-        let mut fullsize_map_image =
+        let fullsize_map_image =
             FullsizeMapImage::open(Path::new(&base_path).join(MAP_BUFFER_PATH));
-        let mut thumbnail_map_image = ThumbnailMapImage::from_fullsize(&fullsize_map_image);
+        let thumbnail_map_image = ThumbnailMapImage::from_fullsize(&fullsize_map_image);
         Self {
             fullsize_map_image: RwLock::new(fullsize_map_image),
             thumbnail_map_image: RwLock::new(thumbnail_map_image),
@@ -242,7 +246,7 @@ impl CameraController {
         self.fullsize_map_image.read().await.coverage.data.clone()
     }
 
-    #[allow(clippy::cast_sign_loss)]
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
     fn score_offset(
         decoded_image: &RgbImage,
         base: &FullsizeMapImage,
@@ -262,7 +266,7 @@ impl CameraController {
                     Vec2D::new(pos.x() as u32, pos.y() as u32),
                     Vec2D::new(decoded_image.width(), decoded_image.height()),
                 );
-                let score: i32 = map_image_view
+                let mut score: i32 = map_image_view
                     .pixels()
                     .zip(decoded_image.pixels())
                     .map(|((_, _, existing_pixel), new_pixel)| {
@@ -275,7 +279,7 @@ impl CameraController {
                     })
                     .sum();
 
-                let score = score - additional_offset_x.abs() - additional_offset_y.abs();
+                score -= additional_offset_x.abs() + additional_offset_y.abs();
                 if score > best_score {
                     best_additional_offset = Vec2D::new(additional_offset_x, additional_offset_y);
                     best_score = score;
@@ -375,7 +379,7 @@ impl CameraController {
         &self,
     ) -> Result<EncodedImageExtract, Box<dyn std::error::Error>> {
         let mut writer = Cursor::new(Vec::<u8>::new());
-        let mut thumbnail_map_image = self.thumbnail_map_image.read().await;
+        let thumbnail_map_image = self.thumbnail_map_image.read().await;
         thumbnail_map_image.image_buffer.write_with_encoder(PngEncoder::new(&mut writer))?;
         Ok(EncodedImageExtract {
             offset: Vec2D::new(0, 0),
@@ -394,7 +398,7 @@ impl CameraController {
         let size = u32::from(angle.get_square_side_length());
         let size_vec = Vec2D::new(size, size) / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR;
 
-        let mut thumbnail_map_image = self.thumbnail_map_image.read().await;
+        let thumbnail_map_image = self.thumbnail_map_image.read().await;
         let thumbnail = thumbnail_map_image.view(offset_vec, size_vec);
 
         let mut thumbnail_image = RgbaImage::new(thumbnail.width(), thumbnail.width());
@@ -418,7 +422,7 @@ impl CameraController {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let map_image = self.fullsize_map_image.read().await;
         let sub_image_view = map_image.vec_view(offset, size);
-        let mut sub_image = RgbaImage::new(sub_image_view.width(), sub_image_view.width());
+        let sub_image = RgbaImage::new(sub_image_view.width(), sub_image_view.width());
         let mut writer = Cursor::new(Vec::<u8>::new());
         sub_image.write_with_encoder(PngEncoder::new(&mut writer))?;
 
@@ -497,7 +501,7 @@ impl CameraController {
         }
     }
 
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
     pub async fn execute_acquisition_cycle(
         self: Arc<Self>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,

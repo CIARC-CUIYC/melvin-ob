@@ -1,6 +1,6 @@
-use super::image_task::ImageTask;
-use super::switch_state_task::SwitchStateTask;
-use super::vel_change_task::VelocityChangeTask;
+use super::{
+    image_task::ImageTask, switch_state_task::SwitchStateTask, vel_change_task::VelocityChangeTask,
+};
 use crate::flight_control::{
     camera_state::CameraAngle,
     common::{pinned_dt::PinnedTimeDelay, vec2d::Vec2D},

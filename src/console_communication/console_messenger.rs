@@ -1,8 +1,11 @@
-use crate::console_communication::console_endpoint::{ConsoleEndpoint, ConsoleEvent};
-use crate::console_communication::melvin_messages;
-use crate::flight_control::camera_controller::CameraController;
-use crate::flight_control::camera_state::CameraAngle;
-use crate::flight_control::common::vec2d::Vec2D;
+use crate::console_communication::{
+    console_endpoint::{ConsoleEndpoint, ConsoleEvent},
+    melvin_messages,
+};
+use crate::flight_control::{
+    camera_controller::CameraController, camera_state::CameraAngle, common::vec2d::Vec2D,
+};
+
 use std::sync::Arc;
 
 pub(crate) struct ConsoleMessenger {
@@ -87,7 +90,8 @@ impl ConsoleMessenger {
                             let mut success =
                                 c_cont_lock_local_clone.create_full_snapshot().await.is_ok();
                             if success {
-                                success = c_cont_lock_local_clone.upload_daily_map_png().await.is_ok();
+                                success =
+                                    c_cont_lock_local_clone.upload_daily_map_png().await.is_ok();
                             }
                             endpoint_local_clone.send_downstream(
                                 melvin_messages::DownstreamContent::SubmitResponse(

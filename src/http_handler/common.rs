@@ -1,7 +1,6 @@
 use super::http_request::request_common::RequestError;
 use super::http_response::response_common::ResponseError;
-use crate::flight_control::camera_state::CameraAngle;
-use crate::flight_control::common::vec2d::Vec2D;
+use crate::flight_control::{camera_state::CameraAngle, common::vec2d::Vec2D};
 use strum_macros::Display;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]

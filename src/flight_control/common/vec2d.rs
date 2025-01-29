@@ -1,7 +1,5 @@
 use num::traits::{real::Real, Num, NumAssignOps, NumCast};
-use std::cmp::Ordering;
-use std::fmt::Display;
-use std::ops::{Add, Deref, Div, Mul, Sub};
+use std::{cmp::Ordering, ops::{Add, Deref, Div, Mul, Sub}, fmt::Display};
 
 /// A 2D vector generic over any numeric type.
 ///

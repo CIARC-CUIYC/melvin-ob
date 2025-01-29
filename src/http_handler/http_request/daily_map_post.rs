@@ -2,8 +2,7 @@ use super::daily_map::DailyMapResponse;
 use super::request_common::{
     HTTPRequestMethod, HTTPRequestType, MultipartBodyHTTPRequestType, RequestError,
 };
-use std::io;
-use std::path::Path;
+use std::{io, path::Path};
 
 #[derive(Debug)]
 pub struct DailyMapRequest {

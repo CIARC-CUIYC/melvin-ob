@@ -1,8 +1,7 @@
 use crate::flight_control::{
     camera_state::CameraAngle, orbit::orbit_base::OrbitBase,
 };
-use bitvec::{bitbox, order::Lsb0, prelude::BitBox};
-use bitvec::prelude::BitRef;
+use bitvec::{bitbox, order::Lsb0, prelude::{BitBox, BitRef}};
 use strum_macros::Display;
 
 pub struct ClosedOrbit {

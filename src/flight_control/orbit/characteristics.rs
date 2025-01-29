@@ -1,6 +1,7 @@
-use crate::flight_control::flight_computer::FlightComputer;
-use crate::flight_control::orbit::closed_orbit::ClosedOrbit;
-use crate::flight_control::orbit::index::IndexedOrbitPosition;
+use crate::flight_control::{
+    flight_computer::FlightComputer,
+    orbit::{closed_orbit::ClosedOrbit, index::IndexedOrbitPosition},
+};
 use tokio::sync::RwLock;
 
 #[derive(Debug, Copy, Clone)]
@@ -24,12 +25,12 @@ impl OrbitCharacteristics {
             img_dt,
             orbit_s_end,
             orbit_full_period,
-            i_entry
+            i_entry,
         }
     }
-    
-    pub fn img_dt(&self) -> f32 {self.img_dt}
-    pub fn orbit_s_end(&self) -> chrono::DateTime<chrono::Utc> {self.orbit_s_end}
-    pub fn orbit_full_period(&self) -> usize {self.orbit_full_period}
-    pub fn i_entry(&self) -> IndexedOrbitPosition {self.i_entry}
+
+    pub fn img_dt(&self) -> f32 { self.img_dt }
+    pub fn orbit_s_end(&self) -> chrono::DateTime<chrono::Utc> { self.orbit_s_end }
+    pub fn orbit_full_period(&self) -> usize { self.orbit_full_period }
+    pub fn i_entry(&self) -> IndexedOrbitPosition { self.i_entry }
 }
