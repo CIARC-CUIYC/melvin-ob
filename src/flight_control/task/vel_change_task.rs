@@ -8,5 +8,5 @@ pub struct VelocityChangeTask {
 impl VelocityChangeTask {
     pub fn new(burn: BurnSequence) -> Self { Self { burn } }
 
-    pub fn vel_change(&self) -> &BurnSequence { &self.burn }
+    pub fn burn(&self) -> &BurnSequence { &self.burn }
 }

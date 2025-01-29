@@ -21,14 +21,11 @@ use crate::flight_control::{
 };
 use crate::http_handler::ZonedObjective;
 use crate::keychain::{Keychain, KeychainWithOrbit};
-use crate::MappingModeEnd::{Timestamp, Join};
+use crate::MappingModeEnd::{Join, Timestamp};
 use chrono::DateTime;
 use csv::Writer;
 use std::{env, fs::OpenOptions, sync::Arc};
-use tokio::{
-    sync::Notify,
-    task::JoinHandle,
-};
+use tokio::{sync::Notify, task::JoinHandle};
 
 enum MappingModeEnd {
     Timestamp(DateTime<chrono::Utc>),
@@ -64,7 +61,6 @@ async fn main() {
         "Test Objective".to_string(),
         0,
         true,
-
         [13200, 5900, 13800, 6500],
         "narrow".to_string(),
         1.0,
@@ -75,7 +71,7 @@ async fn main() {
     schedule_zoned_objective_retrieval(Arc::clone(&k), orbit_char, debug_objective).await;
     loop {
         //schedule_undisturbed_orbit(Arc::clone(&k), orbit_char).await;
-        
+
         let mut phases = 0;
         while let Some(task) = { (*sched).write().await.pop_front() } {
             phases += 1;
@@ -107,8 +103,22 @@ async fn main() {
                 BaseTask::TakeImage(_) => {
                     todo!()
                 }
-                BaseTask::ChangeVelocity(_) => {
-                    todo!()
+                BaseTask::ChangeVelocity(vel_change) => {
+                    let burn = vel_change.burn();
+                    for vel_change in burn.sequence_vel() {
+                        let st = tokio::time::Instant::now();
+                        let dt = std::time::Duration::from_secs(1);
+                        FlightComputer::set_vel_wait(k.f_cont(), *vel_change).await;
+                        let el = st.elapsed();
+                        if el < dt {
+                            tokio::time::sleep(dt).await;
+                        }
+                    }
+                    let exp_pos = burn.sequence_pos().last().unwrap();
+                    let current_pos = k.f_cont().read().await.current_pos();
+                    let diff = *exp_pos - current_pos;
+                    println!("[INFO] Velocity change done! Expected position {exp_pos}, Actual Position {current_pos}, Diff {diff}");
+                    // TODO: here orbit detumbling should be initiated
                 }
                 BaseTask::SwitchState(switch) => match switch.target_state() {
                     FlightState::Acquisition => {
@@ -253,9 +263,9 @@ async fn schedule_zoned_objective_retrieval(
                 k_clone_clone.c_orbit(),
                 k_clone_clone.f_cont(),
                 orbit_char.i_entry(),
-                objective
+                objective,
             )
-                .await;
+            .await;
         })
     };
     let current_state = k_clone.f_cont().read().await.state();
@@ -268,7 +278,7 @@ async fn schedule_zoned_objective_retrieval(
             orbit_char.img_dt(),
             orbit_char.i_entry(),
         )
-            .await;
+        .await;
     } else {
         schedule_join_handle.await.ok();
     }

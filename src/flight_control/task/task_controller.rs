@@ -48,9 +48,9 @@ impl TaskController {
     const OBJECTIVE_MIN_RETRIEVAL_TOL: usize = 100;
     const MANEUVER_INIT_BATT_TOL: f32 = 10.0;
     pub(crate) const MANEUVER_MIN_DETUMBLE_DT: usize = 50;
-    const OFF_ORBIT_DT_WEIGHT: f32 = 2.0;
+    const OFF_ORBIT_DT_WEIGHT: f32 = 3.0;
     const FUEL_CONSUMPTION_WEIGHT: f32 = 1.0;
-    const ANGLE_DEV_WEIGHT: f32 = 1.5;
+    const ANGLE_DEV_WEIGHT: f32 = 2.0;
     /// Default magic number for the initialization of `min_burn_sequence_time`
     const DEF_MAX_BURN_SEQUENCE_TIME: i64 = 1_000_000_000;
     /// Maximum absolute deviation after correction burn
