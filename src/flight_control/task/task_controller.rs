@@ -1,4 +1,3 @@
-use crate::flight_control::flight_state::TRANSITION_DELAY_LOOKUP;
 use crate::flight_control::{
     common::{linked_box::LinkedBox, math, pinned_dt::PinnedTimeDelay, vec2d::Vec2D},
     flight_computer::FlightComputer,
@@ -200,7 +199,7 @@ impl TaskController {
             let max_x_dev = remaining_deviation - res_vel_diff * x_vel_hold_dt;
             let max_y_dev = remaining_deviation - res_vel_diff * y_vel_hold_dt;
 
-            let (min_t, res_dev) = math::find_min_y_for_x_range(
+            let (min_t, res_dev) = math::find_min_y_abs_for_x_range(
                 x_vel_hold_dt,
                 max_x_dev.into(),
                 y_vel_hold_dt,
@@ -272,8 +271,7 @@ impl TaskController {
         let mut best_burn_sequence: Option<(BurnSequence, f32)> = None;
         let max_angle_dev = {
             let vel_perp = orbit_vel.perp_unit(true) * FlightComputer::ACC_CONST;
-            let vel_res = orbit_vel + vel_perp;
-            orbit_vel.angle_to(&vel_res).abs()
+            orbit_vel.angle_to(&vel_perp).abs()
         };
 
         let turns = turns_handle.await.unwrap();
@@ -320,16 +318,24 @@ impl TaskController {
                         let last_to_target = last_pos.unwrapped_to(&target_pos);
                         let last_angle_deviation = last_vel.angle_to(&last_to_target);
                         let this_angle_deviation = next_vel.angle_to(&next_to_target);
-                        if last_angle_deviation > this_angle_deviation {
-                            fin_sequence_pos.push(next_pos);
-                            fin_sequence_vel.push(next_vel);
-                            (min_dt + dt + add_dt, this_angle_deviation)
-                        } else {
-                            let last_to_target = last_pos.unwrapped_to(&target_pos);
-                            let last_min_dt =
-                                (last_to_target.abs() / last_vel.abs()).abs().round() as usize;
-                            (last_min_dt + dt + add_dt, last_angle_deviation)
-                        }
+
+                        let corr_burn_perc = math::interpolate(
+                            last_angle_deviation,
+                            this_angle_deviation,
+                            0.0,
+                            1.0,
+                            0.0
+                        );
+                        let acc = (next_vel - *last_vel) * corr_burn_perc;
+                        let (corr_vel, _) = 
+                            FlightComputer::trunc_vel(next_vel + acc);
+                        let corr_pos = *last_pos + corr_vel;
+                        let corr_to_target = corr_pos.unwrapped_to(&target_pos);
+                        let corr_angle_dev = corr_vel.angle_to(&corr_to_target);
+                            fin_sequence_pos.push(corr_pos);
+                            fin_sequence_vel.push(corr_vel);
+                            add_dt += 1;
+                        (min_dt + dt + add_dt, corr_angle_dev)
                     };
                     break 'inner;
                 }
@@ -460,7 +466,7 @@ impl TaskController {
         {
             let sched = self.task_schedule.read().await;
             for task in &*sched {
-                println!("[INFO] Task: {task} at {}", task.dt().time_left());
+                println!("[INFO] {task} in {}s.", task.dt().time_left());
             }
         }
     }

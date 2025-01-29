@@ -62,8 +62,14 @@ pub fn normalize_f32(value: f32, min: f32, max: f32) -> Option<f32> {
     }
 }
 
+pub fn interpolate(x1: f32, x2: f32, y1: f32, y2: f32, t: f32) -> f32
+{
+    let r_t = t.clamp(x1, x2);
+    y1 + (r_t - x1) * (y2 - y1) / (x2 - x1)
+}
 
-pub fn find_min_y_for_x_range(
+
+pub fn find_min_y_abs_for_x_range(
     a_x: f32,
     a_y: (f32, f32),
     b_x: f32,

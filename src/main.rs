@@ -65,7 +65,7 @@ async fn main() {
         0,
         true,
 
-        [6800, 9300, 7400, 9900],
+        [13200, 5900, 13800, 6500],
         "narrow".to_string(),
         1.0,
         "Test Objective".to_string(),

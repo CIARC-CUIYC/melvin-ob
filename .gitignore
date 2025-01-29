@@ -28,4 +28,4 @@ Cargo.lock
 legacy/
 world.png
 pos.csv
-snapshot.png
+snapshot*.png

@@ -146,7 +146,7 @@ impl FlightComputer {
                 if i == i_last - 1 {
                     next_vel = Vec2D::new(0.0, start_y);
                 } else {
-                    next_vel = init_vel + step;
+                    next_vel = next_vel + step;
                 }
                 x_pos_vel.push((next_pos, next_vel));
             }
@@ -165,7 +165,7 @@ impl FlightComputer {
                 if i == i_last - 1 {
                     next_vel = Vec2D::new(start_x, 0.0);
                 } else {
-                    next_vel = init_vel + step;
+                    next_vel = next_vel + step;
                 }
                 y_pos_vel.push((next_pos, next_vel));
             }
