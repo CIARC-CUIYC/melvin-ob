@@ -1,5 +1,5 @@
 use num::traits::{real::Real, Num, NumAssignOps, NumCast};
-use std::ops::{Add, Deref, Div, Mul, Sub};
+use std::{cmp::Ordering, ops::{Add, Deref, Div, Mul, Sub}, fmt::Display};
 
 /// A 2D vector generic over any numeric type.
 ///
@@ -37,6 +37,14 @@ impl<T, const X: u32, const Y: u32> Deref for Wrapped2D<T, X, Y> {
     fn deref(&self) -> &Self::Target { &self.0 }
 }
 
+impl<T> Display for Vec2D<T>
+where T: Display
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{}, {}]", self.x, self.y)
+    }
+}
+
 impl<T> Vec2D<T>
 where T: Real + NumCast + NumAssignOps
 {
@@ -56,7 +64,83 @@ where T: Real + NumCast + NumAssignOps
     /// # Returns
     /// A new vector representing the direction from `self` to `other`.
     pub fn to(&self, other: &Vec2D<T>) -> Vec2D<T> {
-        Vec2D::new(other.x - self.x, other.y - self.y)
+        Vec2D::new(self.x - other.x, self.y - other.y)
+    }
+
+    pub fn unwrapped_to(&self, other: &Vec2D<T>) -> Vec2D<f32> {
+        let mut options = Vec::new();
+        for x_sign in [1, -1] {
+            for y_sign in [1, -1] {
+                let target: Vec2D<f32> = Vec2D::new(
+                    other.x + Self::map_size().x() * T::from(x_sign).unwrap(),
+                    other.y + Self::map_size().y() * T::from(y_sign).unwrap(),
+                )
+                .cast();
+                let to_target = self.cast().to(&target);
+                let to_target_abs = to_target.abs();
+                options.push((to_target, to_target_abs));
+            }
+        }
+        options.iter().min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Less)).unwrap().0
+    }
+
+    pub fn perp_unit_to(&self, other: &Vec2D<T>) -> Vec2D<T> {
+        match self.is_clockwise_to(other) {
+            Some(dir) => self.perp_unit(dir),
+            None => Vec2D::zero(),
+        }
+    }
+
+    pub fn perp_unit(&self, clockwise: bool) -> Vec2D<T> {
+        let perp =
+            if clockwise { Vec2D::new(self.y, -self.x) } else { Vec2D::new(-self.y, self.x) };
+        perp.normalize()
+    }
+    
+    pub fn flip_unit(&self) -> Vec2D<T> {
+        let flip = Vec2D::new(-self.y, -self.x);
+        flip.normalize()
+    }
+
+    pub fn is_clockwise_to(&self, other: &Vec2D<T>) -> Option<bool> {
+        let cross: f32 = self.cast().cross(other.cast());
+        if cross > 0.0 {
+            // Counterclockwise
+            Some(false)
+        } else if cross < 0.0 {
+            // Clockwise
+            Some(true)
+        } else {
+            // Aligned or opposite
+            None
+        }
+    }
+
+    pub fn unit(&self) -> Vec2D<T> {
+        let magnitude = self.abs();
+        if magnitude.is_zero() {
+            *self
+        } else {
+            *self / magnitude
+        }
+    }
+
+    pub fn angle_to(&self, other: &Vec2D<T>) -> f32 {
+        let self_cast: Vec2D<f32> = self.cast();
+        let other_cast: Vec2D<f32> = other.cast();
+
+        let dot: f32 = self_cast.dot(other_cast);
+
+        let a_abs: f32 = self_cast.abs();
+        let b_abs: f32 = other_cast.abs();
+
+        if a_abs == 0.0 || b_abs == 0.0 {
+            return 0.0;
+        }
+        let cos_theta = dot / (a_abs * b_abs);
+        let clamped_cos_theta = cos_theta.clamp(-1.0, 1.0);
+        let angle_radians = clamped_cos_theta.acos();
+        angle_radians * 180.0 / std::f32::consts::PI
     }
 
     /// Normalizes the vector to have a magnitude of 1.
@@ -134,6 +218,8 @@ impl<T: Num + NumCast + Copy> Vec2D<T> {
     /// # Returns
     /// A scalar value of type `T` that represents the dot product of the two vectors.
     pub fn dot(self, other: Vec2D<T>) -> T { self.x * other.x + self.y * other.y }
+
+    pub fn cross(self, other: Vec2D<T>) -> T { self.x * other.y - self.y * other.x }
 
     /// Computes the Euclidean distance between the current vector and another vector as an `f64`.
     /// This enables Euclidean distance calculation for integer type `T`.
@@ -214,7 +300,7 @@ impl<T: Num + NumCast + Copy> Vec2D<T> {
     ///
     /// # Returns
     /// The wrapped coordinate as type `T`.
-    pub fn wrap_coordinate(value: T, max_value: T) -> T { (value + max_value) % max_value }
+    pub fn wrap_coordinate(value: T, max_value: T) -> T { ((value % max_value) + max_value) % max_value }
 
     pub fn cast<D: NumCast>(self) -> Vec2D<D> {
         Vec2D {
@@ -325,5 +411,18 @@ impl<T: Num + NumCast> From<(T, T)> for Vec2D<T> {
             x: tuple.0,
             y: tuple.1,
         }
+    }
+}
+
+impl<T: Num + NumCast + Copy> From<Vec2D<T>> for (T, T) {
+    /// Creates a tuple from a `Vec2D` of (x, y) values.
+    ///
+    /// # Arguments
+    /// * `tuple` - A tuple representing the x and y values.
+    ///
+    /// # Returns
+    /// A new `Vec2D` created from the tuple.
+    fn from(vec: Vec2D<T>) -> Self {
+        (vec.x(), vec.y())
     }
 }

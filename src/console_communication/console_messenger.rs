@@ -1,8 +1,11 @@
-use crate::console_communication::console_endpoint::{ConsoleEndpoint, ConsoleEvent};
-use crate::console_communication::melvin_messages;
-use crate::flight_control::camera_controller::CameraController;
-use crate::flight_control::camera_state::CameraAngle;
-use crate::flight_control::common::vec2d::Vec2D;
+use crate::console_communication::{
+    console_endpoint::{ConsoleEndpoint, ConsoleEvent},
+    melvin_messages,
+};
+use crate::flight_control::{
+    camera_controller::CameraController, camera_state::CameraAngle, common::vec2d::Vec2D,
+};
+
 use std::sync::Arc;
 
 pub(crate) struct ConsoleMessenger {
@@ -11,11 +14,11 @@ pub(crate) struct ConsoleMessenger {
 }
 
 impl ConsoleMessenger {
-    pub(crate) fn start(camera_controller: Arc<CameraController>) -> Self {
+    pub(crate) fn start(c_cont_lock: Arc<CameraController>) -> Self {
         let endpoint = Arc::new(ConsoleEndpoint::start());
         let mut receiver = endpoint.upstream_event_receiver().resubscribe();
         let endpoint_local = endpoint.clone();
-        let camera_controller_local = camera_controller.clone();
+        let c_cont_lock_local = c_cont_lock.clone();
 
         tokio::spawn(async move {
             while let Ok(event) = receiver.recv().await {
@@ -23,12 +26,12 @@ impl ConsoleMessenger {
                     ConsoleEvent::Message(
                         melvin_messages::UpstreamContent::CreateSnapshotImage(_),
                     ) => {
-                        camera_controller_local.create_snapshot_thumb().await.unwrap();
+                        c_cont_lock_local.create_thumb_snapshot().await.unwrap();
                     }
                     ConsoleEvent::Message(
                         melvin_messages::UpstreamContent::GetSnapshotDiffImage(_),
                     ) => {
-                        if let Ok(encoded_image) = camera_controller_local.diff_snapshot().await {
+                        if let Ok(encoded_image) = c_cont_lock_local.diff_thumb_snapshot().await {
                             endpoint_local.send_downstream(
                                 melvin_messages::DownstreamContent::Image(
                                     melvin_messages::Image::from_encoded_image_extract(
@@ -40,7 +43,7 @@ impl ConsoleMessenger {
                     }
                     ConsoleEvent::Message(melvin_messages::UpstreamContent::GetFullImage(_)) => {
                         if let Ok(encoded_image) =
-                            camera_controller_local.export_full_thumbnail_png().await
+                            c_cont_lock_local.export_full_thumbnail_png().await
                         {
                             endpoint_local.send_downstream(
                                 melvin_messages::DownstreamContent::Image(
@@ -54,26 +57,23 @@ impl ConsoleMessenger {
                     ConsoleEvent::Message(melvin_messages::UpstreamContent::SubmitObjective(
                         submit_objective,
                     )) => {
-                        let camera_controller_local = camera_controller_local.clone();
-                        let endpoint_local = endpoint_local.clone();
+                        let c_cont_lock_local_clone = c_cont_lock_local.clone();
+                        let endpoint_local_clone = endpoint_local.clone();
                         tokio::spawn(async move {
                             let objective_id = submit_objective.objective_id;
-                            let result = camera_controller_local
-                                .upload_objective_png(
+                            let result = c_cont_lock_local_clone
+                                .export_and_upload_objective_png(
                                     objective_id as usize,
                                     Vec2D::new(
                                         submit_objective.offset_x,
                                         submit_objective.offset_y,
                                     ),
-                                    Vec2D::new(
-                                        submit_objective.width,
-                                        submit_objective.height,
-                                    ),
+                                    Vec2D::new(submit_objective.width, submit_objective.height),
                                 )
                                 .await;
                             println!("[Info] Submitted objective '{objective_id}' with result: {result:?}");
 
-                            endpoint_local.send_downstream(
+                            endpoint_local_clone.send_downstream(
                                 melvin_messages::DownstreamContent::SubmitResponse(
                                     melvin_messages::SubmitResponse {
                                         success: result.is_ok(),
@@ -84,15 +84,16 @@ impl ConsoleMessenger {
                         });
                     }
                     ConsoleEvent::Message(melvin_messages::UpstreamContent::SubmitDailyMap(_)) => {
-                        let camera_controller_local = camera_controller_local.clone();
-                        let endpoint_local = endpoint_local.clone();
+                        let c_cont_lock_local_clone = c_cont_lock_local.clone();
+                        let endpoint_local_clone = endpoint_local.clone();
                         tokio::spawn(async move {
                             let mut success =
-                                camera_controller_local.create_snapshot_full().await.is_ok();
+                                c_cont_lock_local_clone.create_full_snapshot().await.is_ok();
                             if success {
-                                success = camera_controller_local.upload_daily_map().await.is_ok();
+                                success =
+                                    c_cont_lock_local_clone.upload_daily_map_png().await.is_ok();
                             }
-                            endpoint_local.send_downstream(
+                            endpoint_local_clone.send_downstream(
                                 melvin_messages::DownstreamContent::SubmitResponse(
                                     melvin_messages::SubmitResponse {
                                         success,
@@ -108,7 +109,7 @@ impl ConsoleMessenger {
         });
 
         Self {
-            camera_controller,
+            camera_controller: c_cont_lock,
             endpoint,
         }
     }

@@ -27,5 +27,5 @@ Cargo.lock
 *.bin
 legacy/
 world.png
-pos.cv
-snapshot.png
+pos.csv
+snapshot*.png

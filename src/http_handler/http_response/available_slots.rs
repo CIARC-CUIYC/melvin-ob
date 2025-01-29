@@ -1,5 +1,4 @@
-use crate::http_handler::http_handler_common::CommunicationSlot;
-use crate::http_handler::http_response::response_common::SerdeJSONBodyHTTPResponseType;
+use crate::http_handler::{http_response::response_common::SerdeJSONBodyHTTPResponseType, common::CommunicationSlot};
 
 #[derive(serde::Deserialize, Debug)]
 pub struct AvailableSlotsResponse {

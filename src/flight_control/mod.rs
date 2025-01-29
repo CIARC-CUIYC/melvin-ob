@@ -5,4 +5,3 @@ pub mod flight_computer;
 pub mod flight_state;
 pub mod orbit;
 pub mod task;
-pub mod task_controller;

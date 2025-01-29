@@ -3,6 +3,10 @@ use super::{
     common::vec2d::Vec2D,
     flight_state::{FlightState, TRANSITION_DELAY_LOOKUP},
 };
+use crate::flight_control::{
+    orbit::{burn_sequence::BurnSequence, index::IndexedOrbitPosition},
+    task::task_controller::TaskController,
+};
 use crate::http_handler::{
     http_client,
     http_request::{
@@ -12,9 +16,10 @@ use crate::http_handler::{
         reset_get::ResetRequest,
     },
 };
-use chrono::TimeDelta;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::RwLock;
+
+type TurnsClockCClockTup = (Vec<(Vec2D<f32>, Vec2D<f32>)>, Vec<(Vec2D<f32>, Vec2D<f32>)>);
 
 /// Represents the core flight computer for satellite control.
 /// It manages operations such as state changes, velocity updates,
@@ -63,12 +68,14 @@ pub struct FlightComputer {
 
 pub enum ChargeCommand {
     TargetCharge(f32),
-    Duration(chrono::Duration),
+    Duration(chrono::TimeDelta),
 }
 
 impl FlightComputer {
-    /// Acceleration factor for calculations involving velocity and state transitions.
-    const ACC_CONST: f32 = 0.02;
+    /// Constant acceleration in target velocity vector direction
+    pub const ACC_CONST: f32 = 0.02;
+    /// Constant fuel consumption per accelerating second
+    pub const FUEL_CONST: f32 = 0.03;
     /// Maximum decimal places that are used in the observation endpoint for velocity
     const VEL_BE_MAX_DECIMAL: u8 = 2;
     /// Constant timeout for the `wait_for_condition`-method
@@ -103,6 +110,84 @@ impl FlightComputer {
         };
         return_controller.update_observation().await;
         return_controller
+    }
+
+    pub fn trunc_vel(vel: Vec2D<f32>) -> (Vec2D<f32>, Vec2D<f64>) {
+        let factor = 10f32.powi(i32::from(Self::VEL_BE_MAX_DECIMAL));
+        let factor_f64 = 10f64.powi(i32::from(Self::VEL_BE_MAX_DECIMAL));
+        let trunc_x = (vel.x() * factor).floor().round() / factor;
+        let trunc_y = (vel.y() * factor).floor().round() / factor;
+        let dev_x = (f64::from(vel.x()) * factor_f64).fract() / factor_f64;
+        let dev_y = (f64::from(vel.y()) * factor_f64).fract() / factor_f64;
+        (Vec2D::new(trunc_x, trunc_y), Vec2D::new(dev_x, dev_y))
+    }
+
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn compute_possible_turns(init_vel: Vec2D<f32>) -> TurnsClockCClockTup {
+        println!("[INFO] Precomputing possible turns...");
+        let start_x = init_vel.x();
+        let end_x = 0.0;
+        let start_y = init_vel.y();
+        let end_y = 0.0;
+
+        let step_x =
+            if start_x > end_x { -FlightComputer::ACC_CONST } else { FlightComputer::ACC_CONST };
+        let step_y =
+            if start_y > end_y { -FlightComputer::ACC_CONST } else { FlightComputer::ACC_CONST };
+
+        let y_const_x_change: Vec<(Vec2D<f32>, Vec2D<f32>)> = {
+            let mut x_pos_vel = Vec::new();
+            let step = Vec2D::new(step_x, 0.0);
+            let i_last = (start_x / step_x).ceil().abs() as i32;
+            let mut next_pos = Vec2D::new(0.0, 0.0);
+            let mut next_vel = init_vel + step;
+            x_pos_vel.push((next_pos, next_vel));
+            for i in 0..i_last {
+                next_pos = next_pos + next_vel;
+                if i == i_last - 1 {
+                    next_vel = Vec2D::new(0.0, start_y);
+                } else {
+                    next_vel = next_vel + step;
+                }
+                x_pos_vel.push((next_pos, next_vel));
+            }
+            x_pos_vel
+        };
+
+        let x_const_y_change: Vec<(Vec2D<f32>, Vec2D<f32>)> = {
+            let mut y_pos_vel = Vec::new();
+            let step = Vec2D::new(0.0, step_y);
+            let i_last = (start_y / step_y).ceil().abs() as i32;
+            let mut next_pos = Vec2D::new(0.0, 0.0);
+            let mut next_vel = init_vel + step;
+            y_pos_vel.push((next_pos, next_vel));
+            for i in 0..i_last {
+                next_pos = next_pos + next_vel;
+                if i == i_last - 1 {
+                    next_vel = Vec2D::new(start_x, 0.0);
+                } else {
+                    next_vel = next_vel + step;
+                }
+                y_pos_vel.push((next_pos, next_vel));
+            }
+            y_pos_vel
+        };
+
+        if step_x.signum() == step_y.signum() {
+            println!(
+                "[INFO] Possible turns: {} clockwise and {} counter clockwise.",
+                y_const_x_change.len(),
+                x_const_y_change.len()
+            );
+            (y_const_x_change, x_const_y_change)
+        } else {
+            println!(
+                "[INFO] Possible turns: {} clockwise and {} counter clockwise.",
+                x_const_y_change.len(),
+                y_const_x_change.len()
+            );
+            (x_const_y_change, y_const_x_change)
+        }
     }
 
     /// Retrieves the current position of the satellite.
@@ -172,7 +257,7 @@ impl FlightComputer {
     }
 
     async fn wait_for_condition<F>(
-        locked_self: &RwLock<Self>,
+        locked_self: Arc<RwLock<Self>>,
         (condition, rationale): (F, String),
         timeout_millis: u16,
         poll_interval: u16,
@@ -200,7 +285,7 @@ impl FlightComputer {
     /// # Arguments
     /// - `locked_self`: A `RwLock<Self>` reference to the active flight computer.
     /// - `new_state`: The target operational state.
-    pub async fn set_state_wait(locked_self: &RwLock<Self>, new_state: FlightState) {
+    pub async fn set_state_wait(locked_self: Arc<RwLock<Self>>, new_state: FlightState) {
         let init_state = { locked_self.read().await.current_state };
         if new_state == init_state {
             println!("[LOG] State already set to {new_state}");
@@ -232,7 +317,7 @@ impl FlightComputer {
     /// # Arguments
     /// - `locked_self`: A `RwLock<Self>` reference to the active flight computer.
     /// - `new_vel`: The target velocity vector.
-    pub async fn set_vel_wait(locked_self: &RwLock<Self>, new_vel: Vec2D<f32>) {
+    pub async fn set_vel_wait(locked_self: Arc<RwLock<Self>>, new_vel: Vec2D<f32>) {
         let (current_state, current_vel) = {
             let f_cont_read = locked_self.read().await;
             (f_cont_read.state(), f_cont_read.current_vel())
@@ -250,12 +335,12 @@ impl FlightComputer {
         let comp_new_vel = (new_vel * 100).round();
         let cond = (
             |cont: &FlightComputer| (cont.current_vel() * 100).round() == comp_new_vel,
-            format!("Vel equals [{}, {}]", new_vel.x(), new_vel.y()),
+            format!("Vel equals {new_vel}"),
         );
         Self::wait_for_condition(locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
     }
 
-    pub async fn set_angle_wait(locked_self: &RwLock<Self>, new_angle: CameraAngle) {
+    pub async fn set_angle_wait(locked_self: Arc<RwLock<Self>>, new_angle: CameraAngle) {
         let (current_angle, current_state) = {
             let f_cont_read = locked_self.read().await;
             (f_cont_read.current_angle, f_cont_read.state())
@@ -275,6 +360,24 @@ impl FlightComputer {
             format!("Lens equals {new_angle}"),
         );
         Self::wait_for_condition(locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
+    }
+
+    pub async fn evaluate_burn(
+        locked_self: Arc<RwLock<Self>>,
+        burn_sequence: &BurnSequence,
+        target_pos: Vec2D<f32>,
+    ) -> (Vec2D<f32>, Vec2D<f32>) {
+        let (act_pos, act_vel) = {
+            let f_cont = locked_self.read().await;
+            (f_cont.current_pos(), f_cont.current_vel())
+        };
+        let projected_res_pos = act_pos + act_vel * burn_sequence.detumble_dt();
+        let deviation = projected_res_pos.to(&target_pos);
+        println!(
+            "[LOG] Evaluated Velocity change. Expected target position: {target_pos}, \
+            resulting position: {projected_res_pos}, deviation: {deviation}"
+        );
+        (act_vel, deviation)
     }
 
     /// Updates the satellite's internal fields with the latest observation data.
@@ -379,6 +482,37 @@ impl FlightComputer {
         }
     }
 
+    #[allow(clippy::cast_precision_loss)]
+    pub fn estimate_min_burn_sequence_charge(burn_sequence: &BurnSequence) -> f32 {
+        let acc_time = burn_sequence.acc_dt();
+        let travel_time = burn_sequence.detumble_dt() + acc_time;
+        let detumble_time = travel_time - acc_time;
+        let maneuver_acq_time = {
+            let trunc_detumble_time = detumble_time - 2 * TaskController::MANEUVER_MIN_DETUMBLE_DT;
+            let acq_charge_dt = i32::try_from(
+                TRANSITION_DELAY_LOOKUP[&(FlightState::Acquisition, FlightState::Charge)].as_secs(),
+            )
+            .unwrap_or(i32::MAX);
+            let charge_acq_dt = i32::try_from(
+                TRANSITION_DELAY_LOOKUP[&(FlightState::Acquisition, FlightState::Charge)].as_secs(),
+            )
+            .unwrap_or(i32::MAX);
+            let poss_charge_dt = i32::try_from(trunc_detumble_time).unwrap_or(i32::MIN)
+                - acq_charge_dt
+                - charge_acq_dt;
+            if poss_charge_dt < 0 {
+                travel_time
+            } else {
+                // TODO: this probably only works because we do *2 later :)
+                acc_time + 2 * TaskController::MANEUVER_MIN_DETUMBLE_DT
+            }
+        };
+        // TODO: this should be calculated in regards of the return path
+        (maneuver_acq_time as f32 * FlightState::Acquisition.get_charge_rate()
+            + burn_sequence.acc_dt() as f32 * FlightState::ACQ_ACC_ADDITION)
+            * (-2.0)
+    }
+
     /// Predicts the satellite’s position after a specified time interval.
     ///
     /// # Arguments
@@ -386,7 +520,12 @@ impl FlightComputer {
     ///
     /// # Returns
     /// - A `Vec2D<f32>` representing the satellite’s predicted position.
-    pub fn pos_in_dt(&self, time_delta: TimeDelta) -> Vec2D<f32> {
-        self.current_pos + (self.current_vel * time_delta.num_seconds()).wrap_around_map()
+    pub fn pos_in_dt(
+        &self,
+        now: IndexedOrbitPosition,
+        dt: chrono::TimeDelta,
+    ) -> IndexedOrbitPosition {
+        let pos = self.current_pos + (self.current_vel * dt.num_seconds()).wrap_around_map();
+        now.new_from_future_pos(pos, dt)
     }
 }

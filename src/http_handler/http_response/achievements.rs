@@ -1,5 +1,5 @@
 use super::response_common::SerdeJSONBodyHTTPResponseType;
-use crate::http_handler::http_handler_common::Achievement;
+use crate::http_handler::common::Achievement;
 
 #[derive(serde::Deserialize, Debug)]
 pub struct AchievementsResponse {

@@ -13,7 +13,7 @@ impl HTTPResponseType for RestoreBackupResponse {
     async fn read_response(
         response: reqwest::Response,
     ) -> Result<Self::ParsedResponseType, ResponseError> {
-        let response = Self::unwrap_return_code(response).await?;
-        Self::parse_json_body(response).await
+        let resp = Self::unwrap_return_code(response).await?;
+        Self::parse_json_body(resp).await
     }
 }

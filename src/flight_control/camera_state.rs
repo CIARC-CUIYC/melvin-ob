@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::sync::LazyLock;
+use std::{collections::HashMap, sync::LazyLock};
 use strum_macros::{Display, EnumIter};
 
 /// Represents different camera angles supported by the system.

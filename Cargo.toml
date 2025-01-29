@@ -25,6 +25,7 @@ image = { version = "0.25.5", default-features = false, features = ["jpeg", "png
 bincode = "1.3.3"
 prost = "0.13"
 num = "0.4.3"
+libc = "0.2.169"
 
 [lints.clippy]
 correctness = "deny"
@@ -37,7 +38,7 @@ pedantic = "warn"
 
 [profile.release]
 opt-level = 3
-debug = false
+debug = true
 split-debuginfo = '...'  # Platform-specific.
 strip = "none"
 debug-assertions = true # TODO: this is enabled for compatibility for now

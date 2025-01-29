@@ -1,9 +1,7 @@
 use crate::flight_control::{
-    camera_state::CameraAngle, common::vec2d::Vec2D, orbit::orbit_base::OrbitBase,
+    camera_state::CameraAngle, orbit::orbit_base::OrbitBase,
 };
-use bitvec::slice::Iter;
-use bitvec::{bitbox, order::Lsb0, prelude::BitBox};
-use std::iter::Chain;
+use bitvec::{bitbox, order::Lsb0, prelude::{BitBox, BitRef}};
 use strum_macros::Display;
 
 pub struct ClosedOrbit {
@@ -36,12 +34,17 @@ impl ClosedOrbit {
         }
     }
 
-    pub fn get_p_t_reordered(&self, shift: usize) -> Chain<Iter<usize, Lsb0>, Iter<usize, Lsb0>> {
+    pub fn get_p_t_reordered(
+        &self,
+        shift_start: usize,
+        shift_end: usize,
+    ) -> impl Iterator<Item = BitRef> {
         assert!(
-            shift < self.done.len(),
+            shift_start < self.done.len() && shift_end <= self.done.len(),
             "[FATAL] Shift is larger than the orbit length"
         );
-        self.done[shift..].iter().chain(self.done[..shift].iter())
+        self.done[shift_start..].iter().chain(self.done[..shift_start].iter()).rev()
+            .skip(shift_end)
     }
 
     pub fn mark_done(&mut self, first_i: usize, last_i: usize) {

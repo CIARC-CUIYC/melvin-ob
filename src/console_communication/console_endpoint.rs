@@ -1,11 +1,11 @@
 use super::melvin_messages;
 use prost::Message;
 use std::io::{Cursor, ErrorKind};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::tcp::{ReadHalf, WriteHalf};
-use tokio::net::TcpListener;
-use tokio::sync::broadcast;
-use tokio::sync::oneshot;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{tcp::{ReadHalf, WriteHalf}, TcpListener},
+    sync::{broadcast, oneshot},
+};
 
 #[derive(Debug, Clone)]
 pub enum ConsoleEvent {
@@ -22,7 +22,7 @@ pub(crate) struct ConsoleEndpoint {
 
 impl ConsoleEndpoint {
     async fn handle_connection_rx(
-        mut socket: &mut ReadHalf<'_>,
+        socket: &mut ReadHalf<'_>,
         upstream_event_sender: &broadcast::Sender<ConsoleEvent>,
     ) -> Result<(), std::io::Error> {
         loop {
@@ -43,7 +43,7 @@ impl ConsoleEndpoint {
 
     #[allow(clippy::cast_possible_truncation)]
     async fn handle_connection_tx(
-        mut socket: &mut WriteHalf<'_>,
+        socket: &mut WriteHalf<'_>,
         downstream_receiver: &mut broadcast::Receiver<Option<Vec<u8>>>,
     ) -> Result<(), std::io::Error> {
         while let Ok(Some(message_buffer)) = downstream_receiver.recv().await {
@@ -74,7 +74,7 @@ impl ConsoleEndpoint {
 
                 if let Ok((mut socket, _)) = accept {
                     upstream_event_sender.send(ConsoleEvent::Connected).unwrap();
-                    let mut upstream_event_sender_local = upstream_event_sender.clone();
+                    let upstream_event_sender_local = upstream_event_sender.clone();
                     let mut downstream_receiver = downstream_sender.subscribe();
 
                     tokio::spawn(async move {
