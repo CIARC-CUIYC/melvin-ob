@@ -355,6 +355,7 @@ async fn execute_mapping(
             acq_phase.0.await.ok().unwrap_or(Vec::new())
         }
     };
+    // TODO there is definitely a bug here the index ranges make no sense
     let fixed_ranges = IndexedOrbitPosition::map_ranges(&ranges, i_entry.period() as isize);
     print!("[INFO] Marking done: {} - {}", ranges[0].0, ranges[0].1);
     if let Some(r) = ranges.get(1) {

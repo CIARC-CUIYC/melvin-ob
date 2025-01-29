@@ -27,6 +27,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::{Mutex, Notify, RwLock},
 };
+use crate::DT_0_STD;
 
 pub struct EncodedImageExtract {
     pub(crate) offset: Vec2D<u32>,
@@ -234,10 +235,7 @@ impl CameraController {
                 tokio::join!(f_cont.update_observation(), self.fetch_image_data());
             (f_cont.current_pos(), collected_png)
         };
-        let decoded_image = Self::decode_png_data(
-            &collected_png?,
-            angle,
-        )?;
+        let decoded_image = Self::decode_png_data(&collected_png?, angle)?;
         let angle_const = angle.get_square_side_length() / 2;
         let mut offset: Vec2D<i32> = Vec2D::new(
             position.x().round() as i32 - i32::from(angle_const),
@@ -449,18 +447,16 @@ impl CameraController {
         let overlap = {
             let overlap_dt = (image_max_dt.floor() / 2.0) as isize;
             TimeDelta::seconds(overlap_dt as i64)
-        };        
+        };
         let mut last_mark = (
             st - overlap.num_seconds() as isize,
             chrono::Utc::now() - overlap,
         );
         let mut last_pic = chrono::Utc::now();
-        
-         {
+        loop {
             let f_cont_lock_clone = Arc::clone(&f_cont_lock);
             let pic_count_lock_clone = Arc::clone(&pic_count_lock);
             let self_clone = Arc::clone(&self);
-            last_pic = chrono::Utc::now();
             let img_init_timestamp = chrono::Utc::now();
             let img_handle = tokio::spawn(async move {
                 match self_clone.shoot_image_to_buffer(Arc::clone(&f_cont_lock_clone), lens).await {
@@ -485,9 +481,8 @@ impl CameraController {
                 }
             });
 
-            let next_img_due = {
-                let next_max_dt =
-                    chrono::Utc::now() + TimeDelta::seconds(image_max_dt as i64);
+            let mut next_img_due = {
+                let next_max_dt = chrono::Utc::now() + TimeDelta::seconds(image_max_dt as i64);
                 if next_max_dt > end_time {
                     last_image_flag = true;
                     end_time
@@ -495,16 +490,19 @@ impl CameraController {
                     next_max_dt
                 }
             };
-            
+
             let offset = img_handle.await;
             if let Some(off) = offset.ok().flatten() {
                 console_messenger.send_thumbnail(off, lens);
+                last_pic = img_init_timestamp;
             } else {
                 let passed_secs = (last_pic - last_mark.1 + overlap).num_seconds();
                 done_ranges.push((last_mark.0, last_mark.0 + passed_secs as isize));
-                last_mark = (st + done_ranges.len() as isize, chrono::Utc::now());
+                let tot_passed_secs = (img_init_timestamp - last_mark.1 - overlap).num_seconds();
+                last_mark = (tot_passed_secs as isize, chrono::Utc::now());
+                next_img_due = chrono::Utc::now() + TimeDelta::seconds(1);
             }
-            
+
             if last_image_flag {
                 let passed_secs = (chrono::Utc::now() - last_mark.1 + overlap).num_seconds();
                 done_ranges.push((last_mark.0, last_mark.0 + passed_secs as isize));
@@ -512,7 +510,7 @@ impl CameraController {
             }
             let sleep_time = next_img_due - chrono::Utc::now();
             tokio::select! {
-                () = tokio::time::sleep(sleep_time.to_std().unwrap()) => {},
+                () = tokio::time::sleep(sleep_time.to_std().unwrap_or(DT_0_STD)) => {},
                 () = last_img_kill.notified() => {
                     last_image_flag = true;
                 }
