@@ -22,11 +22,11 @@ use crate::flight_control::{
 };
 use crate::http_handler::ZonedObjective;
 use crate::keychain::{Keychain, KeychainWithOrbit};
-use crate::GlobalMode::ZonedObjectiveMode;
 use crate::MappingModeEnd::{Join, Timestamp};
 use chrono::{DateTime, TimeDelta};
 use csv::Writer;
 use std::collections::VecDeque;
+use std::future::IntoFuture;
 use std::{env, fs::OpenOptions, sync::Arc};
 use tokio::{sync::Notify, task::JoinHandle};
 
@@ -159,7 +159,7 @@ async fn main() {
                     )
                     .await;
                     TaskController::calculate_orbit_correction_burn(vel, dev, detumble_dt);
-                    global_mode = ZonedObjectiveMode(objective);
+                    global_mode = GlobalMode::ZonedObjectiveMode(objective);
                 }
                 BaseTask::SwitchState(switch) => match switch.target_state() {
                     FlightState::Acquisition => {
@@ -340,11 +340,22 @@ async fn execute_mapping(
     let k_clone_clone = Arc::clone(&k_clone);
     let acq_phase =
         start_periodic_imaging(k_clone_clone, end_t, img_dt, CONST_ANGLE, i_entry).await;
-    if let Join(join_handle) = end {
-        join_handle.await.ok();
-        acq_phase.1.notify_one();
-    }
-    let ranges = acq_phase.0.await.ok().unwrap_or(Vec::new());
+    let ranges = {
+        if let Join(join_handle) = end {
+            let (_, res) = tokio::join!(
+                async move {
+                    join_handle.await.ok();
+                    acq_phase.1.notify_one();
+                },
+                async move {
+                    acq_phase.0.await.ok().unwrap_or(Vec::new())
+                }
+            );
+            res
+        }else{
+            acq_phase.0.await.ok().unwrap_or(Vec::new())
+        }
+    };
     let fixed_ranges = IndexedOrbitPosition::map_ranges(&ranges, i_entry.period() as isize);
     print!("[INFO] Marking done: {} - {}", ranges[0].0, ranges[0].1);
     if let Some(r) = ranges.get(1) {
