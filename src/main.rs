@@ -26,7 +26,6 @@ use crate::MappingModeEnd::{Join, Timestamp};
 use chrono::{DateTime, TimeDelta};
 use csv::Writer;
 use std::collections::VecDeque;
-use std::future::IntoFuture;
 use std::{env, fs::OpenOptions, sync::Arc};
 use tokio::{sync::Notify, task::JoinHandle};
 
@@ -73,7 +72,7 @@ async fn main() {
     let debug_objective = ZonedObjective::new(
         0,
         chrono::Utc::now(),
-        chrono::Utc::now() + chrono::TimeDelta::hours(7),
+        chrono::Utc::now() + TimeDelta::hours(7),
         "Test Objective".to_string(),
         0,
         true,
@@ -334,7 +333,7 @@ async fn execute_mapping(
     let end_t = {
         match end {
             Timestamp(dt) => dt,
-            Join(_) => chrono::Utc::now() + chrono::TimeDelta::seconds(10000),
+            Join(_) => chrono::Utc::now() + TimeDelta::seconds(10000),
         }
     };
     let k_clone_clone = Arc::clone(&k_clone);
@@ -342,7 +341,7 @@ async fn execute_mapping(
         start_periodic_imaging(k_clone_clone, end_t, img_dt, CONST_ANGLE, i_entry).await;
     let ranges = {
         if let Join(join_handle) = end {
-            let (_, res) = tokio::join!(
+            let ((), res) = tokio::join!(
                 async move {
                     join_handle.await.ok();
                     acq_phase.1.notify_one();

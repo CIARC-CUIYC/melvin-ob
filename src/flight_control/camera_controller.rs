@@ -21,7 +21,6 @@ use image::{
     DynamicImage, GenericImage, GenericImageView, ImageBuffer, ImageReader, Pixel, Rgb, RgbImage,
     Rgba, RgbaImage,
 };
-use std::cmp::max;
 use std::{io::Cursor, sync::Arc};
 use tokio::{
     fs::File,
@@ -456,11 +455,12 @@ impl CameraController {
             chrono::Utc::now() - overlap,
         );
         let mut last_pic = chrono::Utc::now();
-        loop {
+        
+         {
             let f_cont_lock_clone = Arc::clone(&f_cont_lock);
             let pic_count_lock_clone = Arc::clone(&pic_count_lock);
             let self_clone = Arc::clone(&self);
-            let last_pic = chrono::Utc::now();
+            last_pic = chrono::Utc::now();
             let img_init_timestamp = chrono::Utc::now();
             let img_handle = tokio::spawn(async move {
                 match self_clone.shoot_image_to_buffer(Arc::clone(&f_cont_lock_clone), lens).await {
@@ -487,7 +487,7 @@ impl CameraController {
 
             let next_img_due = {
                 let next_max_dt =
-                    chrono::Utc::now() + chrono::TimeDelta::seconds(image_max_dt as i64);
+                    chrono::Utc::now() + TimeDelta::seconds(image_max_dt as i64);
                 if next_max_dt > end_time {
                     last_image_flag = true;
                     end_time
@@ -508,7 +508,7 @@ impl CameraController {
             if last_image_flag {
                 let passed_secs = (chrono::Utc::now() - last_mark.1 + overlap).num_seconds();
                 done_ranges.push((last_mark.0, last_mark.0 + passed_secs as isize));
-                last_mark = (st + done_ranges.len() as isize, chrono::Utc::now());
+                return done_ranges;
             }
             let sleep_time = next_img_due - chrono::Utc::now();
             tokio::select! {

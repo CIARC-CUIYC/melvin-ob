@@ -28,8 +28,8 @@ impl IndexedOrbitPosition {
 
     pub fn get_ranges_to_now(&self, shift: Option<usize>) -> Vec<(usize, usize)> {
         let end = {
-            if let Some(shift) = shift {
-                (((self.index_now() - shift) % self.period) + self.period) % self.period
+            if let Some(sh) = shift {
+                (((self.index_now() - sh) % self.period) + self.period) % self.period
             } else {
                 self.index_now() % self.period
             }

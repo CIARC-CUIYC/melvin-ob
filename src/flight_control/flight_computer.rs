@@ -116,8 +116,8 @@ impl FlightComputer {
         let factor_f64 = 10f64.powi(i32::from(Self::VEL_BE_MAX_DECIMAL));
         let trunc_x = (vel.x() * factor).floor().round() / factor;
         let trunc_y = (vel.y() * factor).floor().round() / factor;
-        let dev_x = (vel.x() as f64 * factor_f64).fract() / factor_f64;
-        let dev_y = (vel.y() as f64 * factor_f64).fract() / factor_f64;
+        let dev_x = (f64::from(vel.x()) * factor_f64).fract() / factor_f64;
+        let dev_y = (f64::from(vel.y()) * factor_f64).fract() / factor_f64;
         (Vec2D::new(trunc_x, trunc_y), Vec2D::new(dev_x, dev_y))
     }
 
