@@ -1,4 +1,6 @@
+use fixed::types::I32F32;
 use std::{collections::HashMap, sync::LazyLock, time::Duration};
+use num::Zero;
 use strum_macros::Display;
 
 /// Represents the various states of a flight system.
@@ -17,16 +19,16 @@ use strum_macros::Display;
 #[derive(Debug, Display, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum FlightState {
     Charge = 0,
-    Acquisition = 1,    
+    Acquisition = 1,
     Deployment,
-    Transition,    
+    Transition,
     Comms,
     Safe,
 }
 
 impl FlightState {
-    pub const ACQ_ACC_ADDITION: f32 = -0.05;
-    
+    pub const ACQ_ACC_ADDITION: I32F32 = I32F32::lit("-0.05");
+
     /// Returns the charge rate for the given flight state.
     ///
     /// Each state has an associated charge rate that indicates the system's power consumption
@@ -34,15 +36,15 @@ impl FlightState {
     /// while a positive value indicates charging.
     ///
     /// # Returns
-    /// A `f32` value representing the charge rate for the flight state.
-    pub fn get_charge_rate(self) -> f32 {
+    /// A `I32F32` value representing the charge rate for the flight state.
+    pub fn get_charge_rate(self) -> I32F32 {
         match self {
-            FlightState::Deployment => -0.025,
-            FlightState::Transition => 0.0,
-            FlightState::Acquisition => -0.1,
-            FlightState::Charge => 0.1,
-            FlightState::Comms => -0.016,
-            FlightState::Safe => 0.05,
+            FlightState::Deployment => I32F32::lit("-0.025"),
+            FlightState::Transition => I32F32::zero(),
+            FlightState::Acquisition => I32F32::lit("-0.1"),
+            FlightState::Charge => I32F32::lit("0.1"),
+            FlightState::Comms => I32F32::lit("-0.016"),
+            FlightState::Safe => I32F32::lit("0.05"),
         }
     }
 }

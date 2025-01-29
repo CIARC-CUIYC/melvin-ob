@@ -1,5 +1,7 @@
 use super::vec2d::Vec2D;
+use fixed::types::U32F0;
 use image::{GenericImage, GenericImageView};
+use num::ToPrimitive;
 use std::ops::{Deref, DerefMut};
 
 /// A 2D raster buffer to store pixel data. Each pixel is represented by an RGB triplet.
@@ -45,8 +47,10 @@ impl Buffer {
     /// # Returns
     /// A new `Buffer` with dimensions provided by `Vec2D::map_size()`.
     pub fn from_map_size() -> Self {
-        let map_size = Vec2D::<u32>::map_size();
-        Self::new(map_size.x(), map_size.y())
+        Self::new(
+            Vec2D::map_size_num().x(),
+            Vec2D::map_size_num().y(),
+        )
     }
 
     /// Saves an RGB pixel at the specified wrapped position `(x, y)`.
@@ -79,7 +83,7 @@ impl Buffer {
     pub fn view(&self, offset: Vec2D<u32>, size: Vec2D<u32>) -> SubBuffer<&Buffer> {
         SubBuffer {
             buffer: self,
-            buffer_size: Vec2D::map_size(),
+            buffer_size: Vec2D::map_size_num(),
             offset,
             size,
         }
