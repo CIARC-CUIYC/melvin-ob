@@ -3,7 +3,9 @@ use super::{
     common::vec2d::Vec2D,
     flight_state::{FlightState, TRANSITION_DELAY_LOOKUP},
 };
+use crate::flight_control::orbit::burn_sequence::BurnSequence;
 use crate::flight_control::orbit::index::IndexedOrbitPosition;
+use crate::flight_control::task::task_controller::TaskController;
 use crate::http_handler::{
     http_client,
     http_request::{
@@ -459,6 +461,37 @@ impl FlightComputer {
                 }
             }
         }
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    pub fn estimate_min_burn_sequence_charge(burn_sequence: &BurnSequence) -> f32 {
+        let acc_time = burn_sequence.acc_dt();
+        let travel_time = burn_sequence.detumble_dt() + acc_time;
+        let detumble_time = travel_time - acc_time;
+        let maneuver_acq_time = {
+            let trunc_detumble_time = detumble_time - 2 * TaskController::MANEUVER_MIN_DETUMBLE_DT;
+            let acq_charge_dt = i32::try_from(
+                TRANSITION_DELAY_LOOKUP[&(FlightState::Acquisition, FlightState::Charge)].as_secs(),
+            )
+            .unwrap_or(i32::MAX);
+            let charge_acq_dt = i32::try_from(
+                TRANSITION_DELAY_LOOKUP[&(FlightState::Acquisition, FlightState::Charge)].as_secs(),
+            )
+            .unwrap_or(i32::MAX);
+            let poss_charge_dt = i32::try_from(trunc_detumble_time).unwrap_or(i32::MIN)
+                - acq_charge_dt
+                - charge_acq_dt;
+            if poss_charge_dt < 0 {
+                travel_time
+            } else {
+                // TODO: this probably only works because we do *2 later :)
+                acc_time + 2 * TaskController::MANEUVER_MIN_DETUMBLE_DT
+            }
+        };
+        // TODO: this should be calculated in regards of the return path
+        (maneuver_acq_time as f32 * FlightState::Acquisition.get_charge_rate()
+            + burn_sequence.acc_dt() as f32 * FlightState::ACQ_ACC_ADDITION)
+            * (-2.0)
     }
 
     /// Predicts the satellite’s position after a specified time interval.

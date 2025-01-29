@@ -1,11 +1,12 @@
+use crate::flight_control::flight_state::TRANSITION_DELAY_LOOKUP;
 use crate::flight_control::{
     common::{linked_box::LinkedBox, math, pinned_dt::PinnedTimeDelay, vec2d::Vec2D},
     flight_computer::FlightComputer,
     flight_state::FlightState,
     orbit::{burn_sequence::BurnSequence, closed_orbit::ClosedOrbit, index::IndexedOrbitPosition},
     task::{
-        atomic_decision::AtomicDecision, atomic_decision_cube::AtomicDecisionCube,
-        base_task::Task, score_grid::ScoreGrid
+        atomic_decision::AtomicDecision, atomic_decision_cube::AtomicDecisionCube, base_task::Task,
+        score_grid::ScoreGrid,
     },
 };
 use crate::http_handler::ZonedObjective;
@@ -47,6 +48,7 @@ impl TaskController {
     const OBJECTIVE_SCHEDULE_MIN_DT: usize = 1000;
     const OBJECTIVE_MIN_RETRIEVAL_TOL: usize = 100;
     const MANEUVER_INIT_BATT_TOL: f32 = 10.0;
+    pub(crate) const MANEUVER_MIN_DETUMBLE_DT: usize = 50;
     const OFF_ORBIT_DT_WEIGHT: f32 = 2.0;
     const FUEL_CONSUMPTION_WEIGHT: f32 = 1.0;
     const ANGLE_DEV_WEIGHT: f32 = 1.5;
@@ -231,7 +233,7 @@ impl TaskController {
         f_cont_lock: Arc<RwLock<FlightComputer>>,
         target_pos: Vec2D<f32>,
         target_end_time: chrono::DateTime<chrono::Utc>,
-    ) -> BurnSequence {
+    ) -> (BurnSequence, f32) {
         println!("[INFO] Starting to calculate single target burn towards {target_pos}");
         let time_left = target_end_time - chrono::Utc::now();
         let max_dt = {
@@ -262,10 +264,12 @@ impl TaskController {
             }
         }
 
-        println!("[INFO] Done skipping impossible start times. Last possible dt: {last_possible_dt}");
+        println!(
+            "[INFO] Done skipping impossible start times. Last possible dt: {last_possible_dt}"
+        );
 
         let remaining_range = Self::OBJECTIVE_SCHEDULE_MIN_DT..=last_possible_dt;
-        let mut best_burn_sequence: Option<BurnSequence> = None;
+        let mut best_burn_sequence: Option<(BurnSequence, f32)> = None;
         let max_angle_dev = {
             let vel_perp = orbit_vel.perp_unit(true) * FlightComputer::ACC_CONST;
             let vel_res = orbit_vel + vel_perp;
@@ -273,12 +277,12 @@ impl TaskController {
         };
 
         let turns = turns_handle.await.unwrap();
-        for dt in remaining_range.rev() {
+        'outer: for dt in remaining_range.rev() {
             let mut next_pos = (curr_i.pos() + orbit_vel * dt).wrap_around_map();
             let burn_sequence_i =
                 curr_i.new_from_future_pos(next_pos, chrono::TimeDelta::seconds(dt as i64));
             let direction_vec = next_pos.unwrapped_to(&target_pos);
-            
+
             if orbit_vel.angle_to(&direction_vec).abs() > 90.0 {
                 continue;
             }
@@ -306,14 +310,15 @@ impl TaskController {
                 let min_dt = (next_to_target.abs() / next_vel.abs()).abs().round() as usize;
 
                 if min_dt + dt + add_dt > max_dt {
-                    break 'inner;
+                    continue 'outer;
                 }
 
-                if direction_vec.is_clockwise_to(&next_vel).unwrap_or(break_cond) == break_cond {
+                if next_to_target.is_clockwise_to(&next_vel).unwrap_or(break_cond) == break_cond {
                     let last_pos = fin_sequence_pos.last().unwrap();
                     let last_vel = fin_sequence_vel.last().unwrap();
                     (fin_dt, fin_angle_dev) = {
-                        let last_angle_deviation = last_vel.angle_to(&next_to_target);
+                        let last_to_target = last_pos.unwrapped_to(&target_pos);
+                        let last_angle_deviation = last_vel.angle_to(&last_to_target);
                         let this_angle_deviation = next_vel.angle_to(&next_to_target);
                         if last_angle_deviation > this_angle_deviation {
                             fin_sequence_pos.push(next_pos);
@@ -326,11 +331,11 @@ impl TaskController {
                             (last_min_dt + dt + add_dt, last_angle_deviation)
                         }
                     };
-                } else {
-                    fin_sequence_pos.push(next_pos);
-                    fin_sequence_vel.push(next_vel);
-                    add_dt += 1;
+                    break 'inner;
                 }
+                fin_sequence_pos.push(next_pos);
+                fin_sequence_vel.push(next_vel);
+                add_dt += 1;
             }
             let normalized_fuel_consumption = math::normalize_f32(
                 add_dt as f32 * FlightComputer::FUEL_CONST,
@@ -338,7 +343,7 @@ impl TaskController {
                 max_add_dt as f32 * FlightComputer::FUEL_CONST,
             )
             .unwrap_or(0.0);
-            // TODO: subtract with overflow
+
             let normalized_off_orbit_t =
                 math::normalize_f32((fin_dt - dt) as f32, 0.0, max_off_orbit_t as f32)
                     .unwrap_or(0.0);
@@ -347,18 +352,27 @@ impl TaskController {
             let burn_sequence_cost = Self::OFF_ORBIT_DT_WEIGHT * normalized_off_orbit_t
                 + Self::FUEL_CONSUMPTION_WEIGHT * normalized_fuel_consumption
                 + Self::ANGLE_DEV_WEIGHT * normalized_angle_dev;
-            
-            if best_burn_sequence.is_none() || 
-                burn_sequence_cost < best_burn_sequence.as_ref().unwrap().cost() {
-                best_burn_sequence = Some(BurnSequence::new(
-                    burn_sequence_i,
-                    fin_sequence_pos.into_boxed_slice(),
-                    fin_sequence_vel.into_boxed_slice(),
-                    add_dt,
-                    fin_dt - dt - add_dt,
-                    burn_sequence_cost,
-                    fin_angle_dev,
-                ));
+
+            let burn_sequence = BurnSequence::new(
+                burn_sequence_i,
+                fin_sequence_pos.into_boxed_slice(),
+                fin_sequence_vel.into_boxed_slice(),
+                add_dt,
+                fin_dt - dt - add_dt,
+                burn_sequence_cost,
+                fin_angle_dev,
+            );
+
+            let min_charge = FlightComputer::estimate_min_burn_sequence_charge(&burn_sequence);
+
+            if best_burn_sequence.is_none()
+                || burn_sequence_cost < best_burn_sequence.as_ref().unwrap().0.cost()
+            {
+                if min_charge < MAX_BATTERY_THRESHOLD {
+                    best_burn_sequence = Some((burn_sequence, min_charge));
+                } else {
+                    println!("Cheaper maneuver found but min charge {min_charge} is too high!");
+                }
             }
         }
         best_burn_sequence.unwrap()
@@ -377,7 +391,7 @@ impl TaskController {
             "[INFO] Calculating schedule for Retrieval of Objective {}",
             objective.id()
         );
-        let burn_sequence = if objective.min_images() == 1 {
+        let (burn_sequence, min_charge) = if objective.min_images() == 1 {
             let target_pos = objective.get_imaging_points()[0];
             let due = objective.end();
             Self::calculate_single_target_burn_sequence(
@@ -393,21 +407,14 @@ impl TaskController {
         };
         let comp_time = (chrono::Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
         println!("[INFO] Maneuver calculation completed after {comp_time}s!");
-        let acc_time = burn_sequence.acc_dt();
-        let travel_time = burn_sequence.detumble_dt() + acc_time;
-        let detumble_time = travel_time - acc_time;
-        // TODO: this should be calculated in regards of the return path
-        let min_charge = (travel_time as f32 * FlightState::Acquisition.get_charge_rate()
-            + burn_sequence.acc_dt() as f32 * FlightState::ACQ_ACC_ADDITION)
-            * 2.0;
-        if min_charge > MAX_BATTERY_THRESHOLD {
-            panic!["[FATAL] Minimum needed charge is greater than battery capacity"]
-        }
+
         let start =
-            (burn_sequence.start_i().t() - chrono::Utc::now()).num_seconds() as f32 / 1000.0;
+            (burn_sequence.start_i().t() - chrono::Utc::now()).num_milliseconds() as f32 / 1000.0;
         println!(
-            "[INFO] Maneuver will start in {start}s, will take {acc_time}s. \
-            Detumble time will be roughly {detumble_time}s!"
+            "[INFO] Maneuver will start in {start}s, will take {}s. \
+            Detumble time will be roughly {}s!",
+            burn_sequence.acc_dt(),
+            burn_sequence.detumble_dt()
         );
         let after_burn_calc_i = {
             let pos = f_cont_lock.read().await.current_pos();
