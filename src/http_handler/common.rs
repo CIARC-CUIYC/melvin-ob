@@ -67,7 +67,7 @@ impl ZonedObjective {
         // TODO: this has to be adapted for multiple imaging points later
         let x_size = self.zone[2] - self.zone[0];
         let y_size = self.zone[3] - self.zone[1];
-        let pos = Vec2D::new(self.zone[0] + x_size, self.zone[1] + y_size);
+        let pos = Vec2D::new(self.zone[0] + x_size/2, self.zone[1] + y_size/2);
         let pos_f32 = pos.cast::<f32>().wrap_around_map();
         vec![pos_f32]
     }

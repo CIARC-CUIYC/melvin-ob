@@ -1,7 +1,7 @@
 use crate::flight_control::common::vec2d::Vec2D;
 use crate::flight_control::orbit::index::IndexedOrbitPosition;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BurnSequence {
     start_i: IndexedOrbitPosition,
     sequence_pos: Box<[Vec2D<f32>]>,

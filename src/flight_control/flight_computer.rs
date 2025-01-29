@@ -109,50 +109,82 @@ impl FlightComputer {
         return_controller
     }
 
-    pub fn trunc_vel(vel: Vec2D<f32>) -> Vec2D<f32> {
+    pub fn trunc_vel(vel: Vec2D<f32>) -> (Vec2D<f32>, Vec2D<f64>) {
         let factor = 10f32.powi(i32::from(Self::VEL_BE_MAX_DECIMAL));
-        Vec2D::new(
-            (vel.x() * factor).floor() / factor,
-            (vel.y() * factor).floor() / factor,
-        )
+        let factor_f64 = 10f64.powi(i32::from(Self::VEL_BE_MAX_DECIMAL));
+        let trunc_x = (vel.x() * factor).floor().round() / factor;
+        let trunc_y = (vel.y() * factor).floor().round() / factor;
+        let dev_x = (vel.x() as f64 * factor_f64).fract() / factor_f64;
+        let dev_y = (vel.y() as f64 * factor_f64).fract() / factor_f64;
+        (Vec2D::new(trunc_x, trunc_y), Vec2D::new(dev_x, dev_y))
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     pub fn compute_possible_turns(init_vel: Vec2D<f32>) -> TurnsClockCClockTup {
-        let init_vel_clock_unit = init_vel.perp_unit(true);
-        let init_vel_c_clock_unit = init_vel.perp_unit(false);
+        println!("[INFO] Precomputing possible turns...");
+        let start_x = init_vel.x();
+        let end_x = 0.0;
+        let start_y = init_vel.y();
+        let end_y = 0.0;
 
-        let mut acc_clock = init_vel_clock_unit * FlightComputer::ACC_CONST;
-        let mut acc_c_clock = init_vel_c_clock_unit * FlightComputer::ACC_CONST;
-        let mut vel_clock = FlightComputer::trunc_vel(init_vel + acc_clock);
-        let mut vel_c_clock = FlightComputer::trunc_vel(init_vel + acc_c_clock);
+        let step_x =
+            if start_x > end_x { -FlightComputer::ACC_CONST } else { FlightComputer::ACC_CONST };
+        let step_y =
+            if start_y > end_y { -FlightComputer::ACC_CONST } else { FlightComputer::ACC_CONST };
 
-        let mut pos_clock: Vec2D<f32> = Vec2D::zero();
-        let mut pos_c_clock: Vec2D<f32> = Vec2D::zero();
+        let y_const_x_change: Vec<(Vec2D<f32>, Vec2D<f32>)> = {
+            let mut x_pos_vel = Vec::new();
+            let step = Vec2D::new(step_x, 0.0);
+            let i_last = (start_x / step_x).ceil().abs() as i32;
+            let mut next_pos = Vec2D::new(0.0, 0.0);
+            let mut next_vel = init_vel + step;
+            x_pos_vel.push((next_pos, next_vel));
+            for i in 0..i_last {
+                next_pos = next_pos + next_vel;
+                if i == i_last - 1 {
+                    next_vel = Vec2D::new(0.0, start_y);
+                } else {
+                    next_vel = init_vel + step;
+                }
+                x_pos_vel.push((next_pos, next_vel));
+            }
+            x_pos_vel
+        };
 
-        let mut pos_vel_clock = vec![(pos_clock, vel_clock)];
-        let mut pos_vel_c_clock = vec![(pos_c_clock, vel_c_clock)];
+        let x_const_y_change: Vec<(Vec2D<f32>, Vec2D<f32>)> = {
+            let mut y_pos_vel = Vec::new();
+            let step = Vec2D::new(0.0, step_y);
+            let i_last = (start_y / step_y).ceil().abs() as i32;
+            let mut next_pos = Vec2D::new(0.0, 0.0);
+            let mut next_vel = init_vel + step;
+            y_pos_vel.push((next_pos, next_vel));
+            for i in 0..i_last {
+                next_pos = next_pos + next_vel;
+                if i == i_last - 1 {
+                    next_vel = Vec2D::new(start_x, 0.0);
+                } else {
+                    next_vel = init_vel + step;
+                }
+                y_pos_vel.push((next_pos, next_vel));
+            }
+            y_pos_vel
+        };
 
-        while !vel_clock.is_clockwise_to(&init_vel_c_clock_unit).unwrap_or(false) {
-            (pos_clock, vel_clock) = *pos_vel_clock.last().unwrap();
-            pos_clock = pos_clock + vel_clock;
-
-            acc_clock = vel_clock.perp_unit(true) * FlightComputer::ACC_CONST;
-            vel_clock = FlightComputer::trunc_vel(vel_clock + acc_clock);
-
-            pos_vel_clock.push((pos_clock, vel_clock));
+        if step_x.signum() == step_y.signum() {
+            println!(
+                "[INFO] Possible turns: {} clockwise and {} counter clockwise.",
+                y_const_x_change.len(),
+                x_const_y_change.len()
+            );
+            (y_const_x_change, x_const_y_change)
+        } else {
+            println!(
+                "[INFO] Possible turns: {} clockwise and {} counter clockwise.",
+                x_const_y_change.len(),
+                y_const_x_change.len()
+            );
+            (x_const_y_change, y_const_x_change)
         }
-
-        while vel_c_clock.is_clockwise_to(&init_vel_c_clock_unit).unwrap_or(false) {
-            (pos_c_clock, vel_c_clock) = *pos_vel_c_clock.last().unwrap();
-            pos_c_clock = pos_c_clock + vel_c_clock;
-
-            acc_c_clock = vel_c_clock.perp_unit(true) * FlightComputer::ACC_CONST;
-            vel_c_clock = FlightComputer::trunc_vel(vel_c_clock + acc_c_clock);
-
-            pos_vel_c_clock.push((pos_c_clock, vel_c_clock));
-        }
-
-        (pos_vel_clock, pos_vel_c_clock)
     }
 
     /// Retrieves the current position of the satellite.

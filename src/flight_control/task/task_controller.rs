@@ -179,7 +179,7 @@ impl TaskController {
             let mut current_burn_sequence = Vec::new();
             for _ in 0..max_acc_secs {
                 let perp_acc = last_vel.perp_unit(is_clockwise) * FlightComputer::ACC_CONST;
-                let new_vel = FlightComputer::trunc_vel(last_vel + perp_acc);
+                let (new_vel, _) = FlightComputer::trunc_vel(last_vel + perp_acc);
                 current_burn_sequence.push(new_vel);
                 let vel_diff = new_vel - last_vel;
                 res_vel_diff = res_vel_diff + vel_diff;
@@ -232,6 +232,7 @@ impl TaskController {
         target_pos: Vec2D<f32>,
         target_end_time: chrono::DateTime<chrono::Utc>,
     ) -> BurnSequence {
+        println!("[INFO] Starting to calculate single target burn towards {target_pos}");
         let time_left = target_end_time - chrono::Utc::now();
         let max_dt = {
             let max = usize::try_from(time_left.num_seconds()).unwrap_or(0);
@@ -261,16 +262,10 @@ impl TaskController {
             }
         }
 
+        println!("[INFO] Done skipping impossible start times. Last possible dt: {last_possible_dt}");
+
         let remaining_range = Self::OBJECTIVE_SCHEDULE_MIN_DT..=last_possible_dt;
-        let mut best_burn_sequence = BurnSequence::new(
-            curr_i,
-            Vec::new().into_boxed_slice(),
-            Vec::new().into_boxed_slice(),
-            0,
-            0,
-            f32::infinity(),
-            f32::infinity(),
-        );
+        let mut best_burn_sequence: Option<BurnSequence> = None;
         let max_angle_dev = {
             let vel_perp = orbit_vel.perp_unit(true) * FlightComputer::ACC_CONST;
             let vel_res = orbit_vel + vel_perp;
@@ -283,6 +278,10 @@ impl TaskController {
             let burn_sequence_i =
                 curr_i.new_from_future_pos(next_pos, chrono::TimeDelta::seconds(dt as i64));
             let direction_vec = next_pos.unwrapped_to(&target_pos);
+            
+            if orbit_vel.angle_to(&direction_vec).abs() > 90.0 {
+                continue;
+            }
 
             let (turns_in_dir, break_cond) = {
                 if direction_vec.is_clockwise_to(&orbit_vel).unwrap_or(false) {
@@ -300,7 +299,7 @@ impl TaskController {
             let max_add_dt = turns_in_dir.len();
 
             'inner: for atomic_turn in turns_in_dir {
-                next_pos = next_pos + atomic_turn.0;
+                next_pos = (next_pos + atomic_turn.0).wrap_around_map();
                 let next_vel = atomic_turn.1;
 
                 let next_to_target = next_pos.unwrapped_to(&target_pos);
@@ -339,6 +338,7 @@ impl TaskController {
                 max_add_dt as f32 * FlightComputer::FUEL_CONST,
             )
             .unwrap_or(0.0);
+            // TODO: subtract with overflow
             let normalized_off_orbit_t =
                 math::normalize_f32((fin_dt - dt) as f32, 0.0, max_off_orbit_t as f32)
                     .unwrap_or(0.0);
@@ -347,9 +347,10 @@ impl TaskController {
             let burn_sequence_cost = Self::OFF_ORBIT_DT_WEIGHT * normalized_off_orbit_t
                 + Self::FUEL_CONSUMPTION_WEIGHT * normalized_fuel_consumption
                 + Self::ANGLE_DEV_WEIGHT * normalized_angle_dev;
-
-            if burn_sequence_cost < best_burn_sequence.cost() {
-                best_burn_sequence = BurnSequence::new(
+            
+            if best_burn_sequence.is_none() || 
+                burn_sequence_cost < best_burn_sequence.as_ref().unwrap().cost() {
+                best_burn_sequence = Some(BurnSequence::new(
                     burn_sequence_i,
                     fin_sequence_pos.into_boxed_slice(),
                     fin_sequence_vel.into_boxed_slice(),
@@ -357,10 +358,10 @@ impl TaskController {
                     fin_dt - dt - add_dt,
                     burn_sequence_cost,
                     fin_angle_dev,
-                );
+                ));
             }
         }
-        best_burn_sequence
+        best_burn_sequence.unwrap()
     }
 
     #[allow(clippy::cast_precision_loss)]
@@ -500,6 +501,7 @@ impl TaskController {
         dt_sh: usize,
         trunc: bool,
     ) -> usize {
+        println!("[INFO] Scheduling optimal orbit result...");
         if trunc {
             self.clear_schedule().await;
         }

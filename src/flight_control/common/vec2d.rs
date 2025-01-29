@@ -95,8 +95,13 @@ where T: Real + NumCast + NumAssignOps
 
     pub fn perp_unit(&self, clockwise: bool) -> Vec2D<T> {
         let perp =
-            if clockwise { Vec2D::new(-self.x, self.y) } else { Vec2D::new(self.x, -self.y) };
+            if clockwise { Vec2D::new(self.y, -self.x) } else { Vec2D::new(-self.y, self.x) };
         perp.normalize()
+    }
+    
+    pub fn flip_unit(&self) -> Vec2D<T> {
+        let flip = Vec2D::new(-self.y, -self.x);
+        flip.normalize()
     }
 
     pub fn is_clockwise_to(&self, other: &Vec2D<T>) -> Option<bool> {
@@ -297,7 +302,7 @@ impl<T: Num + NumCast + Copy> Vec2D<T> {
     ///
     /// # Returns
     /// The wrapped coordinate as type `T`.
-    pub fn wrap_coordinate(value: T, max_value: T) -> T { (value + max_value) % max_value }
+    pub fn wrap_coordinate(value: T, max_value: T) -> T { ((value % max_value) + max_value) % max_value }
 
     pub fn cast<D: NumCast>(self) -> Vec2D<D> {
         Vec2D {
