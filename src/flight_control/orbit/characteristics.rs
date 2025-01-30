@@ -1,9 +1,9 @@
-use fixed::types::{I32F32, I64F64};
-use num::ToPrimitive;
 use crate::flight_control::{
     flight_computer::FlightComputer,
     orbit::{closed_orbit::ClosedOrbit, index::IndexedOrbitPosition},
 };
+use fixed::types::I32F32;
+use num::ToPrimitive;
 use tokio::sync::RwLock;
 
 #[derive(Debug, Copy, Clone)]
@@ -35,4 +35,11 @@ impl OrbitCharacteristics {
     pub fn orbit_s_end(&self) -> chrono::DateTime<chrono::Utc> { self.orbit_s_end }
     pub fn orbit_full_period(&self) -> usize { self.orbit_full_period }
     pub fn i_entry(&self) -> IndexedOrbitPosition { self.i_entry }
+    pub fn finish(&mut self, now: IndexedOrbitPosition) {
+        println!(
+            "[INFO] Finished Task Schedule after: {}",
+            (now.t() - self.i_entry.t()).num_seconds()
+        );
+        self.i_entry = now;
+    }
 }

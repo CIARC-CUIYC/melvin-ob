@@ -28,6 +28,7 @@ use std::{
     collections::VecDeque,
     {env, sync::Arc},
 };
+use strum_macros::Display;
 use tokio::{sync::Notify, task::JoinHandle};
 
 enum MappingModeEnd {
@@ -35,6 +36,7 @@ enum MappingModeEnd {
     Join(JoinHandle<()>),
 }
 
+#[derive(Display)]
 enum GlobalMode {
     MappingMode,
     ZonedObjectiveMode(ZonedObjective),
@@ -61,7 +63,7 @@ const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 async fn main() {
     let base_url_var = env::var("DRS_BASE_URL");
     let base_url = base_url_var.as_ref().map_or("http://localhost:33000", |v| v.as_str());
-    let (k, orbit_char) = {
+    let (k, mut orbit_char) = {
         let res = init(base_url).await;
         (Arc::new(res.0), res.1)
     };
@@ -85,13 +87,20 @@ async fn main() {
 
     let mut objective_queue = VecDeque::new();
     objective_queue.push_back(debug_objective.clone());
-
+    let mut phases = 0;
     //schedule_zoned_objective_retrieval(Arc::clone(&k), orbit_char, debug_objective).await;
     let mut global_mode = GlobalMode::MappingMode;
     loop {
-        schedule_undisturbed_orbit(Arc::clone(&k), orbit_char).await;
-
-        let mut phases = 0;
+        println!("[INFO] Starting new phase in {global_mode}!");
+        match global_mode {
+            GlobalMode::MappingMode => {
+                schedule_undisturbed_orbit(Arc::clone(&k), orbit_char).await;
+            }
+            GlobalMode::ZonedObjectiveMode(_) => {
+                todo!()
+            }
+        }
+        
         while let Some(task) = { (*sched).write().await.pop_front() } {
             phases += 1;
             let task_type = task.task_type();
@@ -183,8 +192,9 @@ async fn main() {
                     }
                 },
             }
-            // TODO: perform optimal orbit until objective notification
         }
+        phases += 1;
+        orbit_char.finish(orbit_char.i_entry().new_from_pos(k.f_cont().read().await.current_pos()));
     }
     // drop(console_messenger);
 }
@@ -214,8 +224,7 @@ async fn init(url: &str) -> (KeychainWithOrbit, OrbitCharacteristics) {
                     last_timestamp = chrono::Utc::now();
                     let mut expected_pos = last_pos
                         + <(I32F32, I32F32) as Into<Vec2D<I32F32>>>::into(STATIC_ORBIT_VEL)
-                            * I32F32::from_num(dt.num_milliseconds() as f32
-                            / 1000.0);
+                            * I32F32::from_num(dt.num_milliseconds() as f32 / 1000.0);
                     expected_pos = expected_pos.wrap_around_map();
                     let diff = current_pos - expected_pos;
                     // TODO: do something with those informations

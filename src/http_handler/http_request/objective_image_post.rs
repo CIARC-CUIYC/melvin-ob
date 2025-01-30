@@ -2,7 +2,7 @@ use super::objective_image::ObjectiveImageResponse;
 use super::request_common::{
     HTTPRequestMethod, HTTPRequestType, MultipartBodyHTTPRequestType, RequestError,
 };
-use bytes::Bytes;
+use prost::bytes::Bytes;
 use std::collections::HashMap;
 
 #[derive(Debug)]
