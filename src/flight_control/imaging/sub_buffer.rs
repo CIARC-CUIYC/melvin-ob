@@ -31,6 +31,7 @@ where
     T: DerefMut,
     T::Target: GenericImage + Sized,
 {
+    #[allow(deprecated)]
     fn get_pixel_mut(&mut self, x: u32, y: u32) -> &mut Self::Pixel {
         let x_loc = (x + self.offset.x()) % self.buffer_size.x();
         let y_loc = (y + self.offset.y()) % self.buffer_size.y();
@@ -43,6 +44,7 @@ where
         self.buffer.put_pixel(x_loc, y_loc, pixel);
     }
 
+    #[allow(deprecated)]
     fn blend_pixel(&mut self, x: u32, y: u32, pixel: Self::Pixel) {
         let x_loc = (x + self.offset.x()) % self.buffer_size.x();
         let y_loc = (y + self.offset.y()) % self.buffer_size.y();

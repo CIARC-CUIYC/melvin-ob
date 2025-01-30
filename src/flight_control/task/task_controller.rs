@@ -583,10 +583,10 @@ impl TaskController {
     async fn schedule_switch(&self, target: FlightState, sched_t: chrono::DateTime<chrono::Utc>) {
         let dt = PinnedTimeDelay::from_end(sched_t);
         if self.task_schedule.read().await.is_empty() {
-            self.task_schedule.write().await.push_back(Task::switch_target(target, dt));
+            self.enqueue_task(Task::switch_target(target, dt)).await;
             self.next_task_notify.notify_all();
         } else {
-            self.task_schedule.write().await.push_back(Task::switch_target(target, dt));
+            self.enqueue_task(Task::switch_target(target, dt)).await;
         }
     }
 
@@ -596,7 +596,7 @@ impl TaskController {
             has_to_notify = true;
         }
         let dt = PinnedTimeDelay::from_end(burn.start_i().t());
-        self.task_schedule.write().await.push_back(Task::vel_change_task(burn, dt));
+        self.enqueue_task(Task::vel_change_task(burn, dt)).await;
 
         if has_to_notify {
             self.next_task_notify.notify_all();
@@ -621,6 +621,11 @@ impl TaskController {
         schedule.drain(first_remove..schedule_len);
     }
 
+
+    async fn enqueue_task(&self, task: Task) {
+        self.task_schedule.write().await.push_back(task);
+    }
+
     /// Clears all pending tasks in the schedule.
     ///
     /// # Side Effects
@@ -629,4 +634,5 @@ impl TaskController {
         let schedule = &*self.task_schedule;
         schedule.write().await.clear();
     }
+
 }

@@ -89,7 +89,7 @@ async fn main() {
     let mut global_mode = GlobalMode::MappingMode;
     loop {
         schedule_undisturbed_orbit(Arc::clone(&k), orbit_char).await;
-
+        k.con().send_tasklist().await;
         let mut phases = 0;
         while let Some(task) = { (*sched).write().await.pop_front() } {
             phases += 1;

@@ -13,7 +13,7 @@ pub struct Ping {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Downstream {
-    #[prost(oneof = "DownstreamContent", tags = "1, 2, 3, 4")]
+    #[prost(oneof = "DownstreamContent", tags = "1, 2, 3, 4, 5")]
     pub content: Option<DownstreamContent>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -47,7 +47,7 @@ impl Image {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Telemetry {
     #[prost(int64, tag = "1")]
     pub timestamp: i64,
@@ -73,7 +73,7 @@ pub struct Telemetry {
     pub distance_covered: f32,
 }
 
-#[derive(Clone, Copy, PartialEq, prost::Message)]
+#[derive(Clone, PartialEq, prost::Message)]
 pub struct SubmitResponse {
     #[prost(bool, tag = "1")]
     pub success: bool,
@@ -91,6 +91,8 @@ pub enum DownstreamContent {
     Telemetry(Telemetry),
     #[prost(message, tag = "4")]
     SubmitResponse(SubmitResponse),
+    #[prost(message, tag = "6")]
+    TaskList(TaskList),
 }
 
 #[derive(Clone, PartialEq, prost::Oneof)]
@@ -111,7 +113,7 @@ pub enum UpstreamContent {
 #[derive(Clone, Copy, PartialEq, prost::Message)]
 pub struct GetFullImage {}
 
-#[derive(Clone, Copy, PartialEq, prost::Message)]
+#[derive(Clone, PartialEq, prost::Message)]
 pub struct SubmitObjective {
     #[prost(uint32, tag = "1")]
     pub objective_id: u32,
@@ -125,13 +127,13 @@ pub struct SubmitObjective {
     pub offset_y: u32,
 }
 
-#[derive(Clone, Copy, PartialEq, prost::Message)]
+#[derive(Clone, PartialEq, prost::Message)]
 pub struct SubmitDailyMap {}
 
-#[derive(Clone, Copy, PartialEq, prost::Message)]
+#[derive(Clone, PartialEq, prost::Message)]
 pub struct GetSnapshotDiffImage {}
 
-#[derive(Clone, Copy, PartialEq, prost::Message)]
+#[derive(Clone, PartialEq, prost::Message)]
 pub struct CreateSnapshotImage {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, prost::Enumeration)]
@@ -175,3 +177,41 @@ impl SatelliteState {
         }
     }
 }
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct TaskList {
+    #[prost(message, repeated, tag = "1")]
+    pub tasks: Vec<Task>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct Task {
+    #[prost(int64, tag = "1")]
+    pub scheduled_on: i64,
+    #[prost(oneof = "TaskType", tags = "2,3,4")]
+    pub task: Option<TaskType>,
+}
+
+#[derive(Clone, PartialEq, prost::Oneof)]
+pub enum TaskType {
+    #[prost(message, tag = "2")]
+    TakeImage(TakeImage),
+    #[prost(enumeration = "SatelliteState", tag = "3")]
+    SwitchState(i32),
+    #[prost(message, tag = "4")]
+    VelocityChange(BurnSequence),
+}
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct TakeImage {
+    #[prost(uint32, optional, tag = "1")]
+    pub actual_position_x: Option<u32>,
+    #[prost(uint32, optional, tag = "2")]
+    pub actual_position_y: Option<u32>,
+    #[prost(uint32, tag = "3")]
+    pub planned_position_x: u32,
+    #[prost(uint32, tag = "4")]
+    pub planned_position_y: u32,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub struct BurnSequence {}
