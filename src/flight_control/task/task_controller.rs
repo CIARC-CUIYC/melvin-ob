@@ -351,21 +351,21 @@ impl TaskController {
                 fin_sequence_vel.push(next_vel);
                 add_dt += 1;
             }
-            let normalized_fuel_consumption = math::normalize_f32(
+            let normalized_fuel_consumption = math::normalize_fixed32(
                 I32F32::from_num(add_dt) * FlightComputer::FUEL_CONST,
                 I32F32::zero(),
                 I32F32::from_num(max_add_dt) * FlightComputer::FUEL_CONST,
             )
             .unwrap_or(I32F32::zero());
 
-            let normalized_off_orbit_t = math::normalize_f32(
+            let normalized_off_orbit_t = math::normalize_fixed32(
                 I32F32::from_num(fin_dt - dt),
                 I32F32::zero(),
                 I32F32::from_num(max_off_orbit_t),
             )
             .unwrap_or(I32F32::zero());
             let normalized_angle_dev =
-                math::normalize_f32(fin_angle_dev.abs(), I32F32::zero(), max_angle_dev).unwrap_or(I32F32::zero());
+                math::normalize_fixed32(fin_angle_dev.abs(), I32F32::zero(), max_angle_dev).unwrap_or(I32F32::zero());
             let burn_sequence_cost = Self::OFF_ORBIT_DT_WEIGHT * normalized_off_orbit_t
                 + Self::FUEL_CONSUMPTION_WEIGHT * normalized_fuel_consumption
                 + Self::ANGLE_DEV_WEIGHT * normalized_angle_dev;

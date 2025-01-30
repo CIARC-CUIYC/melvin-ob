@@ -1,8 +1,8 @@
-use crate::flight_control::common::math::{gcd_f32, lcm_f32};
+use crate::flight_control::common::math::{gcd_fixed64, lcm_fixed64};
 use crate::flight_control::{
     camera_state::CameraAngle,
     common::{
-        math::{fmod_f32, gcd_i32, lcm_f64},
+        math::{fmod_fixed64, gcd_i32, lcm_fixed128},
         vec2d::Vec2D,
     },
     flight_computer::FlightComputer,
@@ -38,11 +38,11 @@ impl OrbitBase {
 
     #[allow(clippy::cast_possible_truncation)]
     pub fn period(&self) -> Option<(I32F32, I32F32, I32F32)> {
-        let gcd_x = gcd_f32(self.vel.x(), Vec2D::map_size().x());
-        let gcd_y = gcd_f32(self.vel.y(), Vec2D::map_size().y());
+        let gcd_x = gcd_fixed64(self.vel.x(), Vec2D::map_size().x());
+        let gcd_y = gcd_fixed64(self.vel.y(), Vec2D::map_size().y());
         let t_x = Vec2D::<I32F32>::map_size().x() / gcd_x;
         let t_y = Vec2D::<I32F32>::map_size().y() / gcd_y;
-        let tts = lcm_f32(t_x, t_y);
+        let tts = lcm_fixed64(t_x, t_y);
         let disp_x = self.vel.x() * tts;
         let disp_y = self.vel.y() * tts;
         let disp = Vec2D::new(disp_x, disp_y);
@@ -92,8 +92,8 @@ impl OrbitBase {
         let map_x = Vec2D::<I32F32>::map_size().x();
         let map_y = Vec2D::<I32F32>::map_size().y();
         // Compute displacements modulo the map dimensions
-        let delta_x = fmod_f32(pos_dist.x(), map_x);
-        let delta_y = fmod_f32(pos_dist.y(), map_y);
+        let delta_x = fmod_fixed64(pos_dist.x(), map_x);
+        let delta_y = fmod_fixed64(pos_dist.y(), map_y);
 
         // Check if the displacements align with the velocity ratios
         if self.vel.x().abs() > f32::EPSILON && self.vel.y().abs() > f32::EPSILON {

@@ -120,8 +120,8 @@ impl FlightComputer {
     pub fn trunc_vel(vel: Vec2D<I32F32>) -> (Vec2D<I32F32>, Vec2D<I64F64>) {
         let factor = I32F32::from_num(10f32.powi(i32::from(Self::VEL_BE_MAX_DECIMAL)));
         let factor_f64 = I64F64::from_num(10f64.powi(i32::from(Self::VEL_BE_MAX_DECIMAL)));
-        let trunc_x = (vel.x() * factor).floor().round() / factor;
-        let trunc_y = (vel.y() * factor).floor().round() / factor;
+        let trunc_x = (vel.x() * factor).floor() / factor;
+        let trunc_y = (vel.y() * factor).floor() / factor;
         let dev_x = (I64F64::from_num(vel.x()) * factor_f64).frac() / factor_f64;
         let dev_y = (I64F64::from_num(vel.y()) * factor_f64).frac() / factor_f64;
         (Vec2D::new(trunc_x, trunc_y), Vec2D::new(dev_x, dev_y))
@@ -439,9 +439,10 @@ impl FlightComputer {
     /// # Arguments
     /// - `new_vel`: The new velocity.
     async fn set_vel(&self, new_vel: Vec2D<I32F32>) {
+        let (vel, _) = Self::trunc_vel(new_vel);
         let req = ControlSatelliteRequest {
-            vel_x: new_vel.x(),
-            vel_y: new_vel.y(),
+            vel_x: vel.x(),
+            vel_y: vel.y(),
             camera_angle: self.current_angle.into(),
             state: self.current_state.into(),
         };
@@ -450,8 +451,8 @@ impl FlightComputer {
                 Ok(_) => {
                     println!(
                         "[LOG] Velocity change commanded to [{}, {}]",
-                        new_vel.x(),
-                        new_vel.y()
+                        vel.x(),
+                        vel.y()
                     );
                     return;
                 }

@@ -2,10 +2,10 @@ use fixed::types::{I32F32, I64F64};
 use num::Zero;
 
 /// Helper function to calculate the greatest common divisor (GCD) for floating-point numbers.
-pub fn gcd_f32(a: I32F32, b: I32F32) -> I32F32 {
+pub fn gcd_fixed64(a: I32F32, b: I32F32) -> I32F32 {
     let mut x = a.abs();
     let mut y = b.abs();
-    while y > I32F32::zero() {
+    while y > I32F32::DELTA {
         let temp = y;
         y = x % y;
         x = temp;
@@ -13,10 +13,10 @@ pub fn gcd_f32(a: I32F32, b: I32F32) -> I32F32 {
     x
 }
 
-pub fn gcd_f64(a: I64F64, b: I64F64) -> I64F64 {
+pub fn gcd_fixed128(a: I64F64, b: I64F64) -> I64F64 {
     let mut x = a.abs();
     let mut y = b.abs();
-    while y > I64F64::zero() {
+    while y > I64F64::DELTA {
         let temp = y;
         y = x % y;
         x = temp;
@@ -37,11 +37,11 @@ pub fn gcd_i32(a: i32, b: i32) -> i32 {
 }
 
 /// Helper function to calculate the modulo for floating-point numbers
-pub fn fmod_f32(a: I32F32, b: I32F32) -> I32F32 { ((a % b) + b) % b }
+pub fn fmod_fixed64(a: I32F32, b: I32F32) -> I32F32 { ((a % b) + b) % b }
 
 /// Calculate the least common multiple (LCM) for floating-point numbers.
-pub fn lcm_f32(a: I32F32, b: I32F32) -> I32F32 { (a * b / gcd_f32(a, b)).abs() }
-pub fn lcm_f64(a: I64F64, b: I64F64) -> I64F64 { (a * b / gcd_f64(a, b)).abs() }
+pub fn lcm_fixed64(a: I32F32, b: I32F32) -> I32F32 { (a * b / gcd_fixed64(a, b)).abs() }
+pub fn lcm_fixed128(a: I64F64, b: I64F64) -> I64F64 { (a * b / gcd_fixed128(a, b)).abs() }
 
 /// Calculate the least common multiple (LCM) for signed integers
 pub fn lcm_i32(a: i32, b: i32) -> i32 { (a / gcd_i32(a, b)) * b }
@@ -56,8 +56,8 @@ pub fn lcm_i32(a: i32, b: i32) -> i32 { (a / gcd_i32(a, b)) * b }
 /// # Returns
 /// - A `I32F32` representing the normalized value in the range `[0.0, 1.0]`.
 /// - Returns `None` if `min` and `max` are the same (to prevent division by zero).
-pub fn normalize_f32(value: I32F32, min: I32F32, max: I32F32) -> Option<I32F32> {
-    if (max - min).abs() == I32F32::zero() {
+pub fn normalize_fixed32(value: I32F32, min: I32F32, max: I32F32) -> Option<I32F32> {
+    if (max - min).abs() <= I32F32::DELTA {
         // Avoid division by zero when min and max are effectively the same
         None
     } else {
