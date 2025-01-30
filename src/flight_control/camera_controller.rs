@@ -42,7 +42,9 @@ impl CameraController {
     pub fn start(base_path: String, request_client: Arc<HTTPClient>) -> Self {
         let fullsize_map_image =
             FullsizeMapImage::open(Path::new(&base_path).join(MAP_BUFFER_PATH));
-        let thumbnail_map_image = ThumbnailMapImage::from_fullsize(&fullsize_map_image);
+        //let thumbnail_map_image = ThumbnailMapImage::from_fullsize(&fullsize_map_image);
+        let thumbnail_map_image =
+            ThumbnailMapImage::from_snapshot(Path::new(&base_path).join(SNAPSHOT_THUMBNAIL_PATH));
         Self {
             fullsize_map_image: RwLock::new(fullsize_map_image),
             thumbnail_map_image: RwLock::new(thumbnail_map_image),

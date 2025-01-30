@@ -1,3 +1,4 @@
+use crate::flight_control::flight_state::FlightState;
 use crate::flight_control::task::base_task::BaseTask;
 use crate::flight_control::task::image_task::ImageTaskStatus;
 use crate::flight_control::{
@@ -157,7 +158,7 @@ impl ConsoleMessenger {
             .await
             .iter()
             .map(|task| melvin_messages::Task {
-                scheduled_on: task.dt().get_end().timestamp(),
+                scheduled_on: task.dt().get_end().timestamp_millis(),
                 task: Some(match task.task_type() {
                     BaseTask::TakeImage(take_image) => {
                         let actual_position = if let ImageTaskStatus::Done { actual_pos, .. } =
@@ -175,7 +176,16 @@ impl ConsoleMessenger {
                         })
                     }
                     BaseTask::SwitchState(state) => {
-                        melvin_messages::TaskType::SwitchState(state.target_state() as i32)
+                        melvin_messages::TaskType::SwitchState(match state.target_state() {
+                            FlightState::Charge => melvin_messages::SatelliteState::Charge,
+                            FlightState::Acquisition => {
+                                melvin_messages::SatelliteState::Acquisition
+                            }
+                            FlightState::Deployment => melvin_messages::SatelliteState::Deployment,
+                            FlightState::Transition => melvin_messages::SatelliteState::Transition,
+                            FlightState::Comms => melvin_messages::SatelliteState::Communication,
+                            FlightState::Safe => melvin_messages::SatelliteState::Safe,
+                        } as i32)
                     }
                     BaseTask::ChangeVelocity(_velocity_change_task) => {
                         melvin_messages::TaskType::VelocityChange(melvin_messages::BurnSequence {})

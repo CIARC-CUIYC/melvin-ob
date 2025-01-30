@@ -1,5 +1,5 @@
 use std::{
-    io::Cursor,
+    io::{BufReader, Cursor},
     ops::{Deref, DerefMut},
     path::Path,
 };
@@ -205,6 +205,17 @@ impl ThumbnailMapImage {
                 Self::thumbnail_size().y(),
             ),
         }
+    }
+
+    pub(crate) fn from_snapshot<P: AsRef<Path>>(snapshot_path: P) -> Self {
+        let image_buffer = if let Ok(file) = std::fs::File::open(snapshot_path) {
+            DynamicImage::from_decoder(PngDecoder::new(&mut BufReader::new(file)).unwrap())
+                .unwrap()
+                .to_rgba8()
+        } else {
+            ImageBuffer::new(Self::thumbnail_size().x(), Self::thumbnail_size().y())
+        };
+        Self { image_buffer }
     }
 
     pub(crate) async fn diff_with_snapshot<P: AsRef<Path>>(

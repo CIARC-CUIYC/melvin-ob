@@ -69,8 +69,10 @@ impl ConsoleEndpoint {
             upstream_event_sender: upstream_event_sender.clone(),
             close_oneshot_sender: Some(close_oneshot_sender),
         };
-
         tokio::spawn(async move {
+            println!(
+                "[INFO] Started Console Endpoint",
+            );
             let listener = TcpListener::bind("0.0.0.0:1337").await.unwrap();
             loop {
                 let accept = tokio::select! {
@@ -84,6 +86,9 @@ impl ConsoleEndpoint {
                     let mut downstream_receiver = downstream_sender.subscribe();
 
                     tokio::spawn(async move {
+                        println!(
+                            "[INFO] New connection from console",
+                        );
                         let (mut rx_socket, mut tx_socket) = socket.split();
 
                         let result = tokio::select! {
