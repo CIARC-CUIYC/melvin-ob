@@ -1,5 +1,9 @@
 use num::traits::{real::Real, Num, NumAssignOps, NumCast};
-use std::{cmp::Ordering, ops::{Add, Deref, Div, Mul, Sub}, fmt::Display};
+use std::{
+    cmp::Ordering,
+    fmt::Display,
+    ops::{Add, Deref, Div, Mul, Sub},
+};
 
 /// A 2D vector generic over any numeric type.
 ///
@@ -96,7 +100,7 @@ where T: Real + NumCast + NumAssignOps
             if clockwise { Vec2D::new(self.y, -self.x) } else { Vec2D::new(-self.y, self.x) };
         perp.normalize()
     }
-    
+
     pub fn flip_unit(&self) -> Vec2D<T> {
         let flip = Vec2D::new(-self.y, -self.x);
         flip.normalize()
@@ -300,7 +304,9 @@ impl<T: Num + NumCast + Copy> Vec2D<T> {
     ///
     /// # Returns
     /// The wrapped coordinate as type `T`.
-    pub fn wrap_coordinate(value: T, max_value: T) -> T { ((value % max_value) + max_value) % max_value }
+    pub fn wrap_coordinate(value: T, max_value: T) -> T {
+        ((value % max_value) + max_value) % max_value
+    }
 
     pub fn cast<D: NumCast>(self) -> Vec2D<D> {
         Vec2D {
@@ -422,7 +428,5 @@ impl<T: Num + NumCast + Copy> From<Vec2D<T>> for (T, T) {
     ///
     /// # Returns
     /// A new `Vec2D` created from the tuple.
-    fn from(vec: Vec2D<T>) -> Self {
-        (vec.x(), vec.y())
-    }
+    fn from(vec: Vec2D<T>) -> Self { (vec.x(), vec.y()) }
 }

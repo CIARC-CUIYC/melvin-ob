@@ -1,5 +1,5 @@
-pub mod http_client;
 mod common;
+pub mod http_client;
 pub mod http_request;
 pub mod http_response;
 

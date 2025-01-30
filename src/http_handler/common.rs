@@ -66,7 +66,7 @@ impl ZonedObjective {
         // TODO: this has to be adapted for multiple imaging points later
         let x_size = self.zone[2] - self.zone[0];
         let y_size = self.zone[3] - self.zone[1];
-        let pos = Vec2D::new(self.zone[0] + x_size/2, self.zone[1] + y_size/2);
+        let pos = Vec2D::new(self.zone[0] + x_size / 2, self.zone[1] + y_size / 2);
         let pos_f32 = pos.cast::<f32>().wrap_around_map();
         vec![pos_f32]
     }
@@ -80,8 +80,7 @@ impl ZonedObjective {
         let zone_height = self.zone[3] - self.zone[1];
 
         let total_zone_area_size = (zone_width * zone_height) as f32;
-        let lens_area_size = f32::from(lens_square_side_length).powi(2)
-            ;
+        let lens_area_size = f32::from(lens_square_side_length).powi(2);
 
         let min_area_required = total_zone_area_size * self.coverage_required;
 
@@ -103,7 +102,6 @@ impl BeaconObjective {
     fn name(&self) -> &str { self.name.as_str() }
     fn id(&self) -> usize { self.id }
 }
-
 
 #[derive(serde::Deserialize, Debug)]
 pub struct CommunicationSlot {

@@ -3,7 +3,10 @@ use prost::Message;
 use std::io::{Cursor, ErrorKind};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{tcp::{ReadHalf, WriteHalf}, TcpListener},
+    net::{
+        tcp::{ReadHalf, WriteHalf},
+        TcpListener,
+    },
     sync::{broadcast, oneshot},
 };
 

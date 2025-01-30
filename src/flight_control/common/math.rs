@@ -62,12 +62,10 @@ pub fn normalize_f32(value: f32, min: f32, max: f32) -> Option<f32> {
     }
 }
 
-pub fn interpolate(x1: f32, x2: f32, y1: f32, y2: f32, t: f32) -> f32
-{
+pub fn interpolate(x1: f32, x2: f32, y1: f32, y2: f32, t: f32) -> f32 {
     let r_t = t.clamp(x1, x2);
     y1 + (r_t - x1) * (y2 - y1) / (x2 - x1)
 }
-
 
 pub fn find_min_y_abs_for_x_range(
     a_x: f32,
@@ -76,11 +74,8 @@ pub fn find_min_y_abs_for_x_range(
     b_y: (f32, f32),
 ) -> (f32, (f32, f32)) {
     // Determine the smaller and larger time bounds
-    let (min_t, min_pos, max_t, max_pos) = if a_x < b_x {
-        (a_x, a_y, b_x, b_y)
-    } else {
-        (b_x, b_y, a_x, a_y)
-    };
+    let (min_t, min_pos, max_t, max_pos) =
+        if a_x < b_x { (a_x, a_y, b_x, b_y) } else { (b_x, b_y, a_x, a_y) };
 
     let (min_x, min_y) = min_pos;
     let (max_x, max_y) = max_pos;
@@ -110,4 +105,3 @@ pub fn find_min_y_abs_for_x_range(
     // Return the clamped t_min and the corresponding position
     (t_min_clamped, pos_min)
 }
-

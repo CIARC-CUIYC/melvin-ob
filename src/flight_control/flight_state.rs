@@ -17,16 +17,16 @@ use strum_macros::Display;
 #[derive(Debug, Display, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum FlightState {
     Charge = 0,
-    Acquisition = 1,    
+    Acquisition = 1,
     Deployment,
-    Transition,    
+    Transition,
     Comms,
     Safe,
 }
 
 impl FlightState {
     pub const ACQ_ACC_ADDITION: f32 = -0.05;
-    
+
     /// Returns the charge rate for the given flight state.
     ///
     /// Each state has an associated charge rate that indicates the system's power consumption

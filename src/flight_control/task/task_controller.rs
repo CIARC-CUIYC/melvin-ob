@@ -325,17 +325,16 @@ impl TaskController {
                             this_angle_deviation,
                             0.0,
                             1.0,
-                            0.0
+                            0.0,
                         );
                         let acc = (next_vel - *last_vel) * corr_burn_perc;
-                        let (corr_vel, _) = 
-                            FlightComputer::trunc_vel(next_vel + acc);
+                        let (corr_vel, _) = FlightComputer::trunc_vel(next_vel + acc);
                         let corr_pos = *last_pos + corr_vel;
                         let corr_to_target = corr_pos.unwrapped_to(&target_pos);
                         let corr_angle_dev = corr_vel.angle_to(&corr_to_target);
-                            fin_sequence_pos.push(corr_pos);
-                            fin_sequence_vel.push(corr_vel);
-                            add_dt += 1;
+                        fin_sequence_pos.push(corr_pos);
+                        fin_sequence_vel.push(corr_vel);
+                        add_dt += 1;
                         (min_dt + dt + add_dt, corr_angle_dev)
                     };
                     break 'inner;

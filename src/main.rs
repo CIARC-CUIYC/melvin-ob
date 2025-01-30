@@ -8,23 +8,25 @@ mod keychain;
 
 use crate::flight_control::{
     camera_state::CameraAngle,
-    task::{base_task::BaseTask, task_controller::TaskController},
-    common::{vec2d::Vec2D, pinned_dt::PinnedTimeDelay},
+    common::{pinned_dt::PinnedTimeDelay, vec2d::Vec2D},
     flight_computer::FlightComputer,
     flight_state::FlightState,
     orbit::{
+        characteristics::OrbitCharacteristics,
         closed_orbit::{ClosedOrbit, OrbitUsabilityError},
         index::IndexedOrbitPosition,
         orbit_base::OrbitBase,
-        characteristics::OrbitCharacteristics
     },
-    
+    task::{base_task::BaseTask, task_controller::TaskController},
 };
 use crate::http_handler::ZonedObjective;
 use crate::keychain::{Keychain, KeychainWithOrbit};
 use crate::MappingModeEnd::{Join, Timestamp};
 use chrono::{DateTime, TimeDelta};
-use std::{collections::VecDeque, {env, sync::Arc}};
+use std::{
+    collections::VecDeque,
+    {env, sync::Arc},
+};
 use tokio::{sync::Notify, task::JoinHandle};
 
 enum MappingModeEnd {
@@ -205,7 +207,7 @@ async fn init(url: &str) -> (KeychainWithOrbit, OrbitCharacteristics) {
                     first = false;
                 } else if !first {
                     let current_pos = f_cont.current_pos();
-                    
+
                     drop(f_cont);
                     let dt = chrono::Utc::now() - last_timestamp;
                     last_timestamp = chrono::Utc::now();
@@ -331,12 +333,10 @@ async fn execute_mapping(
                     join_handle.await.ok();
                     acq_phase.1.notify_one();
                 },
-                async move {
-                    acq_phase.0.await.ok().unwrap_or(Vec::new())
-                }
+                async move { acq_phase.0.await.ok().unwrap_or(Vec::new()) }
             );
             res
-        }else{
+        } else {
             acq_phase.0.await.ok().unwrap_or(Vec::new())
         }
     };

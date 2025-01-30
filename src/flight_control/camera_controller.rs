@@ -1,9 +1,6 @@
 use crate::console_communication::console_messenger::ConsoleMessenger;
 use crate::flight_control::{
-    camera_state::CameraAngle,
-    common::img_buffer::SubBuffer,
-    common::{bitmap::Bitmap, vec2d::Vec2D},
-    flight_computer::FlightComputer,
+    camera_state::CameraAngle, common::vec2d::Vec2D, flight_computer::FlightComputer,
 };
 use crate::http_handler::{
     http_client::HTTPClient,
@@ -17,206 +14,18 @@ use crate::http_handler::{
 use crate::DT_0_STD;
 use bitvec::boxed::BitBox;
 use chrono::TimeDelta;
-use core::slice;
 use futures::StreamExt;
-use image::{
-    codecs::png::{CompressionType, FilterType, PngDecoder, PngEncoder},
-    imageops::Lanczos3,
-    DynamicImage, GenericImage, GenericImageView, ImageBuffer, ImageReader, Pixel, Rgb, RgbImage,
-    Rgba, RgbaImage,
-};
+use image::{imageops::Lanczos3, ImageReader, RgbImage};
+use image::{GenericImageView, Pixel};
 use std::{
-    ffi::c_void,
-    ops::{Deref, DerefMut},
-    os::fd::AsRawFd,
     path::Path,
-    ptr::null_mut,
     {io::Cursor, sync::Arc},
 };
-use tokio::{
-    fs::File,
-    io::AsyncReadExt,
-    sync::{Mutex, Notify, RwLock},
+use tokio::sync::{Mutex, Notify, RwLock};
+
+use super::imaging::map_image::{
+    EncodedImageExtract, FullsizeMapImage, MapImage, ThumbnailMapImage,
 };
-
-pub struct EncodedImageExtract {
-    pub(crate) offset: Vec2D<u32>,
-    pub(crate) size: Vec2D<u32>,
-    pub(crate) data: Vec<u8>,
-}
-
-pub(crate) struct FileBasedBuffer {
-    file: std::fs::File,
-    ptr: *mut u8,
-    length: usize,
-}
-
-impl FileBasedBuffer {
-    #[allow(clippy::cast_possible_wrap)]
-    fn open<T: AsRef<Path>>(path: T, length: usize) -> Self {
-        let file = std::fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .read(true)
-            .truncate(false)
-            .open(path)
-            .unwrap();
-        let res = unsafe { libc::ftruncate(file.as_raw_fd(), length as i64) };
-        if res != 0 {
-            panic!("ftruncate failed");
-        }
-        let ptr = unsafe {
-            libc::mmap(
-                null_mut(),
-                length,
-                libc::PROT_READ | libc::PROT_WRITE,
-                libc::MAP_SHARED | libc::MAP_FILE,
-                file.as_raw_fd(),
-                0,
-            )
-        };
-        if ptr == libc::MAP_FAILED {
-            panic!("mmap failed");
-        }
-        FileBasedBuffer {
-            file,
-            length,
-            ptr: ptr.cast::<u8>(),
-        }
-    }
-}
-
-impl Drop for FileBasedBuffer {
-    fn drop(&mut self) {
-        unsafe {
-            libc::munmap(self.ptr.cast::<c_void>(), self.length);
-        }
-    }
-}
-
-unsafe impl Send for FileBasedBuffer {}
-unsafe impl Sync for FileBasedBuffer {}
-
-impl Deref for FileBasedBuffer {
-    type Target = [u8];
-
-    fn deref(&self) -> &Self::Target {
-        unsafe { slice::from_raw_parts(self.ptr, self.length) }
-    }
-}
-
-impl DerefMut for FileBasedBuffer {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { slice::from_raw_parts_mut(self.ptr, self.length) }
-    }
-}
-
-#[derive(serde::Serialize, serde::Deserialize)]
-pub struct MapImageStorage {
-    coverage: Bitmap,
-}
-
-pub struct FullsizeMapImage {
-    coverage: Bitmap,
-    image_buffer: ImageBuffer<Rgb<u8>, FileBasedBuffer>,
-}
-
-impl FullsizeMapImage {
-    fn open<P: AsRef<Path>>(path: P) -> Self {
-        let fullsize_buffer_size: usize =
-            Vec2D::<usize>::map_size().x() * Vec2D::<usize>::map_size().y() * 3;
-        let file_based_buffer = FileBasedBuffer::open(path, fullsize_buffer_size);
-        Self {
-            coverage: Bitmap::from_map_size(),
-            image_buffer: ImageBuffer::from_raw(
-                Vec2D::map_size().x(),
-                Vec2D::map_size().y(),
-                file_based_buffer,
-            )
-            .unwrap(),
-        }
-    }
-
-    pub fn vec_view(&self, offset: Vec2D<u32>, size: Vec2D<u32>) -> SubBuffer<&FullsizeMapImage> {
-        SubBuffer {
-            buffer: self,
-            buffer_size: Vec2D::map_size(),
-            offset,
-            size,
-        }
-    }
-
-    pub fn mut_vec_view(
-        &mut self,
-        offset: Vec2D<u32>,
-    ) -> SubBuffer<&mut ImageBuffer<Rgb<u8>, FileBasedBuffer>> {
-        SubBuffer {
-            buffer: &mut self.image_buffer,
-            buffer_size: Vec2D::map_size(),
-            offset,
-            size: Vec2D::map_size(),
-        }
-    }
-}
-
-impl GenericImageView for FullsizeMapImage {
-    type Pixel = Rgba<u8>;
-
-    fn dimensions(&self) -> (u32, u32) { self.image_buffer.dimensions() }
-
-    fn get_pixel(&self, x: u32, y: u32) -> Self::Pixel {
-        if self.coverage.is_set(x, y) {
-            let pixel = self.image_buffer.get_pixel(x, y).0;
-            Rgba([pixel[0], pixel[1], pixel[2], 0xFF])
-        } else {
-            Rgba([0, 0, 0, 0])
-        }
-    }
-}
-
-pub struct ThumbnailMapImage {
-    image_buffer: RgbaImage,
-}
-
-impl ThumbnailMapImage {
-    pub const THUMBNAIL_SCALE_FACTOR: u32 = 25;
-
-    fn thumbnail_size() -> Vec2D<u32> { Vec2D::map_size() / Self::THUMBNAIL_SCALE_FACTOR }
-
-    pub fn from_fullsize(fullsize_map_image: &FullsizeMapImage) -> Self {
-        Self {
-            image_buffer: image::imageops::thumbnail(
-                fullsize_map_image,
-                Self::thumbnail_size().x(),
-                Self::thumbnail_size().y(),
-            ),
-        }
-    }
-    pub fn mut_view(
-        &mut self,
-        offset: Vec2D<u32>,
-    ) -> SubBuffer<&mut ImageBuffer<Rgba<u8>, Vec<u8>>> {
-        SubBuffer {
-            buffer: &mut self.image_buffer,
-            buffer_size: Self::thumbnail_size(),
-            offset,
-            size: Self::thumbnail_size(),
-        }
-    }
-
-    pub fn view(
-        &self,
-        offset: Vec2D<u32>,
-        size: Vec2D<u32>,
-    ) -> SubBuffer<&ImageBuffer<Rgba<u8>, Vec<u8>>> {
-        SubBuffer {
-            buffer: &self.image_buffer,
-            buffer_size: Self::thumbnail_size(),
-            offset,
-            size,
-        }
-    }
-}
 
 pub struct CameraController {
     base_path: String,
@@ -250,20 +59,20 @@ impl CameraController {
     fn score_offset(
         decoded_image: &RgbImage,
         base: &FullsizeMapImage,
-        offset_x: u32,
-        offset_y: u32,
+        offset: Vec2D<u32>,
     ) -> Vec2D<i32> {
         let mut best_score = i32::MIN;
         let mut best_additional_offset = (0, 0).into();
         for additional_offset_x in -2..=2 {
             for additional_offset_y in -2..=2 {
-                let pos = Vec2D::new(
-                    offset_x as i32 + additional_offset_x,
-                    offset_y as i32 + additional_offset_y,
+                let current_offset: Vec2D<u32> = Vec2D::new(
+                    offset.x() as i32 + additional_offset_x,
+                    offset.y() as i32 + additional_offset_y,
                 )
-                .wrap_around_map();
+                .wrap_around_map()
+                .cast();
                 let map_image_view = base.vec_view(
-                    Vec2D::new(pos.x() as u32, pos.y() as u32),
+                    current_offset,
                     Vec2D::new(decoded_image.width(), decoded_image.height()),
                 );
                 let mut score: i32 = map_image_view
@@ -304,30 +113,40 @@ impl CameraController {
         };
         let decoded_image = Self::decode_png_data(&collected_png?, angle)?;
         let angle_const = angle.get_square_side_length() / 2;
-        let mut offset: Vec2D<i32> = Vec2D::new(
+        let offset: Vec2D<u32> = Vec2D::new(
             position.x().round() as i32 - i32::from(angle_const),
             position.y().round() as i32 - i32::from(angle_const),
         )
-        .wrap_around_map();
+        .wrap_around_map()
+        .cast();
 
-        let mut fullsize_map_image = self.fullsize_map_image.write().await;
-        let best_offset = Self::score_offset(
-            &decoded_image,
-            &fullsize_map_image,
-            offset.x() as u32,
-            offset.y() as u32,
-        );
-        offset = (offset + best_offset).wrap_around_map();
-        let mut map_image_view = fullsize_map_image.mut_vec_view(offset.cast());
-        map_image_view.copy_from(&decoded_image, 0, 0).unwrap();
+        let offset = {
+            let mut fullsize_map_image = self.fullsize_map_image.write().await;
+            let best_additional_offset =
+                Self::score_offset(&decoded_image, &fullsize_map_image, offset);
+            let offset: Vec2D<u32> = (offset + best_additional_offset).wrap_around_map().cast();
+            fullsize_map_image.update_area(offset, decoded_image);
 
+            fullsize_map_image.coverage.set_region(
+                Vec2D::new(position.x(), position.y()),
+                angle,
+                true,
+            );
+            offset
+        };
+        self.update_thumbnail_area_from_fullsize(offset, u32::from(angle_const)).await;
+        Ok(offset)
+    }
+
+    async fn update_thumbnail_area_from_fullsize(&self, offset: Vec2D<u32>, size: u32) {
         let thumbnail_offset = Vec2D::new(
-            offset.x() - ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR as i32 * 2,
-            offset.y() - ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR as i32 * 2,
+            offset.x() as i32 - ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR as i32 * 2,
+            offset.y() as i32 - ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR as i32 * 2,
         )
         .wrap_around_map()
         .cast();
-        let size = u32::from(angle_const) * 2 + ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR * 4;
+        let size = size * 2 + ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR * 4;
+        let fullsize_map_image = self.fullsize_map_image.read().await;
         let map_image_view = fullsize_map_image.vec_view(thumbnail_offset, Vec2D::new(size, size));
 
         let resized_image = image::imageops::thumbnail(
@@ -335,13 +154,10 @@ impl CameraController {
             size / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
             size / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
         );
-        let mut thumbnail_map_image = self.thumbnail_map_image.write().await;
-        thumbnail_map_image
-            .mut_view(thumbnail_offset.cast() / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR)
-            .copy_from(&resized_image, 0, 0)
-            .unwrap();
-        fullsize_map_image.coverage.set_region(Vec2D::new(position.x(), position.y()), angle, true);
-        Ok(offset.cast())
+        self.thumbnail_map_image.write().await.update_area(
+            thumbnail_offset.cast() / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
+            resized_image,
+        );
     }
 
     async fn fetch_image_data(&self) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
@@ -375,44 +191,6 @@ impl CameraController {
         Ok(resized_image)
     }
 
-    pub(crate) async fn export_full_thumbnail_png(
-        &self,
-    ) -> Result<EncodedImageExtract, Box<dyn std::error::Error>> {
-        let mut writer = Cursor::new(Vec::<u8>::new());
-        let thumbnail_map_image = self.thumbnail_map_image.read().await;
-        thumbnail_map_image.image_buffer.write_with_encoder(PngEncoder::new(&mut writer))?;
-        Ok(EncodedImageExtract {
-            offset: Vec2D::new(0, 0),
-            size: Vec2D::map_size() / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
-            data: writer.into_inner(),
-        })
-    }
-
-    #[allow(clippy::cast_sign_loss)]
-    pub(crate) async fn export_thumbnail_png(
-        &self,
-        offset: Vec2D<u32>,
-        angle: CameraAngle,
-    ) -> Result<EncodedImageExtract, Box<dyn std::error::Error>> {
-        let offset_vec = offset / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR;
-        let size = u32::from(angle.get_square_side_length());
-        let size_vec = Vec2D::new(size, size) / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR;
-
-        let thumbnail_map_image = self.thumbnail_map_image.read().await;
-        let thumbnail = thumbnail_map_image.view(offset_vec, size_vec);
-
-        let mut thumbnail_image = RgbaImage::new(thumbnail.width(), thumbnail.width());
-        thumbnail_image.copy_from(&thumbnail, 0, 0).unwrap();
-        let mut writer = Cursor::new(Vec::<u8>::new());
-        thumbnail_image.write_with_encoder(PngEncoder::new(&mut writer))?;
-
-        Ok(EncodedImageExtract {
-            offset: offset_vec.cast(),
-            size: size_vec.cast(),
-            data: writer.into_inner(),
-        })
-    }
-
     #[allow(clippy::cast_sign_loss)]
     pub(crate) async fn export_and_upload_objective_png(
         &self,
@@ -421,12 +199,9 @@ impl CameraController {
         size: Vec2D<u32>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let map_image = self.fullsize_map_image.read().await;
-        let sub_image_view = map_image.vec_view(offset, size);
-        let sub_image = RgbaImage::new(sub_image_view.width(), sub_image_view.width());
-        let mut writer = Cursor::new(Vec::<u8>::new());
-        sub_image.write_with_encoder(PngEncoder::new(&mut writer))?;
+        let encoded_image = map_image.export_area_as_png(offset, size)?;
 
-        ObjectiveImageRequest::new(objective_id, writer.into_inner())
+        ObjectiveImageRequest::new(objective_id, encoded_image.data)
             .send_request(&self.request_client)
             .await?;
         Ok(())
@@ -442,19 +217,15 @@ impl CameraController {
         self.thumbnail_map_image
             .read()
             .await
-            .image_buffer
-            .save(Path::new(&self.base_path).join(SNAPSHOT_THUMBNAIL_PATH))?;
-        Ok(())
+            .create_snapshot(Path::new(&self.base_path).join(SNAPSHOT_THUMBNAIL_PATH))
     }
-
     pub(crate) async fn create_full_snapshot(&self) -> Result<(), Box<dyn std::error::Error>> {
         println!("[INFO] Exporting Full-View PNG...");
         let start_time = chrono::Utc::now();
         self.fullsize_map_image
             .read()
             .await
-            .image_buffer
-            .save(Path::new(&self.base_path).join(SNAPSHOT_FULL_PATH))?;
+            .create_snapshot(Path::new(&self.base_path).join(SNAPSHOT_FULL_PATH))?;
         println!(
             "[INFO] Exported Full-View PNG in {}s!",
             (chrono::Utc::now() - start_time).num_seconds()
@@ -462,43 +233,32 @@ impl CameraController {
         Ok(())
     }
 
+    pub(crate) async fn export_thumbnail_png(
+        &self,
+        offset: Vec2D<u32>,
+        angle: CameraAngle,
+    ) -> Result<EncodedImageExtract, Box<dyn std::error::Error>> {
+        let size =
+            u32::from(angle.get_square_side_length()) / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR;
+        self.thumbnail_map_image.read().await.export_area_as_png(
+            offset / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
+            Vec2D::new(size, size),
+        )
+    }
+    pub(crate) async fn export_full_thumbnail_png(
+        &self,
+    ) -> Result<EncodedImageExtract, Box<dyn std::error::Error>> {
+        self.thumbnail_map_image.read().await.export_as_png()
+    }
+
     pub(crate) async fn diff_thumb_snapshot(
         &self,
     ) -> Result<EncodedImageExtract, Box<dyn std::error::Error>> {
-        if let Ok(mut file) =
-            File::open(Path::new(&self.base_path).join(SNAPSHOT_THUMBNAIL_PATH)).await
-        {
-            let mut old_snapshot_encoded = Vec::<u8>::new();
-            file.read_to_end(&mut old_snapshot_encoded).await?;
-            let old_snapshot = DynamicImage::from_decoder(PngDecoder::new(&mut Cursor::new(
-                old_snapshot_encoded,
-            ))?)?
-            .to_rgba8();
-            let thumbnail_map_image = self.thumbnail_map_image.read().await;
-            let mut current_snapshot = thumbnail_map_image.image_buffer.clone();
-
-            for (current_pixel, new_pixel) in
-                old_snapshot.pixels().zip(current_snapshot.pixels_mut())
-            {
-                if *current_pixel == *new_pixel {
-                    *new_pixel = Rgba([0, 0, 0, 0]);
-                }
-            }
-            let mut writer = Cursor::new(Vec::<u8>::new());
-            current_snapshot.write_with_encoder(PngEncoder::new_with_quality(
-                &mut writer,
-                CompressionType::Best,
-                FilterType::Adaptive,
-            ))?;
-            let diff_encoded = writer.into_inner();
-            Ok(EncodedImageExtract {
-                offset: Vec2D::new(0, 0),
-                size: Vec2D::map_size() / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
-                data: diff_encoded,
-            })
-        } else {
-            self.export_full_thumbnail_png().await
-        }
+        self.thumbnail_map_image
+            .read()
+            .await
+            .diff_with_snapshot(Path::new(&self.base_path).join(SNAPSHOT_THUMBNAIL_PATH))
+            .await
     }
 
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
