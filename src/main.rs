@@ -8,23 +8,27 @@ mod keychain;
 
 use crate::flight_control::{
     camera_state::CameraAngle,
-    task::{base_task::BaseTask, task_controller::TaskController},
-    common::{vec2d::Vec2D, pinned_dt::PinnedTimeDelay},
+    common::{pinned_dt::PinnedTimeDelay, vec2d::Vec2D},
     flight_computer::FlightComputer,
     flight_state::FlightState,
     orbit::{
+        characteristics::OrbitCharacteristics,
         closed_orbit::{ClosedOrbit, OrbitUsabilityError},
         index::IndexedOrbitPosition,
         orbit_base::OrbitBase,
-        characteristics::OrbitCharacteristics
     },
-    
+    task::{base_task::BaseTask, task_controller::TaskController},
 };
 use crate::http_handler::ZonedObjective;
 use crate::keychain::{Keychain, KeychainWithOrbit};
 use crate::MappingModeEnd::{Join, Timestamp};
 use chrono::{DateTime, TimeDelta};
-use std::{collections::VecDeque, {env, sync::Arc}};
+use fixed::types::I32F32;
+use std::{
+    collections::VecDeque,
+    {env, sync::Arc},
+};
+use strum_macros::Display;
 use tokio::{sync::Notify, task::JoinHandle};
 
 enum MappingModeEnd {
@@ -32,6 +36,7 @@ enum MappingModeEnd {
     Join(JoinHandle<()>),
 }
 
+#[derive(Display)]
 enum GlobalMode {
     MappingMode,
     ZonedObjectiveMode(ZonedObjective),
@@ -42,9 +47,9 @@ const DT_0: TimeDelta = TimeDelta::seconds(0);
 const DT_0_STD: std::time::Duration = std::time::Duration::from_secs(0);
 const DETUMBLE_TOL: TimeDelta = DT_MIN;
 
-const STATIC_ORBIT_VEL: (f32, f32) = (6.4f32, 7.4f32);
-pub const MIN_BATTERY_THRESHOLD: f32 = 10.0;
-pub const MAX_BATTERY_THRESHOLD: f32 = 100.0;
+const STATIC_ORBIT_VEL: (I32F32, I32F32) = (I32F32::lit("6.4"), I32F32::lit("7.4"));
+pub const MIN_BATTERY_THRESHOLD: I32F32 = I32F32::lit("10.0");
+pub const MAX_BATTERY_THRESHOLD: I32F32 = I32F32::lit("100.0");
 const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 
 #[allow(
@@ -58,7 +63,7 @@ const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 async fn main() {
     let base_url_var = env::var("DRS_BASE_URL");
     let base_url = base_url_var.as_ref().map_or("http://localhost:33000", |v| v.as_str());
-    let (k, orbit_char) = {
+    let (k, mut orbit_char) = {
         let res = init(base_url).await;
         (Arc::new(res.0), res.1)
     };
@@ -74,7 +79,7 @@ async fn main() {
         true,
         [4750, 5300, 5350, 5900],
         "narrow".to_string(),
-        1.0,
+        I32F32::lit("1.0"),
         "Test Objective".to_string(),
         "test_objective.png".to_string(),
         false,
@@ -82,13 +87,20 @@ async fn main() {
 
     let mut objective_queue = VecDeque::new();
     objective_queue.push_back(debug_objective.clone());
-
+    let mut phases = 0;
     //schedule_zoned_objective_retrieval(Arc::clone(&k), orbit_char, debug_objective).await;
     let mut global_mode = GlobalMode::MappingMode;
     loop {
-        schedule_undisturbed_orbit(Arc::clone(&k), orbit_char).await;
-
-        let mut phases = 0;
+        println!("[INFO] Starting new phase in {global_mode}!");
+        match global_mode {
+            GlobalMode::MappingMode => {
+                schedule_undisturbed_orbit(Arc::clone(&k), orbit_char).await;
+            }
+            GlobalMode::ZonedObjectiveMode(_) => {
+                todo!()
+            }
+        }
+        
         while let Some(task) = { (*sched).write().await.pop_front() } {
             phases += 1;
             let task_type = task.task_type();
@@ -180,8 +192,9 @@ async fn main() {
                     }
                 },
             }
-            // TODO: perform optimal orbit until objective notification
         }
+        phases += 1;
+        orbit_char.finish(orbit_char.i_entry().new_from_pos(k.f_cont().read().await.current_pos()));
     }
     // drop(console_messenger);
 }
@@ -192,7 +205,7 @@ async fn init(url: &str) -> (KeychainWithOrbit, OrbitCharacteristics) {
     let init_k_f_cont_clone = init_k.f_cont();
     tokio::spawn(async move {
         let mut first = true; // DEBUG ARTIFACT
-        let mut last_pos: Vec2D<f32> = Vec2D::new(-100.0, -100.0);
+        let mut last_pos: Vec2D<I32F32> = Vec2D::new(I32F32::lit("-100.0"), I32F32::lit("-100.0"));
         let mut last_timestamp = chrono::Utc::now();
         loop {
             {
@@ -205,14 +218,13 @@ async fn init(url: &str) -> (KeychainWithOrbit, OrbitCharacteristics) {
                     first = false;
                 } else if !first {
                     let current_pos = f_cont.current_pos();
-                    
+
                     drop(f_cont);
                     let dt = chrono::Utc::now() - last_timestamp;
                     last_timestamp = chrono::Utc::now();
                     let mut expected_pos = last_pos
-                        + <(f32, f32) as Into<Vec2D<f32>>>::into(STATIC_ORBIT_VEL)
-                            * dt.num_milliseconds() as f32
-                            / 1000.0;
+                        + <(I32F32, I32F32) as Into<Vec2D<I32F32>>>::into(STATIC_ORBIT_VEL)
+                            * I32F32::from_num(dt.num_milliseconds() as f32 / 1000.0);
                     expected_pos = expected_pos.wrap_around_map();
                     let diff = current_pos - expected_pos;
                     // TODO: do something with those informations
@@ -312,7 +324,7 @@ async fn schedule_zoned_objective_retrieval(
 async fn execute_mapping(
     k_clone: Arc<KeychainWithOrbit>,
     end: MappingModeEnd,
-    img_dt: f32,
+    img_dt: I32F32,
     i_entry: IndexedOrbitPosition,
 ) {
     let end_t = {
@@ -331,12 +343,10 @@ async fn execute_mapping(
                     join_handle.await.ok();
                     acq_phase.1.notify_one();
                 },
-                async move {
-                    acq_phase.0.await.ok().unwrap_or(Vec::new())
-                }
+                async move { acq_phase.0.await.ok().unwrap_or(Vec::new()) }
             );
             res
-        }else{
+        } else {
             acq_phase.0.await.ok().unwrap_or(Vec::new())
         }
     };
@@ -360,7 +370,7 @@ async fn execute_mapping(
 async fn start_periodic_imaging(
     k_clone: Arc<KeychainWithOrbit>,
     end_time: DateTime<chrono::Utc>,
-    img_dt: f32,
+    img_dt: I32F32,
     angle: CameraAngle,
     i_shift: IndexedOrbitPosition,
 ) -> (JoinHandle<Vec<(isize, isize)>>, Arc<Notify>) {

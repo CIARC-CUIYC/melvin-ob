@@ -18,6 +18,7 @@ use crate::DT_0_STD;
 use bitvec::boxed::BitBox;
 use chrono::TimeDelta;
 use core::slice;
+use fixed::types::{I32F0, I32F32};
 use futures::StreamExt;
 use image::{
     codecs::png::{CompressionType, FilterType, PngDecoder, PngEncoder},
@@ -25,6 +26,7 @@ use image::{
     DynamicImage, GenericImage, GenericImageView, ImageBuffer, ImageReader, Pixel, Rgb, RgbImage,
     Rgba, RgbaImage,
 };
+use num::{ToPrimitive, Zero};
 use std::{
     ffi::c_void,
     ops::{Deref, DerefMut},
@@ -100,9 +102,7 @@ unsafe impl Sync for FileBasedBuffer {}
 impl Deref for FileBasedBuffer {
     type Target = [u8];
 
-    fn deref(&self) -> &Self::Target {
-        unsafe { slice::from_raw_parts(self.ptr, self.length) }
-    }
+    fn deref(&self) -> &Self::Target { unsafe { slice::from_raw_parts(self.ptr, self.length) } }
 }
 
 impl DerefMut for FileBasedBuffer {
@@ -123,14 +123,14 @@ pub struct FullsizeMapImage {
 
 impl FullsizeMapImage {
     fn open<P: AsRef<Path>>(path: P) -> Self {
-        let fullsize_buffer_size: usize =
-            Vec2D::<usize>::map_size().x() * Vec2D::<usize>::map_size().y() * 3;
+        let fullsize_buffer_size =
+            Vec2D::<usize>::map_size_num().x() * Vec2D::<usize>::map_size_num().y() * 3;
         let file_based_buffer = FileBasedBuffer::open(path, fullsize_buffer_size);
         Self {
             coverage: Bitmap::from_map_size(),
             image_buffer: ImageBuffer::from_raw(
-                Vec2D::map_size().x(),
-                Vec2D::map_size().y(),
+                Vec2D::map_size_num().x(),
+                Vec2D::map_size_num().y(),
                 file_based_buffer,
             )
             .unwrap(),
@@ -140,7 +140,7 @@ impl FullsizeMapImage {
     pub fn vec_view(&self, offset: Vec2D<u32>, size: Vec2D<u32>) -> SubBuffer<&FullsizeMapImage> {
         SubBuffer {
             buffer: self,
-            buffer_size: Vec2D::map_size(),
+            buffer_size: Vec2D::map_size_num(),
             offset,
             size,
         }
@@ -152,9 +152,9 @@ impl FullsizeMapImage {
     ) -> SubBuffer<&mut ImageBuffer<Rgb<u8>, FileBasedBuffer>> {
         SubBuffer {
             buffer: &mut self.image_buffer,
-            buffer_size: Vec2D::map_size(),
+            buffer_size: Vec2D::map_size_num(),
             offset,
-            size: Vec2D::map_size(),
+            size: Vec2D::map_size_num(),
         }
     }
 }
@@ -181,7 +181,12 @@ pub struct ThumbnailMapImage {
 impl ThumbnailMapImage {
     pub const THUMBNAIL_SCALE_FACTOR: u32 = 25;
 
-    fn thumbnail_size() -> Vec2D<u32> { Vec2D::map_size() / Self::THUMBNAIL_SCALE_FACTOR }
+    fn thumbnail_size() -> Vec2D<u32> {
+        Vec2D::new(
+            Vec2D::<u32>::map_size_num().x() / Self::THUMBNAIL_SCALE_FACTOR.to_u32().unwrap(),
+            Vec2D::<u32>::map_size_num().y() / Self::THUMBNAIL_SCALE_FACTOR.to_u32().unwrap(),
+        )
+    }
 
     pub fn from_fullsize(fullsize_map_image: &FullsizeMapImage) -> Self {
         Self {
@@ -252,18 +257,18 @@ impl CameraController {
         base: &FullsizeMapImage,
         offset_x: u32,
         offset_y: u32,
-    ) -> Vec2D<i32> {
+    ) -> Vec2D<I32F32> {
         let mut best_score = i32::MIN;
-        let mut best_additional_offset = (0, 0).into();
+        let mut best_additional_offset = Vec2D::new(I32F32::zero(), I32F32::zero());
         for additional_offset_x in -2..=2 {
             for additional_offset_y in -2..=2 {
                 let pos = Vec2D::new(
-                    offset_x as i32 + additional_offset_x,
-                    offset_y as i32 + additional_offset_y,
+                    I32F0::from_num(offset_x as i32 + additional_offset_x),
+                    I32F0::from_num(offset_y as i32 + additional_offset_y),
                 )
                 .wrap_around_map();
                 let map_image_view = base.vec_view(
-                    Vec2D::new(pos.x() as u32, pos.y() as u32),
+                    Vec2D::new(pos.x().to_u32().unwrap(), pos.y().to_u32().unwrap()),
                     Vec2D::new(decoded_image.width(), decoded_image.height()),
                 );
                 let mut score: i32 = map_image_view
@@ -281,7 +286,10 @@ impl CameraController {
 
                 score -= additional_offset_x.abs() + additional_offset_y.abs();
                 if score > best_score {
-                    best_additional_offset = Vec2D::new(additional_offset_x, additional_offset_y);
+                    best_additional_offset = Vec2D::new(
+                        I32F32::from_num(additional_offset_x),
+                        I32F32::from_num(additional_offset_y),
+                    );
                     best_score = score;
                 }
             }
@@ -304,9 +312,9 @@ impl CameraController {
         };
         let decoded_image = Self::decode_png_data(&collected_png?, angle)?;
         let angle_const = angle.get_square_side_length() / 2;
-        let mut offset: Vec2D<i32> = Vec2D::new(
-            position.x().round() as i32 - i32::from(angle_const),
-            position.y().round() as i32 - i32::from(angle_const),
+        let mut offset: Vec2D<I32F32> = Vec2D::new(
+            position.x() - I32F32::from_num(angle_const),
+            position.y() - I32F32::from_num(angle_const),
         )
         .wrap_around_map();
 
@@ -314,16 +322,16 @@ impl CameraController {
         let best_offset = Self::score_offset(
             &decoded_image,
             &fullsize_map_image,
-            offset.x() as u32,
-            offset.y() as u32,
+            offset.x().to_u32().unwrap(),
+            offset.y().to_u32().unwrap(),
         );
         offset = (offset + best_offset).wrap_around_map();
         let mut map_image_view = fullsize_map_image.mut_vec_view(offset.cast());
         map_image_view.copy_from(&decoded_image, 0, 0).unwrap();
 
         let thumbnail_offset = Vec2D::new(
-            offset.x() - ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR as i32 * 2,
-            offset.y() - ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR as i32 * 2,
+            offset.x() - I32F32::from_num(ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR * 2),
+            offset.y() - I32F32::from_num(ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR * 2),
         )
         .wrap_around_map()
         .cast();
@@ -336,10 +344,11 @@ impl CameraController {
             size / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
         );
         let mut thumbnail_map_image = self.thumbnail_map_image.write().await;
-        thumbnail_map_image
-            .mut_view(thumbnail_offset.cast() / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR)
-            .copy_from(&resized_image, 0, 0)
-            .unwrap();
+        let offset_vec = Vec2D::new(
+            thumbnail_offset.x() / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
+            thumbnail_offset.y() / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
+        );
+        thumbnail_map_image.mut_view(offset_vec).copy_from(&resized_image, 0, 0).unwrap();
         fullsize_map_image.coverage.set_region(Vec2D::new(position.x(), position.y()), angle, true);
         Ok(offset.cast())
     }
@@ -381,9 +390,13 @@ impl CameraController {
         let mut writer = Cursor::new(Vec::<u8>::new());
         let thumbnail_map_image = self.thumbnail_map_image.read().await;
         thumbnail_map_image.image_buffer.write_with_encoder(PngEncoder::new(&mut writer))?;
+        let size_vec = Vec2D::new(
+            Vec2D::<u32>::map_size_num().x() / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
+            Vec2D::<u32>::map_size_num().y() / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
+        );
         Ok(EncodedImageExtract {
             offset: Vec2D::new(0, 0),
-            size: Vec2D::map_size() / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
+            size: size_vec,
             data: writer.into_inner(),
         })
     }
@@ -394,9 +407,15 @@ impl CameraController {
         offset: Vec2D<u32>,
         angle: CameraAngle,
     ) -> Result<EncodedImageExtract, Box<dyn std::error::Error>> {
-        let offset_vec = offset / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR;
+        let offset_vec = Vec2D::new(
+            offset.x() / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
+            offset.y() / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
+        );
         let size = u32::from(angle.get_square_side_length());
-        let size_vec = Vec2D::new(size, size) / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR;
+        let size_vec = Vec2D::new(
+            size / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
+            size / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
+        );
 
         let thumbnail_map_image = self.thumbnail_map_image.read().await;
         let thumbnail = thumbnail_map_image.view(offset_vec, size_vec);
@@ -407,8 +426,8 @@ impl CameraController {
         thumbnail_image.write_with_encoder(PngEncoder::new(&mut writer))?;
 
         Ok(EncodedImageExtract {
-            offset: offset_vec.cast(),
-            size: size_vec.cast(),
+            offset: offset_vec,
+            size: size_vec,
             data: writer.into_inner(),
         })
     }
@@ -491,9 +510,13 @@ impl CameraController {
                 FilterType::Adaptive,
             ))?;
             let diff_encoded = writer.into_inner();
+            let size_vec = Vec2D::new(
+                Vec2D::<u32>::map_size_num().x() / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
+                Vec2D::<u32>::map_size_num().y() / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
+            );
             Ok(EncodedImageExtract {
                 offset: Vec2D::new(0, 0),
-                size: Vec2D::map_size() / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
+                size: size_vec,
                 data: diff_encoded,
             })
         } else {
@@ -507,7 +530,7 @@ impl CameraController {
         f_cont_lock: Arc<RwLock<FlightComputer>>,
         console_messenger: Arc<ConsoleMessenger>,
         (end_time, last_img_kill): (chrono::DateTime<chrono::Utc>, Arc<Notify>),
-        image_max_dt: f32,
+        image_max_dt: I32F32,
         lens: CameraAngle,
         start_index: usize,
     ) -> Vec<(isize, isize)> {
@@ -517,7 +540,7 @@ impl CameraController {
         let pic_count_lock = Arc::new(Mutex::new(pic_count));
         let mut done_ranges: Vec<(isize, isize)> = Vec::new();
         let overlap = {
-            let overlap_dt = (image_max_dt.floor() / 2.0) as isize;
+            let overlap_dt = (image_max_dt.floor() / I32F32::lit("2.0")).to_isize().unwrap();
             TimeDelta::seconds(overlap_dt as i64)
         };
         let mut last_mark = (
@@ -554,7 +577,7 @@ impl CameraController {
             });
 
             let mut next_img_due = {
-                let next_max_dt = chrono::Utc::now() + TimeDelta::seconds(image_max_dt as i64);
+                let next_max_dt = chrono::Utc::now() + TimeDelta::seconds(image_max_dt.to_i64().unwrap());
                 if next_max_dt > end_time {
                     last_image_flag = true;
                     end_time
