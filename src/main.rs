@@ -12,12 +12,9 @@ use crate::flight_control::{
     flight_computer::FlightComputer,
     flight_state::FlightState,
     orbit::{
-        characteristics::OrbitCharacteristics,
-        closed_orbit::{ClosedOrbit, OrbitUsabilityError},
-        index::IndexedOrbitPosition,
-        orbit_base::OrbitBase,
+        ClosedOrbit, IndexedOrbitPosition, OrbitBase, OrbitCharacteristics, OrbitUsabilityError,
     },
-    task::{base_task::BaseTask, task_controller::TaskController},
+    task::{base_task::BaseTask, TaskController},
 };
 use crate::http_handler::ZonedObjective;
 use crate::keychain::{Keychain, KeychainWithOrbit};

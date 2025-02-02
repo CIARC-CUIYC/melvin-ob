@@ -1,4 +1,4 @@
-use crate::console_communication::console_messenger::ConsoleMessenger;
+use crate::console_communication::ConsoleMessenger;
 use crate::flight_control::{
     camera_state::CameraAngle, common::vec2d::Vec2D, flight_computer::FlightComputer,
 };

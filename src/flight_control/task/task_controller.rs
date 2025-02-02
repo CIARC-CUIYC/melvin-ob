@@ -2,7 +2,7 @@ use crate::flight_control::{
     common::{linked_box::LinkedBox, math, pinned_dt::PinnedTimeDelay, vec2d::Vec2D},
     flight_computer::FlightComputer,
     flight_state::FlightState,
-    orbit::{burn_sequence::BurnSequence, closed_orbit::ClosedOrbit, index::IndexedOrbitPosition},
+    orbit::{BurnSequence, ClosedOrbit, IndexedOrbitPosition},
     task::{
         atomic_decision::AtomicDecision, atomic_decision_cube::AtomicDecisionCube, base_task::Task,
         score_grid::ScoreGrid,

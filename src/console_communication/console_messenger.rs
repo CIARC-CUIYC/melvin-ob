@@ -9,12 +9,12 @@ use crate::{
         console_endpoint::{ConsoleEndpoint, ConsoleEvent},
         melvin_messages,
     },
-    flight_control::task::task_controller::TaskController,
+    flight_control::task::TaskController,
 };
 
 use std::sync::Arc;
 
-pub(crate) struct ConsoleMessenger {
+pub struct ConsoleMessenger {
     camera_controller: Arc<CameraController>,
     task_controller: Arc<TaskController>,
     endpoint: Arc<ConsoleEndpoint>,

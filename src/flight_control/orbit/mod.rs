@@ -1,5 +1,12 @@
-pub(crate) mod burn_sequence;
-pub(crate) mod characteristics;
-pub(crate) mod closed_orbit;
-pub(crate) mod index;
-pub(crate) mod orbit_base;
+mod burn_sequence;
+mod characteristics;
+mod closed_orbit;
+mod index;
+mod orbit_base;
+
+pub use burn_sequence::BurnSequence;
+pub use closed_orbit::ClosedOrbit;
+pub use orbit_base::OrbitBase;
+pub use index::IndexedOrbitPosition;
+pub use characteristics::OrbitCharacteristics;
+pub use closed_orbit::OrbitUsabilityError;

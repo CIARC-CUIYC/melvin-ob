@@ -5,7 +5,7 @@ use crate::flight_control::{
     camera_state::CameraAngle,
     common::{pinned_dt::PinnedTimeDelay, vec2d::Vec2D},
     flight_state::FlightState,
-    orbit::burn_sequence::BurnSequence,
+    orbit::BurnSequence,
 };
 use std::fmt::{Display, Formatter};
 use strum_macros::Display;

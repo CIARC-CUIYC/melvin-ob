@@ -1,4 +1,4 @@
-use crate::flight_control::orbit::burn_sequence::BurnSequence;
+use crate::flight_control::orbit::BurnSequence;
 
 #[derive(Debug)]
 pub struct VelocityChangeTask {

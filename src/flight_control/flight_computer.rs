@@ -4,8 +4,8 @@ use super::{
     flight_state::{FlightState, TRANSITION_DELAY_LOOKUP},
 };
 use crate::flight_control::{
-    orbit::{burn_sequence::BurnSequence, index::IndexedOrbitPosition},
-    task::task_controller::TaskController,
+    orbit::{BurnSequence, IndexedOrbitPosition},
+    task::TaskController,
 };
 use crate::http_handler::{
     http_client,
