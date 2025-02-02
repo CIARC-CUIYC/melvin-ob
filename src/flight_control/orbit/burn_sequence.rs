@@ -1,5 +1,5 @@
-use fixed::types::I32F32;
 use crate::flight_control::{common::vec2d::Vec2D, orbit::index::IndexedOrbitPosition};
+use fixed::types::I32F32;
 
 #[derive(Debug, Clone)]
 pub struct BurnSequence {

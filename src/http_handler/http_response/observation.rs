@@ -1,5 +1,5 @@
-use fixed::types::{I32F32, I64F64};
 use crate::http_handler::http_response::response_common::SerdeJSONBodyHTTPResponseType;
+use fixed::types::{I32F32, I64F64};
 
 #[derive(serde::Deserialize, Debug)]
 pub struct ObservationResponse {

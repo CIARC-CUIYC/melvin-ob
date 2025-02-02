@@ -148,11 +148,11 @@ impl FlightComputer {
             let mut next_vel = init_vel + step;
             x_pos_vel.push((next_pos, next_vel));
             for i in 0..i_last {
-                next_pos += next_vel;
+                next_pos = next_pos + next_vel;
                 if i == i_last - 1 {
                     next_vel = Vec2D::new(I32F32::zero(), start_y);
                 } else {
-                    next_vel += step;
+                    next_vel = next_vel + step;
                 }
                 x_pos_vel.push((next_pos, next_vel));
             }
@@ -167,11 +167,11 @@ impl FlightComputer {
             let mut next_vel = init_vel + step;
             y_pos_vel.push((next_pos, next_vel));
             for i in 0..i_last {
-                next_pos += next_vel;
+                next_pos = next_pos + next_vel;
                 if i == i_last - 1 {
                     next_vel = Vec2D::new(start_x, I32F32::zero());
                 } else {
-                    next_vel += step;
+                    next_vel = next_vel + step;
                 }
                 y_pos_vel.push((next_pos, next_vel));
             }
@@ -514,7 +514,7 @@ impl FlightComputer {
             }
         };
         // TODO: this should be calculated in regards of the return path
-        (I32F32::from_num(maneuver_acq_time)  * FlightState::Acquisition.get_charge_rate()
+        (I32F32::from_num(maneuver_acq_time) * FlightState::Acquisition.get_charge_rate()
             + I32F32::from_num(burn_sequence.acc_dt()) * FlightState::ACQ_ACC_ADDITION)
             * I32F32::lit("-2.0")
     }

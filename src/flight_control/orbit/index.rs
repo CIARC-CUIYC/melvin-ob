@@ -1,5 +1,5 @@
-use fixed::types::I32F32;
 use crate::flight_control::common::vec2d::Vec2D;
+use fixed::types::I32F32;
 
 #[derive(Debug, Copy, Clone)]
 pub struct IndexedOrbitPosition {
@@ -24,7 +24,7 @@ impl IndexedOrbitPosition {
     pub fn pos(&self) -> Vec2D<I32F32> { self.pos }
 
     pub fn index(&self) -> usize { self.index }
-    
+
     pub fn period(&self) -> usize { self.period }
 
     pub fn get_ranges_to_now(&self, shift: Option<usize>) -> Vec<(usize, usize)> {
@@ -41,7 +41,7 @@ impl IndexedOrbitPosition {
             vec![(self.index, self.index_now() % self.period)]
         }
     }
-    
+
     #[allow(clippy::cast_sign_loss)]
     pub fn map_ranges(ranges: &Vec<(isize, isize)>, max: isize) -> Vec<(usize, usize)> {
         let mut mapped_ranges = Vec::new();
@@ -83,6 +83,6 @@ impl IndexedOrbitPosition {
 
     #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
     fn index_then(&self, dt: chrono::TimeDelta) -> usize {
-        (self.index + dt.num_seconds() as usize) % self.period 
+        (self.index + dt.num_seconds() as usize) % self.period
     }
 }

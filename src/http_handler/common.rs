@@ -1,9 +1,8 @@
-use fixed::FixedI64;
-use fixed::types::I32F32;
-use num::ToPrimitive;
 use super::http_request::request_common::RequestError;
 use super::http_response::response_common::ResponseError;
 use crate::flight_control::{camera_state::CameraAngle, common::vec2d::Vec2D};
+use fixed::types::I32F32;
+use num::ToPrimitive;
 use strum_macros::Display;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
@@ -69,11 +68,8 @@ impl ZonedObjective {
         // TODO: this has to be adapted for multiple imaging points later
         let x_size = self.zone[2] - self.zone[0];
         let y_size = self.zone[3] - self.zone[1];
-        let pos = Vec2D::new(self.zone[0] + x_size/2, self.zone[1] + y_size/2);
-        let pos_fixed = Vec2D::new(
-            I32F32::from(pos.x()),
-            I32F32::from(pos.y())
-        ).wrap_around_map();
+        let pos = Vec2D::new(self.zone[0] + x_size / 2, self.zone[1] + y_size / 2);
+        let pos_fixed = Vec2D::new(I32F32::from(pos.x()), I32F32::from(pos.y())).wrap_around_map();
         vec![pos_fixed]
     }
 
@@ -107,7 +103,6 @@ impl BeaconObjective {
     fn name(&self) -> &str { self.name.as_str() }
     fn id(&self) -> usize { self.id }
 }
-
 
 #[derive(serde::Deserialize, Debug)]
 pub struct CommunicationSlot {

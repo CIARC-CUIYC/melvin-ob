@@ -87,10 +87,12 @@ async fn main() {
 
     let mut objective_queue = VecDeque::new();
     objective_queue.push_back(debug_objective.clone());
-    let mut phases = 0;
     //schedule_zoned_objective_retrieval(Arc::clone(&k), orbit_char, debug_objective).await;
     let mut global_mode = GlobalMode::MappingMode;
     loop {
+        schedule_undisturbed_orbit(Arc::clone(&k), orbit_char).await;
+        k.con().send_tasklist().await;
+        let mut phases = 0;
         println!("[INFO] Starting new phase in {global_mode}!");
         match global_mode {
             GlobalMode::MappingMode => {
@@ -100,7 +102,7 @@ async fn main() {
                 todo!()
             }
         }
-        
+
         while let Some(task) = { (*sched).write().await.pop_front() } {
             phases += 1;
             let task_type = task.task_type();

@@ -1,9 +1,9 @@
-use super::vec2d::Vec2D;
+use super::vec2d::{MapSize, Vec2D};
 use crate::flight_control::camera_state::CameraAngle;
 use bitvec::{bitbox, boxed::BitBox, order::Lsb0};
 use fixed::types::{I32F0, I32F32};
 use image::{ImageBuffer, RgbImage};
-use num::{ToPrimitive, Zero};
+use num::ToPrimitive;
 use std::ops::Not;
 
 /// A 2D bitmap structure that uses a bit-packed vector to represent the
@@ -237,7 +237,12 @@ impl Bitmap {
     /// # Panics
     /// This can panic due to conversion errors or bugs left in `get_region_slice_indices`.
     #[allow(clippy::cast_possible_truncation)]
-    pub fn has_sufficient_set_bits(&self, pos: Vec2D<I32F32>, angle: CameraAngle, min: usize) -> bool {
+    pub fn has_sufficient_set_bits(
+        &self,
+        pos: Vec2D<I32F32>,
+        angle: CameraAngle,
+        min: usize,
+    ) -> bool {
         let mut px = 0;
         let x = I32F0::from_num(pos.x());
         let y = I32F0::from_num(pos.y());

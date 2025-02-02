@@ -1,15 +1,16 @@
 use crate::flight_control::common::math::{gcd_fixed64, lcm_fixed64};
+use crate::flight_control::common::vec2d::MapSize;
 use crate::flight_control::{
     camera_state::CameraAngle,
     common::{
-        math::{fmod_fixed64, gcd_i32, lcm_fixed128},
+        math::fmod_fixed64,
         vec2d::Vec2D,
     },
     flight_computer::FlightComputer,
     flight_state::FlightState,
 };
-use fixed::types::{I32F0, I32F32, I64F64};
-use num::{rational::Ratio, ToPrimitive, Zero};
+use fixed::types::I32F32;
+use num::Zero;
 
 pub struct OrbitBase {
     init_timestamp: chrono::DateTime<chrono::Utc>,
@@ -76,9 +77,15 @@ impl OrbitBase {
             if self.vel.x() / Vec2D::<I32F32>::map_size().x()
                 < self.vel.y() / Vec2D::<I32F32>::map_size().y()
             {
-                Some((overlap_hor / self.vel.x()).min((img_side_length / I32F32::lit("2.0")) / dominant_vel))
+                Some(
+                    (overlap_hor / self.vel.x())
+                        .min((img_side_length / I32F32::lit("2.0")) / dominant_vel),
+                )
             } else {
-                Some((overlap_ver / self.vel.y()).min((img_side_length / I32F32::lit("2.0")) / dominant_vel))
+                Some(
+                    (overlap_ver / self.vel.y())
+                        .min((img_side_length / I32F32::lit("2.0")) / dominant_vel),
+                )
             }
         } else {
             None

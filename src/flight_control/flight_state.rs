@@ -1,6 +1,6 @@
 use fixed::types::I32F32;
-use std::{collections::HashMap, sync::LazyLock, time::Duration};
 use num::Zero;
+use std::{collections::HashMap, sync::LazyLock, time::Duration};
 use strum_macros::Display;
 
 /// Represents the various states of a flight system.

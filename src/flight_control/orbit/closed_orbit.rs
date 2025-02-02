@@ -1,8 +1,10 @@
-use crate::flight_control::{
-    camera_state::CameraAngle, orbit::orbit_base::OrbitBase,
+use crate::flight_control::{camera_state::CameraAngle, orbit::orbit_base::OrbitBase};
+use bitvec::{
+    bitbox,
+    order::Lsb0,
+    prelude::{BitBox, BitRef},
 };
-use bitvec::{bitbox, order::Lsb0, prelude::{BitBox, BitRef}};
-use fixed::types::{I32F32, I64F64};
+use fixed::types::I32F32;
 use num::ToPrimitive;
 use strum_macros::Display;
 
@@ -45,8 +47,7 @@ impl ClosedOrbit {
             shift_start < self.done.len() && shift_end <= self.done.len(),
             "[FATAL] Shift is larger than the orbit length"
         );
-        self.done[shift_start..].iter().chain(self.done[..shift_start].iter()).rev()
-            .skip(shift_end)
+        self.done[shift_start..].iter().chain(self.done[..shift_start].iter()).rev().skip(shift_end)
     }
 
     pub fn mark_done(&mut self, first_i: usize, last_i: usize) {

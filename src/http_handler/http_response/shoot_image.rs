@@ -1,8 +1,8 @@
 use crate::http_handler::http_response::response_common::{
     ByteStreamResponseType, HTTPResponseType, ResponseError,
 };
-use prost::bytes::Bytes;
 use futures::StreamExt;
+use prost::bytes::Bytes;
 
 pub struct ShootImageResponse {}
 

@@ -1,5 +1,4 @@
 use fixed::types::{I32F32, I64F64};
-use num::Zero;
 
 /// Helper function to calculate the greatest common divisor (GCD) for floating-point numbers.
 pub fn gcd_fixed64(a: I32F32, b: I32F32) -> I32F32 {
@@ -65,12 +64,10 @@ pub fn normalize_fixed32(value: I32F32, min: I32F32, max: I32F32) -> Option<I32F
     }
 }
 
-pub fn interpolate(x1: I32F32, x2: I32F32, y1: I32F32, y2: I32F32, t: I32F32) -> I32F32
-{
+pub fn interpolate(x1: I32F32, x2: I32F32, y1: I32F32, y2: I32F32, t: I32F32) -> I32F32 {
     let r_t = t.clamp(x1, x2);
     y1 + (r_t - x1) * (y2 - y1) / (x2 - x1)
 }
-
 
 pub fn find_min_y_abs_for_x_range(
     a_x: I32F32,
@@ -79,11 +76,8 @@ pub fn find_min_y_abs_for_x_range(
     b_y: (I32F32, I32F32),
 ) -> (I32F32, (I32F32, I32F32)) {
     // Determine the smaller and larger time bounds
-    let (min_t, min_pos, max_t, max_pos) = if a_x < b_x {
-        (a_x, a_y, b_x, b_y)
-    } else {
-        (b_x, b_y, a_x, a_y)
-    };
+    let (min_t, min_pos, max_t, max_pos) =
+        if a_x < b_x { (a_x, a_y, b_x, b_y) } else { (b_x, b_y, a_x, a_y) };
 
     let (min_x, min_y) = min_pos;
     let (max_x, max_y) = max_pos;
@@ -94,7 +88,7 @@ pub fn find_min_y_abs_for_x_range(
     let dt = max_t - min_t;
 
     // Coefficients for the quadratic function f(t) = c2 * t^2 + c1 * t + c0
-    let c2 = (dx / dt) * (dx / dt) + (dy / dt) * (dy / dt) ;
+    let c2 = (dx / dt) * (dx / dt) + (dy / dt) * (dy / dt);
     let c1 = I32F32::lit("2.0") * ((min_x * dx / dt) + (min_y * dy / dt));
 
     // Minimize f(t) -> t_min = -c1 / (2 * c2)
@@ -113,4 +107,3 @@ pub fn find_min_y_abs_for_x_range(
     // Return the clamped t_min and the corresponding position
     (t_min_clamped, pos_min)
 }
-

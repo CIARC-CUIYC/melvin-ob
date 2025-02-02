@@ -1,9 +1,9 @@
-use fixed::types::I64F64;
 use crate::flight_control::{camera_state::CameraAngle, common::vec2d::Vec2D};
+use fixed::types::I64F64;
 
 /// Represents the status of an image capture task.
 #[derive(Debug, Copy, Clone)]
-enum ImageTaskStatus {
+pub enum ImageTaskStatus {
     /// The task is planned but has not yet been completed.
     Planned,
     /// The task has been completed, including metadata for the actual capture.
@@ -20,11 +20,11 @@ enum ImageTaskStatus {
 #[derive(Debug, Copy, Clone)]
 pub struct ImageTask {
     /// The current status of the task (e.g., `Planned` or `Done`).
-    image_status: ImageTaskStatus,
+    pub(crate) image_status: ImageTaskStatus,
     /// The target position for the image capture.
-    planned_pos: Vec2D<u32>,
+    pub(crate) planned_pos: Vec2D<u32>,
     /// The lens configuration for the capture.
-    lens: CameraAngle,
+    pub(crate) lens: CameraAngle,
 }
 
 impl ImageTask {

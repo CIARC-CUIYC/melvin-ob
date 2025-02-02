@@ -12,7 +12,6 @@ use crate::http_handler::ZonedObjective;
 use crate::{MAX_BATTERY_THRESHOLD, MIN_BATTERY_THRESHOLD};
 use bitvec::prelude::BitRef;
 use fixed::types::I32F32;
-use num::traits::float::FloatCore;
 use num::{ToPrimitive, Zero};
 use std::{
     collections::VecDeque,
@@ -365,7 +364,8 @@ impl TaskController {
             )
             .unwrap_or(I32F32::zero());
             let normalized_angle_dev =
-                math::normalize_fixed32(fin_angle_dev.abs(), I32F32::zero(), max_angle_dev).unwrap_or(I32F32::zero());
+                math::normalize_fixed32(fin_angle_dev.abs(), I32F32::zero(), max_angle_dev)
+                    .unwrap_or(I32F32::zero());
             let burn_sequence_cost = Self::OFF_ORBIT_DT_WEIGHT * normalized_off_orbit_t
                 + Self::FUEL_CONSUMPTION_WEIGHT * normalized_fuel_consumption
                 + Self::ANGLE_DEV_WEIGHT * normalized_angle_dev;
@@ -544,8 +544,11 @@ impl TaskController {
 
         let mut dt = dt_sh;
         let (min_batt, max_batt) = (MIN_BATTERY_THRESHOLD, MAX_BATTERY_THRESHOLD);
-        let max_mapped = (max_batt / Self::BATTERY_RESOLUTION - min_batt / Self::BATTERY_RESOLUTION)
-            .round().to_i32().unwrap();
+        let max_mapped = (max_batt / Self::BATTERY_RESOLUTION
+            - min_batt / Self::BATTERY_RESOLUTION)
+            .round()
+            .to_i32()
+            .unwrap();
         let mut batt = ((batt_f32 - min_batt) / Self::BATTERY_RESOLUTION).to_usize().unwrap();
         let pred_secs = res.decisions.dt_len();
         let decisions = &res.decisions;
@@ -594,10 +597,10 @@ impl TaskController {
     async fn schedule_switch(&self, target: FlightState, sched_t: chrono::DateTime<chrono::Utc>) {
         let dt = PinnedTimeDelay::from_end(sched_t);
         if self.task_schedule.read().await.is_empty() {
-            self.task_schedule.write().await.push_back(Task::switch_target(target, dt));
+            self.enqueue_task(Task::switch_target(target, dt)).await;
             self.next_task_notify.notify_all();
         } else {
-            self.task_schedule.write().await.push_back(Task::switch_target(target, dt));
+            self.enqueue_task(Task::switch_target(target, dt)).await;
         }
     }
 
@@ -607,7 +610,7 @@ impl TaskController {
             has_to_notify = true;
         }
         let dt = PinnedTimeDelay::from_end(burn.start_i().t());
-        self.task_schedule.write().await.push_back(Task::vel_change_task(burn, dt));
+        self.enqueue_task(Task::vel_change_task(burn, dt)).await;
 
         if has_to_notify {
             self.next_task_notify.notify_all();
@@ -631,6 +634,8 @@ impl TaskController {
         }
         schedule.drain(first_remove..schedule_len);
     }
+
+    async fn enqueue_task(&self, task: Task) { self.task_schedule.write().await.push_back(task); }
 
     /// Clears all pending tasks in the schedule.
     ///

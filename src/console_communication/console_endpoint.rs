@@ -1,9 +1,15 @@
 use super::melvin_messages;
 use prost::Message;
-use std::io::{Cursor, ErrorKind};
+use std::{
+    io::{Cursor, ErrorKind},
+    sync::Arc,
+};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{tcp::{ReadHalf, WriteHalf}, TcpListener},
+    net::{
+        tcp::{ReadHalf, WriteHalf},
+        TcpListener,
+    },
     sync::{broadcast, oneshot},
 };
 
@@ -15,8 +21,8 @@ pub enum ConsoleEvent {
 }
 
 pub(crate) struct ConsoleEndpoint {
-    downstream_sender: broadcast::Sender<Option<Vec<u8>>>,
-    upstream_event_receiver: broadcast::Receiver<ConsoleEvent>,
+    downstream_sender: broadcast::Sender<Option<Arc<Vec<u8>>>>,
+    upstream_event_sender: broadcast::Sender<ConsoleEvent>,
     close_oneshot_sender: Option<oneshot::Sender<()>>,
 }
 
@@ -44,7 +50,7 @@ impl ConsoleEndpoint {
     #[allow(clippy::cast_possible_truncation)]
     async fn handle_connection_tx(
         socket: &mut WriteHalf<'_>,
-        downstream_receiver: &mut broadcast::Receiver<Option<Vec<u8>>>,
+        downstream_receiver: &mut broadcast::Receiver<Option<Arc<Vec<u8>>>>,
     ) -> Result<(), std::io::Error> {
         while let Ok(Some(message_buffer)) = downstream_receiver.recv().await {
             socket.write_u32(message_buffer.len() as u32).await?;
@@ -55,16 +61,16 @@ impl ConsoleEndpoint {
     }
 
     pub(crate) fn start() -> Self {
-        let downstream_sender = broadcast::Sender::new(10);
-        let upstream_event_sender = broadcast::Sender::new(10);
+        let downstream_sender = broadcast::Sender::new(5);
+        let upstream_event_sender = broadcast::Sender::new(5);
         let (close_oneshot_sender, mut close_oneshot_receiver) = oneshot::channel();
         let inst = Self {
             downstream_sender: downstream_sender.clone(),
-            upstream_event_receiver: upstream_event_sender.subscribe(),
+            upstream_event_sender: upstream_event_sender.clone(),
             close_oneshot_sender: Some(close_oneshot_sender),
         };
-
         tokio::spawn(async move {
+            println!("[INFO] Started Console Endpoint",);
             let listener = TcpListener::bind("0.0.0.0:1337").await.unwrap();
             loop {
                 let accept = tokio::select! {
@@ -73,11 +79,12 @@ impl ConsoleEndpoint {
                 };
 
                 if let Ok((mut socket, _)) = accept {
-                    upstream_event_sender.send(ConsoleEvent::Connected).unwrap();
                     let upstream_event_sender_local = upstream_event_sender.clone();
+                    upstream_event_sender_local.send(ConsoleEvent::Connected).unwrap();
                     let mut downstream_receiver = downstream_sender.subscribe();
 
                     tokio::spawn(async move {
+                        println!("[INFO] New connection from console",);
                         let (mut rx_socket, mut tx_socket) = socket.split();
 
                         let result = tokio::select! {
@@ -110,16 +117,16 @@ impl ConsoleEndpoint {
     }
 
     pub(crate) fn send_downstream(&self, msg: melvin_messages::DownstreamContent) {
-        let _ = self.downstream_sender.send(Some(
+        let _ = self.downstream_sender.send(Some(Arc::new(
             melvin_messages::Downstream { content: Some(msg) }.encode_to_vec(),
-        ));
+        )));
     }
     pub(crate) fn is_console_connected(&self) -> bool {
         self.downstream_sender.receiver_count() > 0
     }
 
-    pub(crate) fn upstream_event_receiver(&self) -> &broadcast::Receiver<ConsoleEvent> {
-        &self.upstream_event_receiver
+    pub(crate) fn subscribe_upstream_events(&self) -> broadcast::Receiver<ConsoleEvent> {
+        self.upstream_event_sender.subscribe()
     }
 }
 

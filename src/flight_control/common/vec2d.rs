@@ -1,12 +1,14 @@
-use fixed::traits::{Fixed, FixedSigned, ToFixed};
-use num::traits::{real::Real, Num, NumAssignOps, NumCast};
+use fixed::types::I32F32;
+use fixed::{
+    traits::{Fixed, FixedSigned},
+    types::I32F0,
+};
+use num::traits::{Num, NumAssignOps};
 use std::{
     cmp::Ordering,
     fmt::Display,
-    ops::{Add, Deref, Div, Mul, Sub},
+    ops::{Add, Deref, Div, Mul, Rem, Sub},
 };
-use std::ops::AddAssign;
-use fixed::types::I32F32;
 
 /// A 2D vector generic over any numeric type.
 ///
@@ -52,6 +54,54 @@ where T: Display
     }
 }
 
+pub trait MapSize {
+    type Output;
+
+    fn map_size() -> Vec2D<Self::Output>;
+}
+
+impl MapSize for I32F32 {
+    type Output = I32F32;
+
+    fn map_size() -> Vec2D<I32F32> {
+        Vec2D {
+            x: I32F32::from_num(21600.0),
+            y: I32F32::from_num(10800.0),
+        }
+    }
+}
+
+impl MapSize for I32F0 {
+    type Output = I32F0;
+
+    fn map_size() -> Vec2D<I32F0> {
+        Vec2D {
+            x: I32F0::from_num(21600),
+            y: I32F0::from_num(10800),
+        }
+    }
+}
+
+impl MapSize for u32 {
+    type Output = u32;
+
+    fn map_size() -> Vec2D<u32> { Vec2D { x: 21600, y: 10800 } }
+}
+
+impl MapSize for i32 {
+    type Output = i32;
+
+    fn map_size() -> Vec2D<i32> { Vec2D { x: 21600, y: 10800 } }
+}
+
+impl<T> MapSize for Vec2D<T>
+where T: MapSize<Output = T>
+{
+    type Output = T;
+
+    fn map_size() -> Vec2D<Self::Output> { T::map_size() }
+}
+
 impl<T> Vec2D<T>
 where T: FixedSigned + NumAssignOps
 {
@@ -79,8 +129,8 @@ where T: FixedSigned + NumAssignOps
         for x_sign in [1, -1] {
             for y_sign in [1, -1] {
                 let target: Vec2D<T> = Vec2D::new(
-                    other.x + Self::map_size().x() * T::from_num(x_sign),
-                    other.y + Self::map_size().y() * T::from_num(y_sign),
+                    other.x + T::from_num(u32::map_size().x) * T::from_num(x_sign),
+                    other.y + T::from_num(u32::map_size().y) * T::from_num(y_sign),
                 );
                 let to_target = self.to(&target);
                 let to_target_abs = to_target.abs();
@@ -238,27 +288,28 @@ impl<T: Fixed + Copy> Vec2D<T> {
     /// # Returns
     /// A zero-initialized `Vec2D` with member type `T`.
     pub fn zero() -> Self { Self::new(T::zero(), T::zero()) }
+}
 
-    /// Returns the dimensions of a predefined map as a 2D vector.
-    ///
-    /// # Returns
-    /// A `Vec2D` object representing the map dimensions. Values are hardcoded
-    /// based on an assumed map size (21600.0 x 10800.0).
-    pub fn map_size() -> Vec2D<T> {
+impl Vec2D<i32> {
+    pub fn to_unsigned(self) -> Vec2D<u32> {
         Vec2D {
-            x: T::from_num(21600.0),
-            y: T::from_num(10800.0),
+            x: self.x as u32,
+            y: self.y as u32,
         }
     }
+}
 
+impl<T> Vec2D<T>
+where T: Add<Output = T> + Rem<Output = T> + Copy + MapSize<Output = T>
+{
     /// Wraps the vector around a predefined 2D map.
     ///
     /// This method ensures the vector’s coordinates do not exceed the boundaries
     /// of the map defined by `map_size()`. If coordinates go beyond these boundaries,
     /// they are wrapped to remain within valid values.
     pub fn wrap_around_map(&self) -> Self {
-        let map_size_x = Self::map_size().x();
-        let map_size_y = Self::map_size().y();
+        let map_size_x = T::map_size().x;
+        let map_size_y = T::map_size().y;
 
         Vec2D::new(
             Self::wrap_coordinate(self.x, map_size_x),
@@ -277,30 +328,10 @@ impl<T: Fixed + Copy> Vec2D<T> {
     pub fn wrap_coordinate(value: T, max_value: T) -> T {
         ((value % max_value) + max_value) % max_value
     }
-
-    pub fn cast<D: NumCast>(self) -> Vec2D<D> {
-        Vec2D {
-            x: D::from(self.x).unwrap(),
-            y: D::from(self.y).unwrap(),
-        }
-    }
 }
 
-impl<T> Vec2D<T> 
-where T: Num + NumCast + Copy
-{
-    pub fn map_size_num() -> Vec2D<T> {
-        Vec2D {
-            x: T::from(21600.0).unwrap(),
-            y: T::from(10800.0).unwrap(),
-        }
-    }
-}
-
-impl<T, TAdd> Add<Vec2D<TAdd>> for Vec2D<T>
-where
-    T: Fixed,
-    TAdd: Fixed,
+impl<T> Add for Vec2D<T>
+where T: Add<Output = T>
 {
     type Output = Vec2D<T>;
 
@@ -311,29 +342,11 @@ where
     ///
     /// # Returns
     /// A new `Vec2D` representing the sum of the vectors.
-    fn add(self, rhs: Vec2D<TAdd>) -> Self::Output {
+    fn add(self, rhs: Vec2D<T>) -> Self::Output {
         Self::Output {
-            x: self.x + T::from_num(rhs.x),
-            y: self.y + T::from_num(rhs.y),
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
         }
-    }
-}
-
-impl<T, TAdd> AddAssign<Vec2D<TAdd>> for Vec2D<T>
-where
-    T: Fixed,
-    TAdd: Fixed,
-{
-    /// Implements the `+` operator for two `Vec2D` objects.
-    ///
-    /// # Arguments
-    /// * `rhs` - The vector to add.
-    ///
-    /// # Returns
-    /// A new `Vec2D` representing the sum of the vectors.
-    fn add_assign(&mut self, rhs: Vec2D<TAdd>) {
-        self.x = self.x + T::from_num(rhs.x);
-        self.y = self.y + T::from_num(rhs.y);
     }
 }
 
@@ -359,10 +372,8 @@ where
     }
 }
 
-impl<T, TMul> Div<TMul> for Vec2D<T>
-where
-    T: Fixed,
-    TMul: Fixed + Copy,
+impl<T> Div<T> for Vec2D<T>
+where T: Div<T, Output = T> + Copy
 {
     type Output = Vec2D<T>;
 
@@ -373,10 +384,10 @@ where
     ///
     /// # Returns
     /// A new scaled vector.
-    fn div(self, rhs: TMul) -> Self::Output {
+    fn div(self, rhs: T) -> Self::Output {
         Self::Output {
-            x: self.x / T::from_num(rhs),
-            y: self.y / T::from_num(rhs)
+            x: self.x / rhs,
+            y: self.y / rhs,
         }
     }
 }
@@ -427,7 +438,5 @@ impl<T: Num> Into<(T, T)> for Vec2D<T> {
     ///
     /// # Returns
     /// A new `Vec2D` created from the tuple.
-    fn into(self) -> (T, T) {
-        (self.x, self.y)
-    }
+    fn into(self) -> (T, T) { (self.x, self.y) }
 }
