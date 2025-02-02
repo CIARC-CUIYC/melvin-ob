@@ -1,8 +1,13 @@
-use num::traits::{real::Real, Num, NumAssignOps, NumCast};
+use fixed::types::I32F32;
+use fixed::{
+    traits::{Fixed, FixedSigned},
+    types::I32F0,
+};
+use num::traits::{Num, NumAssignOps};
 use std::{
     cmp::Ordering,
     fmt::Display,
-    ops::{Add, Deref, Div, Mul, Sub},
+    ops::{Add, Deref, Div, Mul, Rem, Sub},
 };
 
 /// A 2D vector generic over any numeric type.
@@ -23,12 +28,12 @@ pub struct Vec2D<T> {
 pub struct Wrapped2D<T, const X: u32, const Y: u32>(Vec2D<T>);
 
 impl<T, const X: u32, const Y: u32> Wrapped2D<T, X, Y>
-where T: Num + NumCast + Copy
+where T: Fixed
 {
     pub fn wrap_around_map(&self) -> Self {
         Wrapped2D(Vec2D::new(
-            Self::wrap_coordinate(self.0.x, T::from(X).unwrap()),
-            Self::wrap_coordinate(self.0.y, T::from(Y).unwrap()),
+            Self::wrap_coordinate(self.0.x, T::from_num(X)),
+            Self::wrap_coordinate(self.0.y, T::from_num(Y)),
         ))
     }
 
@@ -49,14 +54,62 @@ where T: Display
     }
 }
 
+pub trait MapSize {
+    type Output;
+
+    fn map_size() -> Vec2D<Self::Output>;
+}
+
+impl MapSize for I32F32 {
+    type Output = I32F32;
+
+    fn map_size() -> Vec2D<I32F32> {
+        Vec2D {
+            x: I32F32::from_num(21600.0),
+            y: I32F32::from_num(10800.0),
+        }
+    }
+}
+
+impl MapSize for I32F0 {
+    type Output = I32F0;
+
+    fn map_size() -> Vec2D<I32F0> {
+        Vec2D {
+            x: I32F0::from_num(21600),
+            y: I32F0::from_num(10800),
+        }
+    }
+}
+
+impl MapSize for u32 {
+    type Output = u32;
+
+    fn map_size() -> Vec2D<u32> { Vec2D { x: 21600, y: 10800 } }
+}
+
+impl MapSize for i32 {
+    type Output = i32;
+
+    fn map_size() -> Vec2D<i32> { Vec2D { x: 21600, y: 10800 } }
+}
+
+impl<T> MapSize for Vec2D<T>
+where T: MapSize<Output = T>
+{
+    type Output = T;
+
+    fn map_size() -> Vec2D<Self::Output> { T::map_size() }
+}
+
 impl<T> Vec2D<T>
-where T: Real + NumCast + NumAssignOps
+where T: FixedSigned + NumAssignOps
 {
     /// Computes the magnitude (absolute value) of the vector.
     ///
     /// # Returns
     /// The magnitude of the vector as a scalar of type `T`.
-    pub fn abs(&self) -> T { (self.x.powi(2) + self.y.powi(2)).sqrt() }
+    pub fn abs(&self) -> T { (self.x * self.x + self.y * self.y).sqrt() }
 
     pub fn round(&self) -> Vec2D<T> { Vec2D::new(self.x.round(), self.y.round()) }
 
@@ -71,16 +124,15 @@ where T: Real + NumCast + NumAssignOps
         Vec2D::new(self.x - other.x, self.y - other.y)
     }
 
-    pub fn unwrapped_to(&self, other: &Vec2D<T>) -> Vec2D<f32> {
+    pub fn unwrapped_to(&self, other: &Vec2D<T>) -> Vec2D<T> {
         let mut options = Vec::new();
         for x_sign in [1, -1] {
             for y_sign in [1, -1] {
-                let target: Vec2D<f32> = Vec2D::new(
-                    other.x + Self::map_size().x() * T::from(x_sign).unwrap(),
-                    other.y + Self::map_size().y() * T::from(y_sign).unwrap(),
-                )
-                .cast();
-                let to_target = self.cast().to(&target);
+                let target: Vec2D<T> = Vec2D::new(
+                    other.x + T::from_num(u32::map_size().x) * T::from_num(x_sign),
+                    other.y + T::from_num(u32::map_size().y) * T::from_num(y_sign),
+                );
+                let to_target = self.to(&target);
                 let to_target_abs = to_target.abs();
                 options.push((to_target, to_target_abs));
             }
@@ -107,7 +159,7 @@ where T: Real + NumCast + NumAssignOps
     }
 
     pub fn is_clockwise_to(&self, other: &Vec2D<T>) -> Option<bool> {
-        let cross: f32 = self.cast().cross(other.cast());
+        let cross = self.cross(other);
         if cross > 0.0 {
             // Counterclockwise
             Some(false)
@@ -129,22 +181,19 @@ where T: Real + NumCast + NumAssignOps
         }
     }
 
-    pub fn angle_to(&self, other: &Vec2D<T>) -> f32 {
-        let self_cast: Vec2D<f32> = self.cast();
-        let other_cast: Vec2D<f32> = other.cast();
+    pub fn angle_to(&self, other: &Vec2D<T>) -> T {
+        let dot = self.dot(other);
 
-        let dot: f32 = self_cast.dot(other_cast);
-
-        let a_abs: f32 = self_cast.abs();
-        let b_abs: f32 = other_cast.abs();
+        let a_abs = self.abs();
+        let b_abs = other.abs();
 
         if a_abs == 0.0 || b_abs == 0.0 {
-            return 0.0;
+            return T::zero();
         }
         let cos_theta = dot / (a_abs * b_abs);
-        let clamped_cos_theta = cos_theta.clamp(-1.0, 1.0);
-        let angle_radians = clamped_cos_theta.acos();
-        angle_radians * 180.0 / std::f32::consts::PI
+        let clamped_cos_theta = cos_theta.clamp(T::from_num(-1.0), T::from_num(1.0));
+        let angle_radians = T::from_num(clamped_cos_theta.to_num::<f64>().acos());
+        angle_radians * T::from_num(180.0) / T::PI()
     }
 
     /// Normalizes the vector to have a magnitude of 1.
@@ -165,10 +214,12 @@ where T: Real + NumCast + NumAssignOps
     ///
     /// # Arguments
     /// * `angle_degrees` - The angle to rotate by, in degrees.
-    pub fn rotate_by(&mut self, angle_degrees: f32) {
-        let angle_radians = T::from(angle_degrees.to_radians()).unwrap();
-        let new_x = self.x * angle_radians.cos() - self.y * angle_radians.sin();
-        self.y = self.x * angle_radians.sin() + self.y * angle_radians.cos();
+    pub fn rotate_by(&mut self, angle_degrees: T) {
+        let angle_radians = angle_degrees.to_num::<f64>().to_radians();
+        let sin = T::from_num(angle_radians.sin());
+        let cos = T::from_num(angle_radians.cos());
+        let new_x = self.x * cos - self.y * sin;
+        self.y = self.x * sin + self.y * cos;
         self.x = new_x;
     }
 
@@ -180,7 +231,7 @@ where T: Real + NumCast + NumAssignOps
     /// # Returns
     /// The Euclidean distance as a scalar of type `T`.
     pub fn euclid_distance(&self, other: &Self) -> T {
-        ((self.x - other.x).powi(2) + (self.y - other.y).powi(2)).sqrt()
+        ((self.x - other.x) * (self.x - other.x) + (self.y - other.y) * (self.y - other.y)).sqrt()
     }
 }
 
@@ -208,7 +259,7 @@ impl<T: Copy> Vec2D<T> {
     pub const fn y(&self) -> T { self.y }
 }
 
-impl<T: Num + NumCast + Copy> Vec2D<T> {
+impl<T: Fixed + Copy> Vec2D<T> {
     /// Computes the dot product of the current vector with another vector.
     /// The dot product is defined as:
     ///
@@ -221,40 +272,9 @@ impl<T: Num + NumCast + Copy> Vec2D<T> {
     ///
     /// # Returns
     /// A scalar value of type `T` that represents the dot product of the two vectors.
-    pub fn dot(self, other: Vec2D<T>) -> T { self.x * other.x + self.y * other.y }
+    pub fn dot(self, other: &Vec2D<T>) -> T { self.x * other.x + self.y * other.y }
 
-    pub fn cross(self, other: Vec2D<T>) -> T { self.x * other.y - self.y * other.x }
-
-    /// Computes the Euclidean distance between the current vector and another vector as an `f64`.
-    /// This enables Euclidean distance calculation for integer type `T`.
-    ///
-    /// # Arguments
-    /// * `other` - Another `Vec2D` vector to compute the distance to.
-    ///
-    /// # Returns
-    /// The Euclidean distance between the two vectors as an `f64`.
-    pub fn euclid_distance_f64(&self, other: &Self) -> f64 {
-        let self_x = self.x.to_f64().unwrap();
-        let self_y = self.y.to_f64().unwrap();
-        let other_x = other.x.to_f64().unwrap();
-        let other_y = other.y.to_f64().unwrap();
-        ((self_x - self_y).powi(2) + (other_x - other_y).powi(2)).sqrt()
-    }
-
-    /// Checks if the current vector is within a radius of another vector.
-    /// The radius (`rad`) is given as a scalar of type `T`, which is converted to `f64`
-    /// for comparison with the Euclidean distance calculated between the vectors.
-    ///
-    /// # Arguments
-    /// * `other` - The other `Vec2D` vector to compare against.
-    /// * `rad` - The radius as a value of type `T`.
-    ///
-    /// # Returns
-    /// A boolean value:
-    /// - `true` if the current vector is within the radius of `other`. `false` otherwise.
-    pub fn in_radius_of(&self, other: &Self, rad: T) -> bool {
-        self.euclid_distance_f64(other) <= rad.to_f64().unwrap()
-    }
+    pub fn cross(self, other: &Vec2D<T>) -> T { self.x * other.y - self.y * other.x }
 
     /// Computes the magnitude (absolute value) of the vector as an `f64`.
     /// This enables magnitude calculation for integer types `T`.
@@ -268,27 +288,28 @@ impl<T: Num + NumCast + Copy> Vec2D<T> {
     /// # Returns
     /// A zero-initialized `Vec2D` with member type `T`.
     pub fn zero() -> Self { Self::new(T::zero(), T::zero()) }
+}
 
-    /// Returns the dimensions of a predefined map as a 2D vector.
-    ///
-    /// # Returns
-    /// A `Vec2D` object representing the map dimensions. Values are hardcoded
-    /// based on an assumed map size (21600.0 x 10800.0).
-    pub fn map_size() -> Vec2D<T> {
+impl Vec2D<i32> {
+    pub fn to_unsigned(self) -> Vec2D<u32> {
         Vec2D {
-            x: T::from(21600.0).unwrap(),
-            y: T::from(10800.0).unwrap(),
+            x: self.x as u32,
+            y: self.y as u32,
         }
     }
+}
 
+impl<T> Vec2D<T>
+where T: Add<Output = T> + Rem<Output = T> + Copy + MapSize<Output = T>
+{
     /// Wraps the vector around a predefined 2D map.
     ///
     /// This method ensures the vector’s coordinates do not exceed the boundaries
     /// of the map defined by `map_size()`. If coordinates go beyond these boundaries,
     /// they are wrapped to remain within valid values.
     pub fn wrap_around_map(&self) -> Self {
-        let map_size_x = Self::map_size().x();
-        let map_size_y = Self::map_size().y();
+        let map_size_x = T::map_size().x;
+        let map_size_y = T::map_size().y;
 
         Vec2D::new(
             Self::wrap_coordinate(self.x, map_size_x),
@@ -307,19 +328,10 @@ impl<T: Num + NumCast + Copy> Vec2D<T> {
     pub fn wrap_coordinate(value: T, max_value: T) -> T {
         ((value % max_value) + max_value) % max_value
     }
-
-    pub fn cast<D: NumCast>(self) -> Vec2D<D> {
-        Vec2D {
-            x: D::from(self.x).unwrap(),
-            y: D::from(self.y).unwrap(),
-        }
-    }
 }
 
-impl<T, TAdd> Add<Vec2D<TAdd>> for Vec2D<T>
-where
-    T: Num + NumCast,
-    TAdd: Num + NumCast,
+impl<T> Add for Vec2D<T>
+where T: Add<Output = T>
 {
     type Output = Vec2D<T>;
 
@@ -330,18 +342,18 @@ where
     ///
     /// # Returns
     /// A new `Vec2D` representing the sum of the vectors.
-    fn add(self, rhs: Vec2D<TAdd>) -> Self::Output {
+    fn add(self, rhs: Vec2D<T>) -> Self::Output {
         Self::Output {
-            x: self.x + T::from(rhs.x).unwrap(),
-            y: self.y + T::from(rhs.y).unwrap(),
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
         }
     }
 }
 
 impl<T, TMul> Mul<TMul> for Vec2D<T>
 where
-    T: Num + NumCast,
-    TMul: Num + NumCast + Copy,
+    T: Fixed,
+    TMul: Fixed + Copy,
 {
     type Output = Vec2D<T>;
 
@@ -354,16 +366,14 @@ where
     /// A new scaled vector.
     fn mul(self, rhs: TMul) -> Self::Output {
         Self::Output {
-            x: self.x * T::from(rhs).unwrap(),
-            y: self.y * T::from(rhs).unwrap(),
+            x: self.x * T::from_num(rhs),
+            y: self.y * T::from_num(rhs),
         }
     }
 }
 
-impl<T, TMul> Div<TMul> for Vec2D<T>
-where
-    T: Num + NumCast,
-    TMul: Num + NumCast + Copy,
+impl<T> Div<T> for Vec2D<T>
+where T: Div<T, Output = T> + Copy
 {
     type Output = Vec2D<T>;
 
@@ -374,18 +384,18 @@ where
     ///
     /// # Returns
     /// A new scaled vector.
-    fn div(self, rhs: TMul) -> Self::Output {
+    fn div(self, rhs: T) -> Self::Output {
         Self::Output {
-            x: self.x / T::from(rhs).unwrap(),
-            y: self.y / T::from(rhs).unwrap(),
+            x: self.x / rhs,
+            y: self.y / rhs,
         }
     }
 }
 
 impl<T, TSub> Sub<Vec2D<TSub>> for Vec2D<T>
 where
-    T: Real + NumCast,
-    TSub: Num + NumCast,
+    T: FixedSigned,
+    TSub: Fixed,
 {
     type Output = Vec2D<T>;
 
@@ -398,13 +408,13 @@ where
     /// A new vector.
     fn sub(self, rhs: Vec2D<TSub>) -> Self::Output {
         Self::Output {
-            x: self.x - T::from(rhs.x).unwrap(),
-            y: self.y - T::from(rhs.y).unwrap(),
+            x: self.x - T::from_num(rhs.x),
+            y: self.y - T::from_num(rhs.y),
         }
     }
 }
 
-impl<T: Num + NumCast> From<(T, T)> for Vec2D<T> {
+impl<T: Num> From<(T, T)> for Vec2D<T> {
     /// Creates a `Vec2D` from a tuple of (x, y) values.
     ///
     /// # Arguments
@@ -420,7 +430,7 @@ impl<T: Num + NumCast> From<(T, T)> for Vec2D<T> {
     }
 }
 
-impl<T: Num + NumCast + Copy> From<Vec2D<T>> for (T, T) {
+impl<T: Num> Into<(T, T)> for Vec2D<T> {
     /// Creates a tuple from a `Vec2D` of (x, y) values.
     ///
     /// # Arguments
@@ -428,5 +438,5 @@ impl<T: Num + NumCast + Copy> From<Vec2D<T>> for (T, T) {
     ///
     /// # Returns
     /// A new `Vec2D` created from the tuple.
-    fn from(vec: Vec2D<T>) -> Self { (vec.x(), vec.y()) }
+    fn into(self) -> (T, T) { (self.x, self.y) }
 }

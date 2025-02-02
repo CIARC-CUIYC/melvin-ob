@@ -1,6 +1,8 @@
 use super::http_request::request_common::RequestError;
 use super::http_response::response_common::ResponseError;
 use crate::flight_control::{camera_state::CameraAngle, common::vec2d::Vec2D};
+use fixed::types::I32F32;
+use num::ToPrimitive;
 use strum_macros::Display;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
@@ -14,7 +16,7 @@ pub struct ZonedObjective {
     zone: [i32; 4],
     // TODO: make an enum out of optic_required
     optic_required: String,
-    coverage_required: f32,
+    coverage_required: I32F32,
     description: String,
     sprite: String,
     secret: bool,
@@ -30,7 +32,7 @@ impl ZonedObjective {
         enabled: bool,
         zone: [i32; 4],
         optic_required: String,
-        coverage_required: f32,
+        coverage_required: I32F32,
         description: String,
         sprite: String,
         secret: bool,
@@ -58,17 +60,17 @@ impl ZonedObjective {
     pub fn is_enabled(&self) -> bool { self.enabled }
     pub fn zone(&self) -> &[i32; 4] { &self.zone }
     pub fn optic_required(&self) -> &str { &self.optic_required }
-    pub fn coverage_required(&self) -> f32 { self.coverage_required }
+    pub fn coverage_required(&self) -> I32F32 { self.coverage_required }
     pub fn sprite(&self) -> &str { &self.sprite }
     pub fn is_secret(&self) -> bool { self.secret }
 
-    pub fn get_imaging_points(&self) -> Vec<Vec2D<f32>> {
+    pub fn get_imaging_points(&self) -> Vec<Vec2D<I32F32>> {
         // TODO: this has to be adapted for multiple imaging points later
         let x_size = self.zone[2] - self.zone[0];
         let y_size = self.zone[3] - self.zone[1];
         let pos = Vec2D::new(self.zone[0] + x_size / 2, self.zone[1] + y_size / 2);
-        let pos_f32 = pos.cast::<f32>().wrap_around_map();
-        vec![pos_f32]
+        let pos_fixed = Vec2D::new(I32F32::from(pos.x()), I32F32::from(pos.y())).wrap_around_map();
+        vec![pos_fixed]
     }
 
     #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
@@ -79,14 +81,13 @@ impl ZonedObjective {
         let zone_width = self.zone[2] - self.zone[0];
         let zone_height = self.zone[3] - self.zone[1];
 
-        let total_zone_area_size = (zone_width * zone_height) as f32;
-        let lens_area_size = f32::from(lens_square_side_length).powi(2);
+        let total_zone_area_size = zone_width * zone_height;
+        let lens_area_size = I32F32::from(lens_square_side_length.pow(2));
 
-        let min_area_required = total_zone_area_size * self.coverage_required;
+        let min_area_required = I32F32::from(total_zone_area_size) * self.coverage_required;
 
         let min_number_of_images_required = (min_area_required / lens_area_size).ceil();
-
-        min_number_of_images_required as i32
+        min_number_of_images_required.to_i32().unwrap()
     }
 }
 
@@ -120,7 +121,7 @@ impl CommunicationSlot {
 pub struct Achievement {
     name: String,
     done: bool,
-    points: f32,
+    points: I32F32,
     description: String,
     goal_parameter_threshold: bool,
     goal_parameter: bool,
@@ -129,7 +130,7 @@ pub struct Achievement {
 impl Achievement {
     fn name(&self) -> &str { &self.name }
     fn is_done(&self) -> bool { self.done }
-    fn points(&self) -> f32 { self.points }
+    fn points(&self) -> I32F32 { self.points }
     fn description(&self) -> &str { &self.description }
     fn is_goal_parameter_threshold(&self) -> bool { self.goal_parameter_threshold }
     fn is_goal_parameter(&self) -> bool { self.goal_parameter }

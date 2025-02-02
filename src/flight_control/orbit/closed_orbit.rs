@@ -4,12 +4,14 @@ use bitvec::{
     order::Lsb0,
     prelude::{BitBox, BitRef},
 };
+use fixed::types::I32F32;
+use num::ToPrimitive;
 use strum_macros::Display;
 
 pub struct ClosedOrbit {
     base_orbit: OrbitBase,
-    period: (f64, f64, f64),
-    max_image_dt: f32,
+    period: (I32F32, I32F32, I32F32),
+    max_image_dt: I32F32,
     done: BitBox<usize, Lsb0>,
 }
 
@@ -30,7 +32,7 @@ impl ClosedOrbit {
                     base_orbit: try_orbit,
                     period,
                     max_image_dt,
-                    done: bitbox![usize, Lsb0; 0; period.0 as usize],
+                    done: bitbox![usize, Lsb0; 0; period.0.to_usize().unwrap()],
                 }),
             },
         }
@@ -57,9 +59,9 @@ impl ClosedOrbit {
             .for_each(|mut b| *b = true);
     }
 
-    pub fn max_image_dt(&self) -> f32 { self.max_image_dt }
+    pub fn max_image_dt(&self) -> I32F32 { self.max_image_dt }
 
     pub fn base_orbit_ref(&self) -> &OrbitBase { &self.base_orbit }
 
-    pub fn period(&self) -> (f64, f64, f64) { self.period }
+    pub fn period(&self) -> (I32F32, I32F32, I32F32) { self.period }
 }

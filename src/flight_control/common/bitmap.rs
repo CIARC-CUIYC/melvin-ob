@@ -1,7 +1,9 @@
-use super::vec2d::Vec2D;
+use super::vec2d::{MapSize, Vec2D};
 use crate::flight_control::camera_state::CameraAngle;
 use bitvec::{bitbox, boxed::BitBox, order::Lsb0};
+use fixed::types::{I32F0, I32F32};
 use image::{ImageBuffer, RgbImage};
+use num::ToPrimitive;
 use std::ops::Not;
 
 /// A 2D bitmap structure that uses a bit-packed vector to represent the
@@ -52,8 +54,11 @@ impl Bitmap {
     /// # Returns
     /// A new `Bitmap` with dimensions provided by `Vec2D::map_size()`.
     pub fn from_map_size() -> Self {
-        let bitmap_size = Vec2D::<u32>::map_size();
-        Self::new(bitmap_size.x(), bitmap_size.y())
+        let bitmap_size = Vec2D::<I32F32>::map_size();
+        Self::new(
+            bitmap_size.x().to_u32().unwrap(),
+            bitmap_size.y().to_u32().unwrap(),
+        )
     }
 
     /// Converts the 2D `(x, y)` coordinate to a 1D index in the bit-packed array.
@@ -139,16 +144,16 @@ impl Bitmap {
     /// The region is determined by its center and the Camera Angle of capture.
     ///
     /// # Arguments
-    /// * `pos` - The center position as `Vec2D<f32>`.
+    /// * `pos` - The center position as `Vec2D<I32F32>`.
     /// * `angle` - A `CameraAngle` defining the region's size.
     /// * `set_to` - The state to set the region's pixels to (`true` or `false`).
     ///
     /// # Panics
     /// This can panic due to conversion errors or bugs left in `get_region_slice_indices`.
     #[allow(clippy::cast_possible_truncation)]
-    pub fn set_region(&mut self, pos: Vec2D<f32>, angle: CameraAngle, set_to: bool) {
-        let x = pos.x() as i32;
-        let y = pos.y() as i32;
+    pub fn set_region(&mut self, pos: Vec2D<I32F32>, angle: CameraAngle, set_to: bool) {
+        let x = I32F0::from_num(pos.x());
+        let y = I32F0::from_num(pos.y());
         let slices_vec = self.get_region_slice_indices(x, y, angle);
 
         for mut slice_index in slices_vec {
@@ -175,23 +180,32 @@ impl Bitmap {
     ///
     /// # Panics
     /// This can panic due to conversion errors or bugs left.
-    pub fn get_region_slice_indices(&self, x: i32, y: i32, angle: CameraAngle) -> Vec<(u32, u32)> {
-        let angle_const = i32::from(angle.get_square_side_length() / 2);
+    pub fn get_region_slice_indices(
+        &self,
+        x: I32F0,
+        y: I32F0,
+        angle: CameraAngle,
+    ) -> Vec<(u32, u32)> {
+        let angle_const = (angle.get_square_side_length() / 2) as i32;
         let mut slices = Vec::new();
-        let max_height = i32::try_from(self.height).expect("[FATAL] Cast to i32 failed!");
-        let max_width = i32::try_from(self.width).expect("[FATAL] Cast to i32 failed!");
+        let max_height = I32F0::from_num(self.height);
+        let max_width = I32F0::from_num(self.width);
 
-        let x_start = u32::try_from(Vec2D::wrap_coordinate(x - angle_const, max_width))
-            .expect("[FATAL] Cast to u32 failed!");
-        let x_end = u32::try_from(Vec2D::wrap_coordinate(x + angle_const, max_width))
-            .expect("[FATAL] Cast to u32 failed!");
+        let x_start =
+            Vec2D::wrap_coordinate(x - I32F0::from_num(angle_const), max_width).to_u32().unwrap();
+
+        let x_end =
+            Vec2D::wrap_coordinate(x + I32F0::from_num(angle_const), max_width).to_u32().unwrap();
 
         let is_wrapped =
             (i128::from(x_end) - i128::from(x_start)).abs() > i128::from(angle_const * 2);
 
-        for y_it in y - angle_const..y + angle_const {
-            let wrapped_y = u32::try_from(Vec2D::wrap_coordinate(y_it, max_height))
-                .expect("[FATAL] Cast to u32 failed!");
+        let y_i32 = y.to_i32().unwrap();
+        let x_i32 = x.to_i32().unwrap();
+
+        for y_it in y_i32 - angle_const..y_i32 + angle_const {
+            let wrapped_y =
+                Vec2D::wrap_coordinate(I32F0::from_num(y_it), max_height).to_u32().unwrap();
 
             let start_index = self.get_bitmap_index(x_start, wrapped_y);
             let end_index = self.get_bitmap_index(x_end, wrapped_y);
@@ -213,7 +227,7 @@ impl Bitmap {
     /// Checks if a region of the bitmap has at least `min` bits set to `true`.
     ///
     /// # Arguments
-    /// * `pos` - The center position of the region as `Vec2D<f32>`.
+    /// * `pos` - The center position of the region as `Vec2D<I32F32>`.
     /// * `angle` - A `CameraAngle` defining the region's size.
     /// * `min` - The minimum number of bits that need to be set.
     ///
@@ -223,10 +237,15 @@ impl Bitmap {
     /// # Panics
     /// This can panic due to conversion errors or bugs left in `get_region_slice_indices`.
     #[allow(clippy::cast_possible_truncation)]
-    pub fn has_sufficient_set_bits(&self, pos: Vec2D<f32>, angle: CameraAngle, min: usize) -> bool {
+    pub fn has_sufficient_set_bits(
+        &self,
+        pos: Vec2D<I32F32>,
+        angle: CameraAngle,
+        min: usize,
+    ) -> bool {
         let mut px = 0;
-        let x = pos.x() as i32;
-        let y = pos.y() as i32;
+        let x = I32F0::from_num(pos.x());
+        let y = I32F0::from_num(pos.y());
         for slice_index in self.get_region_slice_indices(x, y, angle) {
             px += self
                 .data

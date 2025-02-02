@@ -24,7 +24,10 @@ impl Keychain {
             Arc::clone(&client),
         ));
         let t_cont = Arc::new(TaskController::new());
-        let con = Arc::new(ConsoleMessenger::start(Arc::clone(&c_cont), Arc::clone(&t_cont)));
+        let con = Arc::new(ConsoleMessenger::start(
+            Arc::clone(&c_cont),
+            Arc::clone(&t_cont),
+        ));
         let f_cont = Arc::new(RwLock::new(FlightComputer::new(Arc::clone(&client)).await));
         Self {
             client,

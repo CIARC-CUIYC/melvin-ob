@@ -1,4 +1,5 @@
 use crate::flight_control::{camera_state::CameraAngle, common::vec2d::Vec2D};
+use fixed::types::I64F64;
 
 /// Represents the status of an image capture task.
 #[derive(Debug, Copy, Clone)]
@@ -10,7 +11,7 @@ pub enum ImageTaskStatus {
         /// The actual position where the capture occurred.
         actual_pos: Vec2D<u32>,
         /// The relative number of pixels which deviate from the planned picture.
-        px_dev_rel: f64,
+        px_dev_rel: I64F64,
     },
 }
 
@@ -57,7 +58,7 @@ impl ImageTask {
         let center_dev_x = (f64::from(self.planned_pos.x()) - f64::from(actual_pos.x())).abs();
         let center_dev_y = (f64::from(self.planned_pos.y()) - f64::from(actual_pos.y())).abs();
         let px_dev = square_side * center_dev_x + (square_side - center_dev_x) * center_dev_y;
-        let px_dev_rel = px_dev / (square_side * square_side);
+        let px_dev_rel = I64F64::from_num(px_dev / (square_side * square_side));
         let new_status = ImageTaskStatus::Done {
             actual_pos,
             px_dev_rel,

@@ -12,7 +12,7 @@ use image::{
 use tokio::{fs::File, io::AsyncReadExt};
 
 use crate::flight_control::common::{bitmap::Bitmap, vec2d::Vec2D};
-
+use crate::flight_control::common::vec2d::MapSize;
 use super::{file_based_buffer::FileBackedBuffer, sub_buffer::SubBuffer};
 
 pub(crate) struct EncodedImageExtract {
@@ -94,14 +94,15 @@ pub(crate) struct FullsizeMapImage {
 
 impl FullsizeMapImage {
     pub(crate) fn open<P: AsRef<Path>>(path: P) -> Self {
-        let fullsize_buffer_size: usize =
-            Vec2D::<usize>::map_size().x() * Vec2D::<usize>::map_size().y() * 3;
+        let fullsize_buffer_size: usize = (u32::map_size().x() as usize)
+            * (u32::map_size().y() as usize)
+            * 3;
         let file_based_buffer = FileBackedBuffer::open(path, fullsize_buffer_size).unwrap();
         Self {
             coverage: Bitmap::from_map_size(),
             image_buffer: ImageBuffer::from_raw(
-                Vec2D::map_size().x(),
-                Vec2D::map_size().y(),
+                u32::map_size().x(),
+                u32::map_size().y(),
                 file_based_buffer,
             )
             .unwrap(),
@@ -132,7 +133,7 @@ impl MapImage for FullsizeMapImage {
     fn vec_view(&self, offset: Vec2D<u32>, size: Vec2D<u32>) -> SubBuffer<&FullsizeMapImage> {
         SubBuffer {
             buffer: self,
-            buffer_size: Vec2D::map_size(),
+            buffer_size: u32::map_size(),
             offset,
             size,
         }
@@ -144,9 +145,9 @@ impl MapImage for FullsizeMapImage {
     ) -> SubBuffer<&mut ImageBuffer<Rgb<u8>, FileBackedBuffer>> {
         SubBuffer {
             buffer: &mut self.image_buffer,
-            buffer_size: Vec2D::map_size(),
+            buffer_size: u32::map_size(),
             offset,
-            size: Vec2D::map_size(),
+            size: u32::map_size(),
         }
     }
 
@@ -194,7 +195,7 @@ impl ThumbnailMapImage {
     pub(crate) const THUMBNAIL_SCALE_FACTOR: u32 = 25;
 
     pub(crate) fn thumbnail_size() -> Vec2D<u32> {
-        Vec2D::map_size() / Self::THUMBNAIL_SCALE_FACTOR
+        u32::map_size() / Self::THUMBNAIL_SCALE_FACTOR
     }
 
     pub(crate) fn from_fullsize(fullsize_map_image: &FullsizeMapImage) -> Self {
@@ -247,7 +248,7 @@ impl ThumbnailMapImage {
             let diff_encoded = writer.into_inner();
             Ok(EncodedImageExtract {
                 offset: Vec2D::new(0, 0),
-                size: Vec2D::map_size() / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
+                size: u32::map_size() / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
                 data: diff_encoded,
             })
         } else {

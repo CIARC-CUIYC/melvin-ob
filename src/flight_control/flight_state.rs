@@ -1,3 +1,5 @@
+use fixed::types::I32F32;
+use num::Zero;
 use std::{collections::HashMap, sync::LazyLock, time::Duration};
 use strum_macros::Display;
 
@@ -25,7 +27,7 @@ pub enum FlightState {
 }
 
 impl FlightState {
-    pub const ACQ_ACC_ADDITION: f32 = -0.05;
+    pub const ACQ_ACC_ADDITION: I32F32 = I32F32::lit("-0.05");
 
     /// Returns the charge rate for the given flight state.
     ///
@@ -34,15 +36,15 @@ impl FlightState {
     /// while a positive value indicates charging.
     ///
     /// # Returns
-    /// A `f32` value representing the charge rate for the flight state.
-    pub fn get_charge_rate(self) -> f32 {
+    /// A `I32F32` value representing the charge rate for the flight state.
+    pub fn get_charge_rate(self) -> I32F32 {
         match self {
-            FlightState::Deployment => -0.025,
-            FlightState::Transition => 0.0,
-            FlightState::Acquisition => -0.1,
-            FlightState::Charge => 0.1,
-            FlightState::Comms => -0.016,
-            FlightState::Safe => 0.05,
+            FlightState::Deployment => I32F32::lit("-0.025"),
+            FlightState::Transition => I32F32::zero(),
+            FlightState::Acquisition => I32F32::lit("-0.1"),
+            FlightState::Charge => I32F32::lit("0.1"),
+            FlightState::Comms => I32F32::lit("-0.016"),
+            FlightState::Safe => I32F32::lit("0.05"),
         }
     }
 }

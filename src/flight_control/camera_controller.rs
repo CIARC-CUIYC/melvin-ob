@@ -14,9 +14,11 @@ use crate::http_handler::{
 use crate::DT_0_STD;
 use bitvec::boxed::BitBox;
 use chrono::TimeDelta;
+use fixed::types::I32F32;
 use futures::StreamExt;
 use image::{imageops::Lanczos3, ImageReader, RgbImage};
 use image::{GenericImageView, Pixel};
+use num::ToPrimitive;
 use std::{
     path::Path,
     {io::Cursor, sync::Arc},
@@ -64,7 +66,7 @@ impl CameraController {
         offset: Vec2D<u32>,
     ) -> Vec2D<i32> {
         let mut best_score = i32::MIN;
-        let mut best_additional_offset = (0, 0).into();
+        let mut best_additional_offset = Vec2D::new(0, 0);
         for additional_offset_x in -2..=2 {
             for additional_offset_y in -2..=2 {
                 let current_offset: Vec2D<u32> = Vec2D::new(
@@ -72,7 +74,7 @@ impl CameraController {
                     offset.y() as i32 + additional_offset_y,
                 )
                 .wrap_around_map()
-                .cast();
+                .to_unsigned();
                 let map_image_view = base.vec_view(
                     current_offset,
                     Vec2D::new(decoded_image.width(), decoded_image.height()),
@@ -115,18 +117,18 @@ impl CameraController {
         };
         let decoded_image = Self::decode_png_data(&collected_png?, angle)?;
         let angle_const = angle.get_square_side_length() / 2;
-        let offset: Vec2D<u32> = Vec2D::new(
-            position.x().round() as i32 - i32::from(angle_const),
-            position.y().round() as i32 - i32::from(angle_const),
+        let offset: Vec2D<i32> = Vec2D::new(
+            position.x().round().to_num::<i32>() - i32::from(angle_const),
+            position.y().round().to_num::<i32>() - i32::from(angle_const),
         )
-        .wrap_around_map()
-        .cast();
+        .wrap_around_map();
 
         let offset = {
             let mut fullsize_map_image = self.fullsize_map_image.write().await;
             let best_additional_offset =
-                Self::score_offset(&decoded_image, &fullsize_map_image, offset);
-            let offset: Vec2D<u32> = (offset + best_additional_offset).wrap_around_map().cast();
+                Self::score_offset(&decoded_image, &fullsize_map_image, offset.to_unsigned());
+            let offset: Vec2D<u32> =
+                (offset + best_additional_offset).wrap_around_map().to_unsigned();
             fullsize_map_image.update_area(offset, decoded_image);
 
             fullsize_map_image.coverage.set_region(
@@ -146,7 +148,7 @@ impl CameraController {
             offset.y() as i32 - ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR as i32 * 2,
         )
         .wrap_around_map()
-        .cast();
+        .to_unsigned();
         let size = size * 2 + ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR * 4;
         let fullsize_map_image = self.fullsize_map_image.read().await;
         let map_image_view = fullsize_map_image.vec_view(thumbnail_offset, Vec2D::new(size, size));
@@ -157,7 +159,7 @@ impl CameraController {
             size / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
         );
         self.thumbnail_map_image.write().await.update_area(
-            thumbnail_offset.cast() / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
+            thumbnail_offset / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
             resized_image,
         );
     }
@@ -269,7 +271,7 @@ impl CameraController {
         f_cont_lock: Arc<RwLock<FlightComputer>>,
         console_messenger: Arc<ConsoleMessenger>,
         (end_time, last_img_kill): (chrono::DateTime<chrono::Utc>, Arc<Notify>),
-        image_max_dt: f32,
+        image_max_dt: I32F32,
         lens: CameraAngle,
         start_index: usize,
     ) -> Vec<(isize, isize)> {
@@ -279,7 +281,7 @@ impl CameraController {
         let pic_count_lock = Arc::new(Mutex::new(pic_count));
         let mut done_ranges: Vec<(isize, isize)> = Vec::new();
         let overlap = {
-            let overlap_dt = (image_max_dt.floor() / 2.0) as isize;
+            let overlap_dt = (image_max_dt.floor() / I32F32::lit("2.0")).to_isize().unwrap();
             TimeDelta::seconds(overlap_dt as i64)
         };
         let mut last_mark = (
@@ -316,7 +318,8 @@ impl CameraController {
             });
 
             let mut next_img_due = {
-                let next_max_dt = chrono::Utc::now() + TimeDelta::seconds(image_max_dt as i64);
+                let next_max_dt =
+                    chrono::Utc::now() + TimeDelta::seconds(image_max_dt.to_i64().unwrap());
                 if next_max_dt > end_time {
                     last_image_flag = true;
                     end_time

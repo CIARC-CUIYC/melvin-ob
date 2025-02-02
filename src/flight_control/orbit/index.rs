@@ -1,15 +1,16 @@
 use crate::flight_control::common::vec2d::Vec2D;
+use fixed::types::I32F32;
 
 #[derive(Debug, Copy, Clone)]
 pub struct IndexedOrbitPosition {
     t: chrono::DateTime<chrono::Utc>,
     index: usize,
-    pos: Vec2D<f32>,
+    pos: Vec2D<I32F32>,
     period: usize,
 }
 
 impl IndexedOrbitPosition {
-    pub fn new(index: usize, period: usize, pos: Vec2D<f32>) -> Self {
+    pub fn new(index: usize, period: usize, pos: Vec2D<I32F32>) -> Self {
         Self {
             t: chrono::Utc::now(),
             index,
@@ -20,7 +21,7 @@ impl IndexedOrbitPosition {
 
     pub fn t(&self) -> chrono::DateTime<chrono::Utc> { self.t }
 
-    pub fn pos(&self) -> Vec2D<f32> { self.pos }
+    pub fn pos(&self) -> Vec2D<I32F32> { self.pos }
 
     pub fn index(&self) -> usize { self.index }
 
@@ -57,7 +58,7 @@ impl IndexedOrbitPosition {
         mapped_ranges
     }
 
-    pub fn new_from_pos(&self, pos: Vec2D<f32>) -> Self {
+    pub fn new_from_pos(&self, pos: Vec2D<I32F32>) -> Self {
         Self {
             t: chrono::Utc::now(),
             index: self.index_now(),
@@ -66,7 +67,7 @@ impl IndexedOrbitPosition {
         }
     }
 
-    pub fn new_from_future_pos(&self, pos: Vec2D<f32>, dt: chrono::TimeDelta) -> Self {
+    pub fn new_from_future_pos(&self, pos: Vec2D<I32F32>, dt: chrono::TimeDelta) -> Self {
         Self {
             t: self.t + dt,
             index: self.index_then(dt),
