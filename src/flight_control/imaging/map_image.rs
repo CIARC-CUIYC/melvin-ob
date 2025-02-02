@@ -130,15 +130,6 @@ impl MapImage for FullsizeMapImage {
     type Container = FileBackedBuffer;
     type ViewSubBuffer = FullsizeMapImage;
 
-    fn vec_view(&self, offset: Vec2D<u32>, size: Vec2D<u32>) -> SubBuffer<&FullsizeMapImage> {
-        SubBuffer {
-            buffer: self,
-            buffer_size: u32::map_size(),
-            offset,
-            size,
-        }
-    }
-
     fn mut_vec_view(
         &mut self,
         offset: Vec2D<u32>,
@@ -151,6 +142,15 @@ impl MapImage for FullsizeMapImage {
         }
     }
 
+    fn vec_view(&self, offset: Vec2D<u32>, size: Vec2D<u32>) -> SubBuffer<&FullsizeMapImage> {
+        SubBuffer {
+            buffer: self,
+            buffer_size: u32::map_size(),
+            offset,
+            size,
+        }
+    }
+
     fn buffer(&self) -> &ImageBuffer<Self::Pixel, Self::Container> { &self.image_buffer }
 }
 
@@ -160,8 +160,8 @@ pub(crate) struct ThumbnailMapImage {
 
 impl MapImage for ThumbnailMapImage {
     type Pixel = Rgba<u8>;
-    type ViewSubBuffer = ImageBuffer<Rgba<u8>, Vec<u8>>;
     type Container = Vec<u8>;
+    type ViewSubBuffer = ImageBuffer<Rgba<u8>, Vec<u8>>;
 
     fn mut_vec_view(
         &mut self,

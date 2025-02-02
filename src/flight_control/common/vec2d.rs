@@ -160,15 +160,10 @@ where T: FixedSigned + NumAssignOps
 
     pub fn is_clockwise_to(&self, other: &Vec2D<T>) -> Option<bool> {
         let cross = self.cross(other);
-        if cross > 0.0 {
-            // Counterclockwise
-            Some(false)
-        } else if cross < 0.0 {
-            // Clockwise
-            Some(true)
-        } else {
-            // Aligned or opposite
-            None
+        match cross.partial_cmp(&T::zero()) {
+            Some(Ordering::Less) => Some(true),
+            Some(Ordering::Greater) => Some(false),
+            _ => None,
         }
     }
 
@@ -291,6 +286,7 @@ impl<T: Fixed + Copy> Vec2D<T> {
 }
 
 impl Vec2D<i32> {
+    #[allow(clippy::cast_sign_loss)]
     pub fn to_unsigned(self) -> Vec2D<u32> {
         Vec2D {
             x: self.x as u32,
@@ -430,7 +426,7 @@ impl<T: Num> From<(T, T)> for Vec2D<T> {
     }
 }
 
-impl<T: Num> Into<(T, T)> for Vec2D<T> {
+impl<T: Num> From<Vec2D<T>> for (T, T) {
     /// Creates a tuple from a `Vec2D` of (x, y) values.
     ///
     /// # Arguments
@@ -438,5 +434,7 @@ impl<T: Num> Into<(T, T)> for Vec2D<T> {
     ///
     /// # Returns
     /// A new `Vec2D` created from the tuple.
-    fn into(self) -> (T, T) { (self.x, self.y) }
+    fn from(value: Vec2D<T>) -> Self {
+        (value.x, value.y)
+    }
 }

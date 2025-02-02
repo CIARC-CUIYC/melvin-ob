@@ -64,8 +64,8 @@ impl OrbitBase {
         used_lens: CameraAngle,
         periods: (I32F32, I32F32, I32F32),
     ) -> Option<I32F32> {
-        let wraps_x = (periods.0 / periods.1);
-        let wraps_y = (periods.0 / periods.2);
+        let wraps_x = periods.0 / periods.1;
+        let wraps_y = periods.0 / periods.2;
         let img_side_length = I32F32::from_num(used_lens.get_square_side_length());
         let ver_wrap_hor_dist = Vec2D::<I32F32>::map_size().y() / wraps_x;
         let hor_wrap_ver_dist = Vec2D::<I32F32>::map_size().x() / wraps_y;

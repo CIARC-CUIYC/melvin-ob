@@ -123,25 +123,26 @@ impl CameraController {
         )
         .wrap_around_map();
 
-        let offset = {
+        let tot_offset_u32 = {
             let mut fullsize_map_image = self.fullsize_map_image.write().await;
             let best_additional_offset =
                 Self::score_offset(&decoded_image, &fullsize_map_image, offset.to_unsigned());
-            let offset: Vec2D<u32> =
+            let tot_offset: Vec2D<u32> =
                 (offset + best_additional_offset).wrap_around_map().to_unsigned();
-            fullsize_map_image.update_area(offset, decoded_image);
+            fullsize_map_image.update_area(tot_offset, decoded_image);
 
             fullsize_map_image.coverage.set_region(
                 Vec2D::new(position.x(), position.y()),
                 angle,
                 true,
             );
-            offset
+            tot_offset
         };
-        self.update_thumbnail_area_from_fullsize(offset, u32::from(angle_const)).await;
-        Ok(offset)
+        self.update_thumbnail_area_from_fullsize(tot_offset_u32, u32::from(angle_const)).await;
+        Ok(tot_offset_u32)
     }
 
+    #[allow(clippy::cast_possible_wrap)]
     async fn update_thumbnail_area_from_fullsize(&self, offset: Vec2D<u32>, size: u32) {
         let thumbnail_offset = Vec2D::new(
             offset.x() as i32 - ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR as i32 * 2,
@@ -149,14 +150,15 @@ impl CameraController {
         )
         .wrap_around_map()
         .to_unsigned();
-        let size = size * 2 + ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR * 4;
+        let size_scaled = size * 2 + ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR * 4;
         let fullsize_map_image = self.fullsize_map_image.read().await;
-        let map_image_view = fullsize_map_image.vec_view(thumbnail_offset, Vec2D::new(size, size));
+        let map_image_view =
+            fullsize_map_image.vec_view(thumbnail_offset, Vec2D::new(size_scaled, size_scaled));
 
         let resized_image = image::imageops::thumbnail(
             &map_image_view,
-            size / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
-            size / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
+            size_scaled / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
+            size_scaled / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
         );
         self.thumbnail_map_image.write().await.update_area(
             thumbnail_offset / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,

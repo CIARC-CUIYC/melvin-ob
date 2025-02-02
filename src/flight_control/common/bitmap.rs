@@ -186,7 +186,7 @@ impl Bitmap {
         y: I32F0,
         angle: CameraAngle,
     ) -> Vec<(u32, u32)> {
-        let angle_const = (angle.get_square_side_length() / 2) as i32;
+        let angle_const = i32::from(angle.get_square_side_length() / 2);
         let mut slices = Vec::new();
         let max_height = I32F0::from_num(self.height);
         let max_width = I32F0::from_num(self.width);
@@ -201,7 +201,6 @@ impl Bitmap {
             (i128::from(x_end) - i128::from(x_start)).abs() > i128::from(angle_const * 2);
 
         let y_i32 = y.to_i32().unwrap();
-        let x_i32 = x.to_i32().unwrap();
 
         for y_it in y_i32 - angle_const..y_i32 + angle_const {
             let wrapped_y =
