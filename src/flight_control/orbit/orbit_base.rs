@@ -12,17 +12,31 @@ use crate::flight_control::{
 use fixed::types::I32F32;
 use num::Zero;
 
+/// Struct representing the base properties of an orbit.
 pub struct OrbitBase {
+    /// The timestamp of the orbit initialization.
     init_timestamp: chrono::DateTime<chrono::Utc>,
+    /// The initial state of the flight.
     init_state: FlightState,
+    /// The initial battery level of the flight computer.
     init_battery: I32F32,
+    /// The initial position (in fixed-point coordinates) of the object in orbit.
     fp: Vec2D<I32F32>,
+    /// The velocity vector (in fixed-point coordinates) of the object in orbit.
     vel: Vec2D<I32F32>,
 }
 
 impl OrbitBase {
+    /// Simulation time step used for calculations.
     const SIM_TIMESTEP: I32F32 = I32F32::lit("0.5");
 
+    /// Creates a new `OrbitBase` instance based on the current state of the flight computer.
+    ///
+    /// # Arguments
+    /// - `cont`: Reference to the `FlightComputer` to initialize the orbit data.
+    ///
+    /// # Returns
+    /// - A new `OrbitBase` instance.
     #[allow(clippy::cast_possible_truncation)]
     pub fn new(cont: &FlightComputer) -> Self {
         let vel = cont.current_vel();
@@ -35,8 +49,20 @@ impl OrbitBase {
         }
     }
 
-    pub fn start_timestamp(&self) -> chrono::DateTime<chrono::Utc> { self.init_timestamp }
+    /// Returns the timestamp when the orbit was initialized.
+    ///
+    /// # Returns
+    /// - A `chrono::DateTime` with the UTC initialization timestamp.
+    pub fn start_timestamp(&self) -> chrono::DateTime<chrono::Utc> {
+        self.init_timestamp
+    }
 
+    /// Calculates the period of the orbit along with the individual periods in the x and y
+    /// directions.
+    ///
+    /// # Returns
+    /// - `Some((tts, t_x, t_y))`: The total orbit period (time to full repeat) and the x/y periods.
+    /// - `None`: If the orbit period cannot be determined.
     #[allow(clippy::cast_possible_truncation)]
     pub fn period(&self) -> Option<(I32F32, I32F32, I32F32)> {
         let gcd_x = gcd_fixed64(self.vel.x(), Vec2D::map_size().x());
@@ -58,6 +84,15 @@ impl OrbitBase {
         }
     }
 
+    /// Calculates the maximum time between image captures ensuring sufficient area overlap.
+    ///
+    /// # Arguments
+    /// - `used_lens`: The camera lens configuration (field of view).
+    /// - `periods`: A tuple containing the orbit periods `(tts, t_x, t_y)`.
+    ///
+    /// # Returns
+    /// - `Some(max_dt)`: Maximum allowable time interval for image captures.
+    /// - `None`: If the overlap conditions are not satisfied.
     #[allow(clippy::cast_possible_truncation)]
     pub fn max_image_dt(
         &self,
@@ -92,8 +127,14 @@ impl OrbitBase {
         }
     }
 
-    //pub fn is_closed(&self) -> bool { self.period().is_some() }
-
+    /// Checks whether the specified position on the map will be visited during the orbit.
+    ///
+    /// # Arguments
+    /// - `pos`: The position to check.
+    ///
+    /// # Returns
+    /// - `true`: If the position will be visited during the orbit.
+    /// - `false`: Otherwise.
     pub fn will_visit(&self, pos: Vec2D<I32F32>) -> bool {
         let pos_dist = pos - self.fp;
         let map_x = Vec2D::<I32F32>::map_size().x();

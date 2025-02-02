@@ -71,11 +71,6 @@ pub struct FlightComputer {
     request_client: Arc<http_client::HTTPClient>,
 }
 
-pub enum ChargeCommand {
-    TargetCharge(I32F32),
-    Duration(chrono::TimeDelta),
-}
-
 impl FlightComputer {
     /// Constant acceleration in target velocity vector direction
     pub const ACC_CONST: I32F32 = I32F32::lit("0.02");
@@ -117,6 +112,16 @@ impl FlightComputer {
         return_controller
     }
 
+    /// Truncates the velocity components to a fixed number of decimal places, as defined by `VEL_BE_MAX_DECIMAL`,
+    /// and calculates the remainder (deviation) after truncation.
+    ///
+    /// # Arguments
+    /// - `vel`: A `Vec2D<I32F32>` representing the velocity to be truncated.
+    ///
+    /// # Returns
+    /// A tuple containing:
+    /// - A `Vec2D<I32F32>` with truncated velocity components.
+    /// - A `Vec2D<I64F64>` representing the fractional deviation from the truncation.
     pub fn trunc_vel(vel: Vec2D<I32F32>) -> (Vec2D<I32F32>, Vec2D<I64F64>) {
         let factor = I32F32::from_num(10f32.powi(i32::from(Self::VEL_BE_MAX_DECIMAL)));
         let factor_f64 = I64F64::from_num(10f64.powi(i32::from(Self::VEL_BE_MAX_DECIMAL)));
@@ -127,6 +132,17 @@ impl FlightComputer {
         (Vec2D::new(trunc_x, trunc_y), Vec2D::new(dev_x, dev_y))
     }
 
+    /// Precomputes possible turns of MELVIN, splitting paths into clockwise and counterclockwise
+    /// directions based on the initial velocity. These precomputed paths are useful for calculating 
+    /// optimal burns.
+    ///
+    /// # Arguments
+    /// - `init_vel`: A `Vec2D<I32F32>` representing the initial velocity of the satellite.
+    ///
+    /// # Returns
+    /// A tuple of vectors containing possible turns:
+    /// - The first vector contains possible clockwise turns `(position, velocity)`.
+    /// - The second vector contains possible counterclockwise turns `(position, velocity)`.
     #[allow(clippy::cast_possible_truncation)]
     pub fn compute_possible_turns(init_vel: Vec2D<I32F32>) -> TurnsClockCClockTup {
         println!("[INFO] Precomputing possible turns...");
@@ -140,6 +156,7 @@ impl FlightComputer {
         let step_y =
             if start_y > end_y { -FlightComputer::ACC_CONST } else { FlightComputer::ACC_CONST };
 
+        // Calculates changes along the X-axis while keeping the Y-axis constant.
         let y_const_x_change: Vec<(Vec2D<I32F32>, Vec2D<I32F32>)> = {
             let mut x_pos_vel = Vec::new();
             let step = Vec2D::new(step_x, I32F32::zero());
@@ -159,6 +176,7 @@ impl FlightComputer {
             x_pos_vel
         };
 
+        // Calculates changes along the Y-axis while keeping the X-axis constant.
         let x_const_y_change: Vec<(Vec2D<I32F32>, Vec2D<I32F32>)> = {
             let mut y_pos_vel = Vec::new();
             let step = Vec2D::new(I32F32::zero(), step_y);
@@ -178,6 +196,7 @@ impl FlightComputer {
             y_pos_vel
         };
 
+        // Determine the ordering of clockwise and counterclockwise turns based on the direction of steps.
         if step_x.signum() == step_y.signum() {
             println!(
                 "[INFO] Possible turns: {} clockwise and {} counter clockwise.",
@@ -242,8 +261,18 @@ impl FlightComputer {
     /// - A `FlightState` enum denoting the active operational state.
     pub fn state(&self) -> FlightState { self.current_state }
 
+    /// Retrieves a clone of the HTTP client used by the flight computer for sending requests.
+    ///
+    /// # Returns
+    /// - An `Arc<http_client::HTTPClient>` which represents the HTTP client instance.
     pub fn client(&self) -> Arc<http_client::HTTPClient> { Arc::clone(&self.request_client) }
 
+    /// Sends a reset request to the satellite's HTTP control system.
+    ///
+    /// This function invokes an HTTP request to reset MELVIN, and it expects the request to succeed.
+    ///
+    /// # Panics
+    /// - If the reset request fails, this method will panic with an error message.
     pub async fn reset(&self) {
         ResetRequest {}.send_request(&self.request_client).await.expect("ERROR: Failed to reset");
     }
@@ -261,6 +290,20 @@ impl FlightComputer {
         tokio::time::sleep(sleep).await;
     }
 
+    /// Waits for a condition to be met within a specified timeout.
+    ///
+    /// # Arguments
+    /// - `locked_self`: A `RwLock<Self>` reference to the active flight computer.
+    /// - `condition`: A closure that takes a reference to `Self` and returns a `bool`.
+    /// - `rationale`: A string describing the purpose of the wait.
+    /// - `timeout_millis`: Maximum time in milliseconds to wait for the condition to be met.
+    /// - `poll_interval`: Interval in milliseconds to check the condition.
+    ///
+    /// # Behavior
+    /// - The method continuously polls the condition at the specified interval until:
+    ///   - The condition returns `true`, or
+    ///   - The timeout expires.
+    /// - Logs the rationale and results of the wait.
     async fn wait_for_condition<F>(
         locked_self: Arc<RwLock<Self>>,
         (condition, rationale): (F, String),
@@ -346,6 +389,17 @@ impl FlightComputer {
         Self::wait_for_condition(locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
     }
 
+    /// Adjusts the satellite's camera angle and waits until the target angle is reached.
+    ///
+    /// # Arguments
+    /// - `locked_self`: A `RwLock<Self>` reference to the active flight computer.
+    /// - `new_angle`: The target camera angle.
+    ///
+    /// # Behavior
+    /// - If the current angle matches the new angle, logs the status and exits.
+    /// - Checks if the current state permits changing the camera angle. 
+    ///   If not, it panics with a fatal error.
+    /// - Sets the new angle and waits until the system confirms it has been applied.
     pub async fn set_angle_wait(locked_self: Arc<RwLock<Self>>, new_angle: CameraAngle) {
         let (current_angle, current_state) = {
             let f_cont_read = locked_self.read().await;
@@ -368,6 +422,17 @@ impl FlightComputer {
         Self::wait_for_condition(locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
     }
 
+    /// Evaluates how a sequence of thruster burns has affected the MELVINs trajectory.
+    ///
+    /// # Arguments
+    /// - `locked_self`: A `RwLock<Self>` reference to the active flight computer.
+    /// - `burn_sequence`: A reference to the sequence of executed thruster burns.
+    /// - `target_pos`: The target position for the satellite.
+    ///
+    /// # Returns
+    /// - A tuple containing:
+    ///   - The current velocity of the satellite after evaluating the burn sequence.
+    ///   - The deviation of the projected position from the target position.
     pub async fn evaluate_burn(
         locked_self: Arc<RwLock<Self>>,
         burn_sequence: &BurnSequence,
@@ -488,6 +553,24 @@ impl FlightComputer {
         }
     }
 
+    /// Estimates the minimum required charge for a given burn sequence.
+    ///
+    /// # Arguments
+    /// - `burn_sequence`: A reference to the `BurnSequence` containing timing and maneuver data.
+    ///
+    /// # Returns
+    /// - An `I32F32` value representing the estimated minimum charge required.
+    ///
+    /// # Methodology
+    /// - The method calculates the required charge based on acceleration time, detumbling time,
+    ///   and the time spent in acquisition and charge state transitions.
+    /// - It factors in the power consumption rates associated with flight states and maneuvers.
+    ///
+    /// # Behavior
+    /// - Adjusts the maneuver acquisition time based on task controller detumble minimums and 
+    ///   transition delays.
+    /// - Multiples the derived travel time with the power rates of the acquisition phase for
+    ///   charge estimation.
     #[allow(clippy::cast_precision_loss)]
     pub fn estimate_min_burn_sequence_charge(burn_sequence: &BurnSequence) -> I32F32 {
         let acc_time = burn_sequence.acc_dt();
@@ -498,11 +581,11 @@ impl FlightComputer {
             let acq_charge_dt = i32::try_from(
                 TRANSITION_DELAY_LOOKUP[&(FlightState::Acquisition, FlightState::Charge)].as_secs(),
             )
-            .unwrap_or(i32::MAX);
+                .unwrap_or(i32::MAX);
             let charge_acq_dt = i32::try_from(
                 TRANSITION_DELAY_LOOKUP[&(FlightState::Acquisition, FlightState::Charge)].as_secs(),
             )
-            .unwrap_or(i32::MAX);
+                .unwrap_or(i32::MAX);
             let poss_charge_dt = i32::try_from(trunc_detumble_time).unwrap_or(i32::MIN)
                 - acq_charge_dt
                 - charge_acq_dt;

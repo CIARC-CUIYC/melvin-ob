@@ -3,40 +3,98 @@ use std::{
     ops::{Deref, DerefMut},
     path::Path,
 };
-
 use image::{
     codecs::png::{CompressionType, FilterType, PngDecoder, PngEncoder},
     DynamicImage, EncodableLayout, GenericImage, GenericImageView, ImageBuffer, Pixel,
     PixelWithColorType, Rgb, Rgba, RgbaImage,
 };
 use tokio::{fs::File, io::AsyncReadExt};
-
 use crate::flight_control::common::{bitmap::Bitmap, vec2d::Vec2D};
 use crate::flight_control::common::vec2d::MapSize;
 use super::{file_based_buffer::FileBackedBuffer, sub_buffer::SubBuffer};
 
+
+/// Represents an extracted and encoded image with metadata.
+///
+/// This struct contains information about the region of the image
+/// that was extracted, its dimensions, and the encoded image data.
+///
+/// # Fields
+/// * `offset` - The top-left corner of the extracted image region in the original image.
+/// * `size` - The dimensions (width and height) of the extracted region.
+/// * `data` - The encoded image data as a vector of bytes.
 pub(crate) struct EncodedImageExtract {
+    /// The top-left corner of the extracted image region in the original image.
     pub(crate) offset: Vec2D<u32>,
+    /// The dimensions (width and height) of the extracted region.
     pub(crate) size: Vec2D<u32>,
+    /// The encoded image data as a vector of bytes.
     pub(crate) data: Vec<u8>,
 }
 
+/// Trait representing operations for working with map images.
+///
+/// This generic trait allows manipulating and extracting data from images
+/// stored as 2D pixel buffers. It provides methods to work with sub-regions of
+/// the image, export images in PNG format, update specific areas, and more.
+///
+/// # Type Parameters
+/// * `Pixel` - The pixel type used by the image, which implements `PixelWithColorType`.
+/// * `Container` - The container storing pixel subcomponents, implementing `Deref` and `DerefMut`.
+/// * `ViewSubBuffer` - A view into a sub-region of the image, implementing `GenericImageView`.
 pub(crate) trait MapImage {
+    /// The type of the pixels in the image.
     type Pixel: PixelWithColorType;
-    type Container: Deref<Target = [<Self::Pixel as Pixel>::Subpixel]> + DerefMut;
+
+    /// The container for the pixel data.
+    type Container: Deref<Target=[<Self::Pixel as Pixel>::Subpixel]> + DerefMut;
+
+    /// A view of a sub-region of the image.
     type ViewSubBuffer: GenericImageView<Pixel: PixelWithColorType>;
 
+    /// Provides a mutable view of the image at the specified offset.
+    ///
+    /// # Arguments
+    /// * `offset` - The top-left corner of the requested region.
+    ///
+    /// # Returns
+    /// A `SubBuffer` representing the specified region of the image.
     fn mut_vec_view(
         &mut self,
         offset: Vec2D<u32>,
     ) -> SubBuffer<&mut ImageBuffer<Self::Pixel, Self::Container>>;
 
+    /// Provides a view of a sub-region of the image.
+    ///
+    /// # Arguments
+    /// * `offset` - The top-left corner of the requested region.
+    /// * `size` - The dimensions of the requested region.
+    ///
+    /// # Returns
+    /// A `SubBuffer` representing the specified region of the image.
     fn vec_view(&self, offset: Vec2D<u32>, size: Vec2D<u32>) -> SubBuffer<&Self::ViewSubBuffer>;
 
+    /// Returns a reference to the entire image buffer.
+    ///
+    /// # Returns
+    /// A reference to the image buffer.
     fn buffer(&self) -> &ImageBuffer<Self::Pixel, Self::Container>;
 
+    /// Exports the entire image buffer as a PNG.
+    ///
+    /// This method encodes the image as a PNG and returns the encoded byte array along
+    /// with metadata about the image. The encoded data is stored in an `EncodedImageExtract`
+    /// struct that contains the image's offset, size, and encoded data.
+    ///
+    /// # Returns
+    /// An `EncodedImageExtract` containing the offset, size, and encoded image data.
+    ///
+    /// # Errors
+    /// Returns an error if the PNG encoding process fails.
     fn export_as_png(&self) -> Result<EncodedImageExtract, Box<dyn std::error::Error>>
-    where [<Self::Pixel as Pixel>::Subpixel]: EncodableLayout {
+    where
+        [<Self::Pixel as Pixel>::Subpixel]: EncodableLayout,
+    {
         let mut writer = Cursor::new(Vec::<u8>::new());
         let buffer = self.buffer();
         buffer.write_with_encoder(PngEncoder::new(&mut writer))?;
@@ -47,6 +105,21 @@ pub(crate) trait MapImage {
         })
     }
 
+    /// Exports a specific sub-region of the image as a PNG.
+    ///
+    /// This method extracts the specified sub-region of the image, encodes it as a PNG,
+    /// and returns it as an `EncodedImageExtract`. The sub-region to be extracted is defined
+    /// by the provided `offset` and `size`.
+    ///
+    /// # Arguments
+    /// * `offset` - The top-left corner of the region to export.
+    /// * `size` - The dimensions of the region to export, specified as a width and height.
+    ///
+    /// # Returns
+    /// An `EncodedImageExtract` containing the offset, size, and encoded image data of the sub-region.
+    ///
+    /// # Errors
+    /// Returns an error if the PNG encoding process fails.
     #[allow(clippy::cast_sign_loss)]
     fn export_area_as_png(
         &self,
@@ -72,13 +145,33 @@ pub(crate) trait MapImage {
         })
     }
 
+    /// Saves the current image buffer as a snapshot in PNG format.
+    ///
+    /// This method writes the image's content to the file at the specified path in PNG format.
+    ///
+    /// # Arguments
+    /// * `path` - The file path where the snapshot should be saved.
+    ///
+    /// # Returns
+    /// Returns `Ok(())` if the save operation is successful.
+    /// Returns an error if the save process fails.
     fn create_snapshot<P: AsRef<Path>>(&self, path: P) -> Result<(), Box<dyn std::error::Error>>
-    where [<Self::Pixel as Pixel>::Subpixel]: EncodableLayout {
+    where
+        [<Self::Pixel as Pixel>::Subpixel]: EncodableLayout,
+    {
         self.buffer().save(path)?;
         Ok(())
     }
 
-    fn update_area<I: GenericImageView<Pixel = Self::Pixel>>(
+    /// Updates a specific sub-region of the image with the given data.
+    ///
+    /// This method copies the content of `image` into the corresponding sub-region of the current
+    /// image buffer, starting from the specified `offset`.
+    ///
+    /// # Arguments
+    /// * `offset` - The top-left corner of the target sub-region to update.
+    /// * `image` - The new image data to copy into the target sub-region.
+    fn update_area<I: GenericImageView<Pixel=Self::Pixel>>(
         &mut self,
         offset: Vec2D<u32>,
         image: I,
@@ -87,12 +180,39 @@ pub(crate) trait MapImage {
     }
 }
 
+/// A struct representing a full-sized map image.
+///
+/// This struct manages the full-sized map image which includes
+/// a coverage bitmap and an image buffer backed by a memory-mapped file.
+/// It provides functionality to open and handle the image buffer efficiently.
+///
+/// # Fields
+/// * `coverage` - A `Bitmap` instance representing the coverage of the map image.
+/// * `image_buffer` - An `ImageBuffer` containing the RGB pixel data, backed by a `FileBackedBuffer`.
 pub(crate) struct FullsizeMapImage {
+    /// The bitmap representing the coverage of the map image.
     pub(crate) coverage: Bitmap,
+    /// The image buffer containing the pixel data, backed by a file.
     image_buffer: ImageBuffer<Rgb<u8>, FileBackedBuffer>,
 }
 
 impl FullsizeMapImage {
+    /// Opens a full-sized map image from a file.
+    ///
+    /// This function initializes a `FileBackedBuffer` for efficient memory-mapped file access 
+    /// and creates an `ImageBuffer` using the data in the mapped file.
+    ///
+    /// # Arguments
+    /// * `path` - The file path of the image to open.
+    ///
+    /// # Returns
+    /// An instance of `FullsizeMapImage` with the coverage bitmap initialized
+    /// and the image buffer mapped to the file.
+    ///
+    /// # Panics
+    /// This function will panic if:
+    /// * The `FileBackedBuffer` cannot be created.
+    /// * The `ImageBuffer` cannot be created from the `FileBackedBuffer`.
     pub(crate) fn open<P: AsRef<Path>>(path: P) -> Self {
         let fullsize_buffer_size: usize = (u32::map_size().x() as usize)
             * (u32::map_size().y() as usize)
@@ -111,10 +231,30 @@ impl FullsizeMapImage {
 }
 
 impl GenericImageView for FullsizeMapImage {
+    /// The pixel type used by the image buffer, in this case, `Rgba<u8>`.
     type Pixel = Rgba<u8>;
 
-    fn dimensions(&self) -> (u32, u32) { self.image_buffer.dimensions() }
+    /// Returns the dimensions of the image buffer as a tuple `(width, height)`.
+    ///
+    /// # Returns
+    /// A tuple containing the width and height of the image buffer.
+    fn dimensions(&self) -> (u32, u32) {
+        self.image_buffer.dimensions()
+    }
 
+    /// Retrieves the pixel at the given `(x, y)` coordinates.
+    ///
+    /// If the pixel is covered (as checked by the coverage bitmap), the corresponding
+    /// pixel data from the image buffer will be returned with an alpha value of `0xFF`
+    /// (fully opaque). Otherwise, a transparent black pixel `[0, 0, 0, 0]` is returned.
+    ///
+    /// # Arguments
+    /// * `x` - The horizontal coordinate of the pixel.
+    /// * `y` - The vertical coordinate of the pixel.
+    ///
+    /// # Returns
+    /// An `Rgba<u8>` pixel that is either from the image buffer (if covered) or
+    /// a transparent black pixel (if not covered).
     fn get_pixel(&self, x: u32, y: u32) -> Self::Pixel {
         if self.coverage.is_set(x, y) {
             let pixel = self.image_buffer.get_pixel(x, y).0;
@@ -126,10 +266,21 @@ impl GenericImageView for FullsizeMapImage {
 }
 
 impl MapImage for FullsizeMapImage {
+    /// The pixel type for the image, in this case `Rgb<u8>`.
     type Pixel = Rgb<u8>;
+    /// The container type for the pixel data, in this case `FileBackedBuffer` used for memory-mapped file access.
     type Container = FileBackedBuffer;
+    /// The view type for a sub-region of the image, implemented as `FullsizeMapImage`.
     type ViewSubBuffer = FullsizeMapImage;
 
+    /// Provides a mutable view of the image buffer at the specified offset.
+    ///
+    /// # Arguments
+    /// * `offset` - The top-left corner of the region to view.
+    ///
+    /// # Returns
+    /// A `SubBuffer` containing a mutable reference to the image buffer
+    /// starting from the specified offset.
     fn mut_vec_view(
         &mut self,
         offset: Vec2D<u32>,
@@ -142,6 +293,15 @@ impl MapImage for FullsizeMapImage {
         }
     }
 
+    /// Provides a view of a sub-region of the image buffer.
+    ///
+    /// # Arguments
+    /// * `offset` - The top-left corner of the region to view.
+    /// * `size` - The dimensions of the region to view.
+    ///
+    /// # Returns
+    /// A `SubBuffer` containing a reference to the `FullsizeMapImage` starting 
+    /// from the specified offset and region size.
     fn vec_view(&self, offset: Vec2D<u32>, size: Vec2D<u32>) -> SubBuffer<&FullsizeMapImage> {
         SubBuffer {
             buffer: self,
@@ -151,18 +311,37 @@ impl MapImage for FullsizeMapImage {
         }
     }
 
+    /// Returns a reference to the entire image buffer.
+    ///
+    /// # Returns
+    /// A reference to the `ImageBuffer` containing the RGB pixel data.
     fn buffer(&self) -> &ImageBuffer<Self::Pixel, Self::Container> { &self.image_buffer }
 }
 
+/// Represents a thumbnail image generated from a full-size map image.
+///
+/// This struct is designed to manage scaled-down versions of map images,
+/// which are useful for generating previews or comparing snapshots.
 pub(crate) struct ThumbnailMapImage {
+    /// The underlying image buffer storing the pixel data of the thumbnail.
     image_buffer: RgbaImage,
 }
 
 impl MapImage for ThumbnailMapImage {
+    /// The pixel type used, which is RGBA with 8-bit sub-pixels.
     type Pixel = Rgba<u8>;
+    /// The container type for the pixel data, represented as a vector of bytes.
     type Container = Vec<u8>;
+    /// The view type for sub-regions of the thumbnail, implemented as an `ImageBuffer`.
     type ViewSubBuffer = ImageBuffer<Rgba<u8>, Vec<u8>>;
 
+    /// Provides a mutable view of the thumbnail at the specified offset.
+    ///
+    /// # Arguments
+    /// * `offset` - The top-left corner of the requested sub-region.
+    ///
+    /// # Returns
+    /// A `SubBuffer` representing the specified sub-region of the thumbnail.
     fn mut_vec_view(
         &mut self,
         offset: Vec2D<u32>,
@@ -175,6 +354,14 @@ impl MapImage for ThumbnailMapImage {
         }
     }
 
+    /// Provides a view of a sub-region of the thumbnail.
+    ///
+    /// # Arguments
+    /// * `offset` - The top-left corner of the requested sub-region.
+    /// * `size` - The dimensions of the requested sub-region.
+    ///
+    /// # Returns
+    /// A `SubBuffer` representing the specified sub-region of the thumbnail.
     fn vec_view(
         &self,
         offset: Vec2D<u32>,
@@ -188,16 +375,40 @@ impl MapImage for ThumbnailMapImage {
         }
     }
 
+    /// Returns a reference to the entire image buffer of the thumbnail.
+    ///
+    /// # Returns
+    /// A reference to the image buffer storing the thumbnail's pixel data.
     fn buffer(&self) -> &ImageBuffer<Self::Pixel, Self::Container> { &self.image_buffer }
 }
 
 impl ThumbnailMapImage {
+    /// Defines the scale factor for generating a thumbnail from a full-size map image.
+    ///
+    /// The dimensions of the thumbnail are calculated by dividing the full-sized map
+    /// dimensions by this constant.
     pub(crate) const THUMBNAIL_SCALE_FACTOR: u32 = 25;
 
+    /// Calculates the size of the thumbnail based on the full-size map dimensions.
+    ///
+    /// This method uses the `THUMBNAIL_SCALE_FACTOR` to scale down the map size.
+    ///
+    /// # Returns
+    /// A `Vec2D<u32>` representing the dimensions of the thumbnail.
     pub(crate) fn thumbnail_size() -> Vec2D<u32> {
         u32::map_size() / Self::THUMBNAIL_SCALE_FACTOR
     }
 
+    /// Generates a thumbnail from a given full-sized map image.
+    ///
+    /// This method scales down the provided `FullsizeMapImage` to create a thumbnail
+    /// using the pre-defined `thumbnail_size`.
+    ///
+    /// # Arguments
+    /// * `fullsize_map_image` - A reference to the `FullsizeMapImage` to be converted.
+    ///
+    /// # Returns
+    /// A `ThumbnailMapImage` containing the scaled-down image.
     pub(crate) fn from_fullsize(fullsize_map_image: &FullsizeMapImage) -> Self {
         Self {
             image_buffer: image::imageops::thumbnail(
@@ -208,6 +419,16 @@ impl ThumbnailMapImage {
         }
     }
 
+    /// Generates a thumbnail from a previously saved snapshot.
+    ///
+    /// If the snapshot file exists, it is loaded and converted into a thumbnail.
+    /// If it does not exist, a blank image with the dimensions of the thumbnail is created.
+    ///
+    /// # Arguments
+    /// * `snapshot_path` - The file path to the snapshot PNG.
+    ///
+    /// # Returns
+    /// A `ThumbnailMapImage` containing either the loaded thumbnail image or a blank thumbnail.
     pub(crate) fn from_snapshot<P: AsRef<Path>>(snapshot_path: P) -> Self {
         let image_buffer = if let Ok(file) = std::fs::File::open(snapshot_path) {
             DynamicImage::from_decoder(PngDecoder::new(&mut BufReader::new(file)).unwrap())
@@ -219,6 +440,22 @@ impl ThumbnailMapImage {
         Self { image_buffer }
     }
 
+    /// Computes the difference between the current thumbnail and a snapshot.
+    ///
+    /// This method compares the pixel data of the current thumbnail against a previously
+    /// saved snapshot and creates a new image showing the differences. Pixels that
+    /// are identical are marked as transparent, and differing pixels retain their values.
+    ///
+    /// If the snapshot file does not exist, the current thumbnail is exported as a PNG.
+    ///
+    /// # Arguments
+    /// * `base_snapshot_path` - The file path to the base snapshot PNG.
+    ///
+    /// # Returns
+    /// An `EncodedImageExtract` containing the diff image as a PNG.
+    ///
+    /// # Errors
+    /// Returns an error if the snapshot file cannot be read or the PNG encoding fails.
     pub(crate) async fn diff_with_snapshot<P: AsRef<Path>>(
         &self,
         base_snapshot_path: P,

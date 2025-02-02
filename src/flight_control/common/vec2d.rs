@@ -25,11 +25,25 @@ pub struct Vec2D<T> {
     y: T,
 }
 
+/// A 2D vector wrapper with fixed-size wrapping capabilities.
+///
+/// This struct is generic over a numeric type `T` and two constants `X` and `Y`,
+/// which represent the fixed size of the 2D wrapping area.
+///
+/// # Type Parameters
+/// * `T` - Any numeric type that implements the `Fixed` trait.
+/// * `X` - The maximum bound for the x-axis.
+/// * `Y` - The maximum bound for the y-axis.
 pub struct Wrapped2D<T, const X: u32, const Y: u32>(Vec2D<T>);
 
 impl<T, const X: u32, const Y: u32> Wrapped2D<T, X, Y>
-where T: Fixed
+where
+    T: Fixed,
 {
+    /// Wraps the coordinates of the vector around the bounds defined by `X` and `Y`.
+    ///
+    /// # Returns
+    /// A new `Wrapped2D` instance with its coordinates wrapped within the bounds.
     pub fn wrap_around_map(&self) -> Self {
         Wrapped2D(Vec2D::new(
             Self::wrap_coordinate(self.0.x, T::from_num(X)),
@@ -37,32 +51,69 @@ where T: Fixed
         ))
     }
 
-    pub fn wrap_coordinate(value: T, max_value: T) -> T { (value + max_value) % max_value }
+    /// Wraps a single coordinate value around a maximum value.
+    ///
+    /// # Arguments
+    /// * `value` - The coordinate value to be wrapped.
+    /// * `max_value` - The maximum bound for the coordinate.
+    ///
+    /// # Returns
+    /// The wrapped coordinate value.
+    pub fn wrap_coordinate(value: T, max_value: T) -> T {
+        (value + max_value) % max_value
+    }
 }
 
 impl<T, const X: u32, const Y: u32> Deref for Wrapped2D<T, X, Y> {
     type Target = Vec2D<T>;
 
-    fn deref(&self) -> &Self::Target { &self.0 }
+    /// Dereferences the `Wrapped2D` wrapper to access its inner `Vec2D` value.
+    ///
+    /// # Returns
+    /// A reference to the inner `Vec2D`.
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl<T> Display for Vec2D<T>
-where T: Display
+where
+    T: Display,
 {
+    /// Formats the `Vec2D` as a string in the format `[x, y]`.
+    ///
+    /// # Arguments
+    /// * `f` - A mutable reference to the formatter.
+    ///
+    /// # Returns
+    /// A `Result` indicating the success of the formatting operation.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "[{}, {}]", self.x, self.y)
     }
 }
 
+/// A trait providing a method to define the size of a 2D map.
+///
+/// This is used to determine the dimensions of the map for wrapping operations.
 pub trait MapSize {
+    /// The output type of the map dimensions.
     type Output;
 
+    /// Returns the size of the map as a `Vec2D` object.
+    ///
+    /// # Returns
+    /// A `Vec2D` representing the width (`x`) and height (`y`) of the map.
     fn map_size() -> Vec2D<Self::Output>;
 }
 
+/// Implementation of the `MapSize` trait for the `I32F32` fixed-point number type.
 impl MapSize for I32F32 {
     type Output = I32F32;
 
+    /// Defines the size of the map as a `Vec2D` with dimensions 21600.0 x 10800.0.
+    ///
+    /// # Returns
+    /// A `Vec2D` with fixed-point components representing the map dimensions.
     fn map_size() -> Vec2D<I32F32> {
         Vec2D {
             x: I32F32::from_num(21600.0),
@@ -71,9 +122,14 @@ impl MapSize for I32F32 {
     }
 }
 
+/// Implementation of the `MapSize` trait for the `I32F0` fixed-point number type.
 impl MapSize for I32F0 {
     type Output = I32F0;
 
+    /// Defines the size of the map as a `Vec2D` with dimensions 21600 x 10800.
+    ///
+    /// # Returns
+    /// A `Vec2D` with fixed-point integer components representing the map dimensions.
     fn map_size() -> Vec2D<I32F0> {
         Vec2D {
             x: I32F0::from_num(21600),
@@ -82,24 +138,47 @@ impl MapSize for I32F0 {
     }
 }
 
+/// Implementation of the `MapSize` trait for the `u32` type.
 impl MapSize for u32 {
     type Output = u32;
 
-    fn map_size() -> Vec2D<u32> { Vec2D { x: 21600, y: 10800 } }
+    /// Defines the size of the map as a `Vec2D` with dimensions 21600 x 10800.
+    ///
+    /// # Returns
+    /// A `Vec2D` with unsigned 32-bit integer components representing the map dimensions.
+    fn map_size() -> Vec2D<u32> {
+        Vec2D { x: 21600, y: 10800 }
+    }
 }
 
+/// Implementation of the `MapSize` trait for the `i32` type.
 impl MapSize for i32 {
     type Output = i32;
 
-    fn map_size() -> Vec2D<i32> { Vec2D { x: 21600, y: 10800 } }
+    /// Defines the size of the map as a `Vec2D` with dimensions 21600 x 10800.
+    ///
+    /// # Returns
+    /// A `Vec2D` with signed 32-bit integer components representing the map dimensions.
+    fn map_size() -> Vec2D<i32> {
+        Vec2D { x: 21600, y: 10800 }
+    }
 }
 
+/// Implementation of the `MapSize` trait for a `Vec2D` type with components
+/// that also implement the `MapSize` trait.
 impl<T> MapSize for Vec2D<T>
-where T: MapSize<Output = T>
+where
+    T: MapSize<Output=T>,
 {
     type Output = T;
 
-    fn map_size() -> Vec2D<Self::Output> { T::map_size() }
+    /// Defines the size of the map by delegating to the `map_size` implementation of `T`.
+    ///
+    /// # Returns
+    /// A `Vec2D` with components of type `T` representing the map dimensions.
+    fn map_size() -> Vec2D<Self::Output> {
+        T::map_size()
+    }
 }
 
 impl<T> Vec2D<T>
@@ -124,6 +203,17 @@ where T: FixedSigned + NumAssignOps
         Vec2D::new(self.x - other.x, self.y - other.y)
     }
 
+    /// Computes an "unwrapped" vector pointing from the current vector (`self`) to another vector (`other`).
+    ///
+    /// This method considers potential wrapping around a 2D map (based on the map size) and calculates
+    /// the smallest vector that connects `self` to `other`. The wrapping allows for efficient navigation
+    /// across boundaries.
+    ///
+    /// # Arguments
+    /// * `other` - The target vector to which the direction is computed.
+    ///
+    /// # Returns
+    /// A `Vec2D` representing the shortest unwrapped direction from `self` to `other`.
     pub fn unwrapped_to(&self, other: &Vec2D<T>) -> Vec2D<T> {
         let mut options = Vec::new();
         for x_sign in [1, -1] {
@@ -140,6 +230,17 @@ where T: FixedSigned + NumAssignOps
         options.iter().min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Less)).unwrap().0
     }
 
+    /// Computes a perpendicular unit vector pointing to another vector (`other`).
+    ///
+    /// The direction of the perpendicular vector depends on whether `self` is clockwise
+    /// or counterclockwise to `other`.
+    ///
+    /// # Arguments
+    /// * `other` - The target vector to compare directions with.
+    ///
+    /// # Returns
+    /// A unit `Vec2D` perpendicular to `self` pointing towards `other`. 
+    /// Returns a zero vector if `self` and `other` are collinear.
     pub fn perp_unit_to(&self, other: &Vec2D<T>) -> Vec2D<T> {
         match self.is_clockwise_to(other) {
             Some(dir) => self.perp_unit(dir),
@@ -147,17 +248,44 @@ where T: FixedSigned + NumAssignOps
         }
     }
 
+    /// Computes a perpendicular unit vector to the current vector.
+    ///
+    /// The direction of the perpendicular vector depends on the `clockwise` parameter.
+    ///
+    /// # Arguments
+    /// * `clockwise` - A boolean indicating the direction. `true` for clockwise, `false` for counterclockwise.
+    ///
+    /// # Returns
+    /// A normalized perpendicular `Vec2D`.
     pub fn perp_unit(&self, clockwise: bool) -> Vec2D<T> {
         let perp =
             if clockwise { Vec2D::new(self.y, -self.x) } else { Vec2D::new(-self.y, self.x) };
         perp.normalize()
     }
 
+    /// Computes a flipped collinear unit vector to the current vector.
+    ///
+    /// This is equivalent to rotating the vector 180 degrees.
+    ///
+    /// # Returns
+    /// A normalized flipped collinear `Vec2D`.
     pub fn flip_unit(&self) -> Vec2D<T> {
         let flip = Vec2D::new(-self.y, -self.x);
         flip.normalize()
     }
 
+    /// Determines whether the current vector is clockwise relative to another vector (`other`).
+    ///
+    /// This is determined using the cross product:
+    /// * `Some(true)` if `self` is clockwise to `other`.
+    /// * `Some(false)` if `self` is counterclockwise to `other`.
+    /// * `None` if `self` and `other` are collinear.
+    ///
+    /// # Arguments
+    /// * `other` - The vector to compare relative direction with.
+    ///
+    /// # Returns
+    /// An `Option<bool>` indicating the relative direction.
     pub fn is_clockwise_to(&self, other: &Vec2D<T>) -> Option<bool> {
         let cross = self.cross(other);
         match cross.partial_cmp(&T::zero()) {
@@ -167,15 +295,16 @@ where T: FixedSigned + NumAssignOps
         }
     }
 
-    pub fn unit(&self) -> Vec2D<T> {
-        let magnitude = self.abs();
-        if magnitude.is_zero() {
-            *self
-        } else {
-            *self / magnitude
-        }
-    }
-
+    /// Computes the angle (in degrees) between the current vector and another vector (`other`).
+    ///
+    /// The method calculates the cosine of the angle using the dot product, clamps it to
+    /// the valid range of `[-1, 1]`, and then computes the angle in degrees.
+    ///
+    /// # Arguments
+    /// * `other` - The target vector to compute the angle to.
+    ///
+    /// # Returns
+    /// The angle in degrees as a scalar of type `T`.
     pub fn angle_to(&self, other: &Vec2D<T>) -> T {
         let dot = self.dot(other);
 
@@ -269,6 +398,19 @@ impl<T: Fixed + Copy> Vec2D<T> {
     /// A scalar value of type `T` that represents the dot product of the two vectors.
     pub fn dot(self, other: &Vec2D<T>) -> T { self.x * other.x + self.y * other.y }
 
+    /// Computes the cross product of the current vector with another vector.
+    ///
+    /// The cross product is defined as:
+    ///
+    /// ```text
+    /// cross_product = (x1 * y2) - (y1 * x2)
+    /// ```
+    ///
+    /// # Arguments
+    /// * `other` - Another `Vec2D` vector to compute the cross product with.
+    ///
+    /// # Returns
+    /// A scalar value of type `T` that represents the cross product of the two vectors.
     pub fn cross(self, other: &Vec2D<T>) -> T { self.x * other.y - self.y * other.x }
 
     /// Computes the magnitude (absolute value) of the vector as an `f64`.
@@ -286,6 +428,15 @@ impl<T: Fixed + Copy> Vec2D<T> {
 }
 
 impl Vec2D<i32> {
+    /// Converts the vector to an unsigned equivalent.
+    ///
+    /// This method casts both the x and y components of the vector from `i32` to `u32`.
+    ///
+    /// # Returns
+    /// A `Vec2D<u32>` with the unsigned components of the original vector.
+    ///
+    /// # Note
+    /// The conversion may cause loss of sign. Negative values will wrap around.
     #[allow(clippy::cast_sign_loss)]
     pub fn to_unsigned(self) -> Vec2D<u32> {
         Vec2D {
