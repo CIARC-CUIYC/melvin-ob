@@ -9,13 +9,13 @@ use std::ops::Not;
 /// A 2D bitmap structure that uses a bit-packed vector to represent the
 /// state of individual pixels. Each pixel is either set (`true`) or unset (`false`).
 ///
-/// # Fields
-/// - `width`: A `u32` representing the 2D bitmap width.
-/// - `height`: A `u32` representing the 2D bitmap height.
-/// - `data`: A `BitBox` storing the actual bitmap data.
+/// This structure provides methods for creating, manipulating, inspecting,
+/// and exporting bitmaps.
 ///
-/// This structure provides methods for manipulating pixel data, checking
-/// regions, and exporting the bitmap to a PNG image.
+/// # Fields
+/// - `width`: A `u32` representing the bitmap's width.
+/// - `height`: A `u32` representing the bitmap's height.
+/// - `data`: A `BitBox` for storing the state of pixels bit-packed in memory.
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct Bitmap {
     /// The width of the 2D bitmap.
@@ -27,18 +27,20 @@ pub struct Bitmap {
 }
 
 impl Bitmap {
+    /// RGB color representation for red/set bit in exported PNG.
     const RED: [u8; 3] = [255, 0, 0];
+    /// RGB color representation for black/unset bit in exported PNG.
     const BLACK: [u8; 3] = [0, 0, 0];
 
-    /// Creates a new `Bitmap` with the specified `width` and `height`.
-    /// All pixels in the bitmap are initialized to `false`.
+    /// Creates a new `Bitmap` with the specified width and height, where all pixels
+    /// are initialized to `false`.
     ///
     /// # Arguments
     /// * `width` - The width of the bitmap.
     /// * `height` - The height of the bitmap.
     ///
     /// # Returns
-    /// A new instance of `Bitmap`.
+    /// A new instance of `Bitmap` with the specified dimensions and all pixels unset.
     pub fn new(width: u32, height: u32) -> Self {
         let length = width * height;
         Self {
@@ -48,11 +50,11 @@ impl Bitmap {
         }
     }
 
-    /// Creates a `Bitmap` based on the constant dimensions of the map size defined in `Vec2D`.
+    /// Creates a `Bitmap` with dimensions defined by `Vec2D::map_size()`.
     /// All pixels are initialized to `false`.
     ///
     /// # Returns
-    /// A new `Bitmap` with dimensions provided by `Vec2D::map_size()`.
+    /// A `Bitmap` instance corresponding to the constant dimensions from `Vec2D`.
     pub fn from_map_size() -> Self {
         let bitmap_size = Vec2D::<I32F32>::map_size();
         Self::new(
@@ -61,14 +63,14 @@ impl Bitmap {
         )
     }
 
-    /// Converts the 2D `(x, y)` coordinate to a 1D index in the bit-packed array.
+    /// Converts 2D `(x, y)` coordinates into an index in the bit-packed array.
     ///
     /// # Arguments
-    /// * `x` - The x-coordinate.
-    /// * `y` - The y-coordinate.
+    /// * `x` - The x-coordinate of the pixel.
+    /// * `y` - The y-coordinate of the pixel.
     ///
     /// # Returns
-    /// The 1D index as `u32`.
+    /// The 1D index corresponding to the specified `x` and `y`.
     ///
     /// # Example
     /// ```rust
@@ -79,78 +81,73 @@ impl Bitmap {
     fn get_bitmap_index(&self, x: u32, y: u32) -> u32 { y * self.width + x }
 
     /// Returns the total number of pixels in the bitmap.
-    /// This is equivalent to the product of its `width` and `height`.
     ///
     /// # Returns
-    /// The total number of pixels as `u32`.
+    /// The total pixel count as `u32`.
     pub fn len(&self) -> u32 { self.width * self.height }
 
-    /// Checks whether the pixel at the specified `(x, y)` coordinates is set.
+    /// Checks if the pixel at `(x, y)` is set to `true`.
     ///
     /// # Arguments
     /// * `x` - The x-coordinate of the pixel.
     /// * `y` - The y-coordinate of the pixel.
     ///
     /// # Returns
-    /// `true` if the pixel is set, `false` if the pixel is out of bounds or unset.
+    /// `true` if the pixel is set, `false` otherwise.
     pub(crate) fn is_set(&self, x: u32, y: u32) -> bool {
         let index = self.get_bitmap_index(x, y);
         self.data.get(index as usize).is_some_and(|x| *x)
     }
 
-    /// Sets the pixel at the given `(x, y)` coordinates to `true`.
+    /// Sets the pixel at `(x, y)` to `true`.
     ///
     /// # Arguments
-    /// * `x` - The x-coordinate of the pixel to set.
-    /// * `y` - The y-coordinate of the pixel to set.
+    /// * `x` - The x-coordinate of the pixel.
+    /// * `y` - The y-coordinate of the pixel.
     ///
     /// # Panics
-    /// This panics if `(x, y)` is out of bounds.
+    /// Panics if `(x, y)` is out of bounds.
     fn set(&mut self, x: u32, y: u32) {
         let index = self.get_bitmap_index(x, y);
         self.data.set(index as usize, true);
     }
 
-    /// Sets the pixel at the given `(x, y)` coordinates to `false`.
+    /// Sets the pixel at `(x, y)` to `false`.
     ///
     /// # Arguments
-    /// * `x` - The x-coordinate of the pixel to unset.
-    /// * `y` - The y-coordinate of the pixel to unset.
+    /// * `x` - The x-coordinate of the pixel.
+    /// * `y` - The y-coordinate of the pixel.
     ///
     /// # Panics
-    /// This panics if `(x, y)` is out of bounds.
+    /// Panics if `(x, y)` is out of bounds.
     fn unset(&mut self, x: u32, y: u32) {
         let index = self.get_bitmap_index(x, y);
         self.data.set(index as usize, false);
     }
 
-    /// Toggles the pixel state at the given `(x, y)` coordinates.
-    /// This flips the state of the pixel: `true` becomes `false`,
-    /// and `false` becomes `true`.
+    /// Toggles the `true/false` state of the pixel at `(x, y)`.
     ///
     /// # Arguments
-    /// * `x` - The x-coordinate of the pixel to flip.
-    /// * `y` - The y-coordinate of the pixel to flip.
+    /// * `x` - The x-coordinate of the pixel.
+    /// * `y` - The y-coordinate of the pixel.
     ///
     /// # Panics
-    /// This panics if `(x, y)` is out of bounds.
+    /// Panics if `(x, y)` is out of bounds.
     fn flip(&mut self, x: u32, y: u32) {
         let index = self.get_bitmap_index(x, y);
         let state = self.data.get(index as usize).expect("[FATAL] Index out of bounds!").not();
         self.data.set(index as usize, state);
     }
 
-    /// Updates a region of the bitmap to a given `set_to` state.
-    /// The region is determined by its center and the Camera Angle of capture.
+    /// Sets or unsets a rectangular region based on `pos` and `angle`.
     ///
     /// # Arguments
     /// * `pos` - The center position as `Vec2D<I32F32>`.
-    /// * `angle` - A `CameraAngle` defining the region's size.
-    /// * `set_to` - The state to set the region's pixels to (`true` or `false`).
+    /// * `angle` - Defines the size of the region.
+    /// * `set_to` - The value (`true` or `false`) to set for the region.
     ///
     /// # Panics
-    /// This can panic due to conversion errors or bugs left in `get_region_slice_indices`.
-    #[allow(clippy::cast_possible_truncation)]
+    /// Panics if index calculations fail.
     pub fn set_region(&mut self, pos: Vec2D<I32F32>, angle: CameraAngle, set_to: bool) {
         let x = I32F0::from_num(pos.x());
         let y = I32F0::from_num(pos.y());
@@ -167,26 +164,22 @@ impl Bitmap {
         }
     }
 
-    /// Retrieves the start and end indices of all slices within a region,
-    /// based on the center position `(x, y)` and the Camera Angle `angle`.
+    /// Provides slices representing a region by indices and dimensions.
     ///
     /// # Arguments
-    /// * `x` - The x-coordinate of the region's center.
-    /// * `y` - The y-coordinate of the region's center.
-    /// * `angle` - A `CameraAngle` defining the region's size.
+    /// * `x` - The center x-coordinate of the region.
+    /// * `y` - The center y-coordinate of the region.
+    /// * `angle` - Defines the size of the region.
     ///
     /// # Returns
-    /// A `Vec` of tuples, where each tuple specifies a `(start_index, end_index)`.
-    ///
-    /// # Panics
-    /// This can panic due to conversion errors or bugs left.
+    /// A vector of `(start_index, end_index)` tuples representing slices within the bitmap.
     pub fn get_region_slice_indices(
         &self,
         x: I32F0,
         y: I32F0,
         angle: CameraAngle,
     ) -> Vec<(u32, u32)> {
-        let angle_const = (angle.get_square_side_length() / 2) as i32;
+        let angle_const = i32::from(angle.get_square_side_length() / 2);
         let mut slices = Vec::new();
         let max_height = I32F0::from_num(self.height);
         let max_width = I32F0::from_num(self.width);
@@ -201,7 +194,6 @@ impl Bitmap {
             (i128::from(x_end) - i128::from(x_start)).abs() > i128::from(angle_const * 2);
 
         let y_i32 = y.to_i32().unwrap();
-        let x_i32 = x.to_i32().unwrap();
 
         for y_it in y_i32 - angle_const..y_i32 + angle_const {
             let wrapped_y =
@@ -224,19 +216,15 @@ impl Bitmap {
         slices
     }
 
-    /// Checks if a region of the bitmap has at least `min` bits set to `true`.
+    /// Checks whether a region contains at least a specified number of `true` pixels.
     ///
     /// # Arguments
     /// * `pos` - The center position of the region as `Vec2D<I32F32>`.
-    /// * `angle` - A `CameraAngle` defining the region's size.
-    /// * `min` - The minimum number of bits that need to be set.
+    /// * `angle` - Defines the region size.
+    /// * `min` - The minimum number of `true` pixels required.
     ///
     /// # Returns
-    /// `true` if the region contains at least `min` bits set, otherwise `false`.
-    ///
-    /// # Panics
-    /// This can panic due to conversion errors or bugs left in `get_region_slice_indices`.
-    #[allow(clippy::cast_possible_truncation)]
+    /// `true` if the region contains at least `min` `true` pixels, otherwise `false`.
     pub fn has_sufficient_set_bits(
         &self,
         pos: Vec2D<I32F32>,
@@ -259,14 +247,13 @@ impl Bitmap {
         false
     }
 
-    /// Exports the bitmap to a PNG image file.
-    /// Each pixel is represented as either red (`true`) or black (`false`).
+    /// Exports the bitmap as a PNG image to the specified file path.
     ///
     /// # Arguments
-    /// * `output_path` - The path where the PNG image will be saved.
+    /// * `output_path` - The path to save the PNG image.
     ///
     /// # Panics
-    /// This can panic due to conversion errors or file I/O errors.
+    /// Panics in the event of a file I/O or conversion error.
     pub fn export_to_png(&self, output_path: &str) {
         let mut img: RgbImage = ImageBuffer::new(self.width, self.height);
 

@@ -1,4 +1,4 @@
-use crate::console_communication::console_messenger::ConsoleMessenger;
+use crate::console_communication::ConsoleMessenger;
 use crate::flight_control::{
     camera_state::CameraAngle, common::vec2d::Vec2D, flight_computer::FlightComputer,
 };
@@ -29,22 +29,39 @@ use super::imaging::map_image::{
     EncodedImageExtract, FullsizeMapImage, MapImage, ThumbnailMapImage,
 };
 
+/// A struct for managing camera-related operations and map snapshots.
 pub struct CameraController {
+    /// The base path for saving map image data.
     base_path: String,
+    /// The lock-protected full-size map image.
     fullsize_map_image: RwLock<FullsizeMapImage>,
+    /// The lock-protected thumbnail map image.
     thumbnail_map_image: RwLock<ThumbnailMapImage>,
+    /// The HTTP client for sending requests.
     request_client: Arc<HTTPClient>,
 }
 
+/// Path to the binary map buffer file.
 const MAP_BUFFER_PATH: &str = "map.bin";
+/// Path to the full-size snapshot file.
 const SNAPSHOT_FULL_PATH: &str = "snapshot_full.png";
+/// Path to the thumbnail snapshot file.
 const SNAPSHOT_THUMBNAIL_PATH: &str = "snapshot_thumb.png";
 
 impl CameraController {
+    /// Initializes the `CameraController` with the given base path and HTTP client.
+    ///
+    /// # Arguments
+    ///
+    /// * `base_path` - The base path for storing files.
+    /// * `request_client` - The HTTP client for sending requests.
+    ///
+    /// # Returns
+    ///
+    /// A new instance of `CameraController`.
     pub fn start(base_path: String, request_client: Arc<HTTPClient>) -> Self {
         let fullsize_map_image =
             FullsizeMapImage::open(Path::new(&base_path).join(MAP_BUFFER_PATH));
-        //let thumbnail_map_image = ThumbnailMapImage::from_fullsize(&fullsize_map_image);
         let thumbnail_map_image =
             ThumbnailMapImage::from_snapshot(Path::new(&base_path).join(SNAPSHOT_THUMBNAIL_PATH));
         Self {
@@ -55,10 +72,26 @@ impl CameraController {
         }
     }
 
+    /// Clones the coverage bitmap of the full-size map image.
+    ///
+    /// # Returns
+    ///
+    /// A copy of the coverage bitmap as a `BitBox`.
     pub async fn clone_coverage_bitmap(&self) -> BitBox {
         self.fullsize_map_image.read().await.coverage.data.clone()
     }
 
+    /// Scores the offset by comparing the decoded image against the map base image.
+    ///
+    /// # Arguments
+    ///
+    /// * `decoded_image` - The decoded image to match.
+    /// * `base` - The reference full-size map image.
+    /// * `offset` - The initial offset to evaluate.
+    ///
+    /// # Returns
+    ///
+    /// The best scored offset as `Vec2D<i32>`.
     #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
     fn score_offset(
         decoded_image: &RgbImage,
@@ -73,8 +106,8 @@ impl CameraController {
                     offset.x() as i32 + additional_offset_x,
                     offset.y() as i32 + additional_offset_y,
                 )
-                .wrap_around_map()
-                .to_unsigned();
+                    .wrap_around_map()
+                    .to_unsigned();
                 let map_image_view = base.vec_view(
                     current_offset,
                     Vec2D::new(decoded_image.width(), decoded_image.height()),
@@ -102,6 +135,16 @@ impl CameraController {
         best_additional_offset
     }
 
+    /// Captures an image, processes it, and stores it in the map buffer.
+    ///
+    /// # Arguments
+    ///
+    /// * `f_cont_locked` - The lock-protected flight computer.
+    /// * `angle` - The camera angle and field of view.
+    ///
+    /// # Returns
+    ///
+    /// The updated offset as `Vec2D<u32>` or an error.
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
     pub async fn shoot_image_to_buffer(
         &self,
@@ -121,42 +164,50 @@ impl CameraController {
             position.x().round().to_num::<i32>() - i32::from(angle_const),
             position.y().round().to_num::<i32>() - i32::from(angle_const),
         )
-        .wrap_around_map();
+            .wrap_around_map();
 
-        let offset = {
+        let tot_offset_u32 = {
             let mut fullsize_map_image = self.fullsize_map_image.write().await;
             let best_additional_offset =
                 Self::score_offset(&decoded_image, &fullsize_map_image, offset.to_unsigned());
-            let offset: Vec2D<u32> =
+            let tot_offset: Vec2D<u32> =
                 (offset + best_additional_offset).wrap_around_map().to_unsigned();
-            fullsize_map_image.update_area(offset, decoded_image);
+            fullsize_map_image.update_area(tot_offset, decoded_image);
 
             fullsize_map_image.coverage.set_region(
                 Vec2D::new(position.x(), position.y()),
                 angle,
                 true,
             );
-            offset
+            tot_offset
         };
-        self.update_thumbnail_area_from_fullsize(offset, u32::from(angle_const)).await;
-        Ok(offset)
+        self.update_thumbnail_area_from_fullsize(tot_offset_u32, u32::from(angle_const)).await;
+        Ok(tot_offset_u32)
     }
 
+    /// Updates the thumbnail area of the map based on the full-size map data.
+    ///
+    /// # Arguments
+    ///
+    /// * `offset` - Offset to update.
+    /// * `size` - Size of the region to update.
+    #[allow(clippy::cast_possible_wrap)]
     async fn update_thumbnail_area_from_fullsize(&self, offset: Vec2D<u32>, size: u32) {
         let thumbnail_offset = Vec2D::new(
             offset.x() as i32 - ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR as i32 * 2,
             offset.y() as i32 - ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR as i32 * 2,
         )
-        .wrap_around_map()
-        .to_unsigned();
-        let size = size * 2 + ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR * 4;
+            .wrap_around_map()
+            .to_unsigned();
+        let size_scaled = size * 2 + ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR * 4;
         let fullsize_map_image = self.fullsize_map_image.read().await;
-        let map_image_view = fullsize_map_image.vec_view(thumbnail_offset, Vec2D::new(size, size));
+        let map_image_view =
+            fullsize_map_image.vec_view(thumbnail_offset, Vec2D::new(size_scaled, size_scaled));
 
         let resized_image = image::imageops::thumbnail(
             &map_image_view,
-            size / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
-            size / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
+            size_scaled / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
+            size_scaled / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
         );
         self.thumbnail_map_image.write().await.update_area(
             thumbnail_offset / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
@@ -164,6 +215,11 @@ impl CameraController {
         );
     }
 
+    /// Fetches image data from the camera as a byte vector.
+    ///
+    /// # Returns
+    ///
+    /// The raw PNG data or an error.
     async fn fetch_image_data(&self) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
         let response_stream = ShootImageRequest {}.send_request(&self.request_client).await?;
 
@@ -177,6 +233,16 @@ impl CameraController {
         Ok(collected_png)
     }
 
+    /// Decodes PNG data into an RGB image and resizes it based on the camera angle.
+    ///
+    /// # Arguments
+    ///
+    /// * `collected_png` - Raw PNG data.
+    /// * `angle` - The camera angle defining the image resolution.
+    ///
+    /// # Returns
+    ///
+    /// The decoded and resized image as `RgbImage` or an error.
     fn decode_png_data(
         collected_png: &[u8],
         angle: CameraAngle,
@@ -194,7 +260,18 @@ impl CameraController {
 
         Ok(resized_image)
     }
-
+    
+    /// Exports a specific region of the map as a PNG and uploads it to the server associated with the given objective ID.
+    ///
+    /// # Arguments
+    ///
+    /// * `objective_id` - The identifier of the objective to associate the exported PNG with.
+    /// * `offset` - The offset in the map to start the export.
+    /// * `size` - The dimensions of the region to export as a PNG.
+    ///
+    /// # Returns
+    ///
+    /// A result indicating the success or failure of the operation.
     #[allow(clippy::cast_sign_loss)]
     pub(crate) async fn export_and_upload_objective_png(
         &self,
@@ -210,19 +287,35 @@ impl CameraController {
             .await?;
         Ok(())
     }
-
+    
+    /// Uploads the daily map snapshot as a PNG to the server.
+    ///
+    /// # Returns
+    ///
+    /// A result indicating the success or failure of the operation.
     #[allow(clippy::cast_sign_loss)]
     pub(crate) async fn upload_daily_map_png(&self) -> Result<(), Box<dyn std::error::Error>> {
         DailyMapRequest::new(SNAPSHOT_FULL_PATH)?.send_request(&self.request_client).await?;
         Ok(())
     }
 
+    /// Creates and saves a thumbnail snapshot of the map.
+    ///
+    /// # Returns
+    ///
+    /// A result indicating the success or failure of the operation.
     pub(crate) async fn create_thumb_snapshot(&self) -> Result<(), Box<dyn std::error::Error>> {
         self.thumbnail_map_image
             .read()
             .await
             .create_snapshot(Path::new(&self.base_path).join(SNAPSHOT_THUMBNAIL_PATH))
     }
+
+    /// Creates and saves a full-size snapshot of the map.
+    ///
+    /// # Returns
+    ///
+    /// A result indicating the success or failure of the operation.
     pub(crate) async fn create_full_snapshot(&self) -> Result<(), Box<dyn std::error::Error>> {
         println!("[INFO] Exporting Full-View PNG...");
         let start_time = chrono::Utc::now();
@@ -237,6 +330,16 @@ impl CameraController {
         Ok(())
     }
 
+    /// Exports a part of the thumbnail map as a PNG.
+    ///
+    /// # Arguments
+    ///
+    /// * `offset` - The offset to start exporting from.
+    /// * `angle` - The camera angle, which influences the resolution and dimensions.
+    ///
+    /// # Returns
+    ///
+    /// A result containing the extracted PNG image data or an error.
     pub(crate) async fn export_thumbnail_png(
         &self,
         offset: Vec2D<u32>,
@@ -249,12 +352,23 @@ impl CameraController {
             Vec2D::new(size, size),
         )
     }
+
+    /// Exports the entire map thumbnail as a PNG.
+    ///
+    /// # Returns
+    ///
+    /// A result containing the extracted PNG image data or an error.
     pub(crate) async fn export_full_thumbnail_png(
         &self,
     ) -> Result<EncodedImageExtract, Box<dyn std::error::Error>> {
         self.thumbnail_map_image.read().await.export_as_png()
     }
 
+    /// Compares the thumbnail map with its saved snapshot.
+    ///
+    /// # Returns
+    ///
+    /// A result containing the difference as an encoded PNG image or an error.
     pub(crate) async fn diff_thumb_snapshot(
         &self,
     ) -> Result<EncodedImageExtract, Box<dyn std::error::Error>> {
@@ -264,7 +378,21 @@ impl CameraController {
             .diff_with_snapshot(Path::new(&self.base_path).join(SNAPSHOT_THUMBNAIL_PATH))
             .await
     }
-
+    
+    /// Executes a series of image acquisitions, processes them, and updates the associated map buffers.
+    ///
+    /// # Arguments
+    ///
+    /// * `f_cont_lock` - Lock-protected flight computer controlling the acquisition cycle.
+    /// * `console_messenger` - Used for sending notifications during processing.
+    /// * `(end_time, last_img_kill)` - The end time for the cycle and a notify object to terminate the process prematurely.
+    /// * `image_max_dt` - Maximum allowed interval between consecutive images.
+    /// * `lens` - The camera angle and field of view.
+    /// * `start_index` - The starting index for tracking image acquisitions.
+    ///
+    /// # Returns
+    ///
+    /// A vector of completed (start, end) time ranges when images were successfully taken.
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
     pub async fn execute_acquisition_cycle(
         self: Arc<Self>,

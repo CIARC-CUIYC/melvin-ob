@@ -9,18 +9,41 @@ use crate::{
         console_endpoint::{ConsoleEndpoint, ConsoleEvent},
         melvin_messages,
     },
-    flight_control::task::task_controller::TaskController,
+    flight_control::task::TaskController,
 };
 
 use std::sync::Arc;
 
-pub(crate) struct ConsoleMessenger {
+/// Handles communication with the console.
+///
+/// `ConsoleMessenger` coordinates various operations involving the camera
+/// controller, task controller, and console endpoint. It provides methods
+/// to process upstream events and send downstream responses or data while
+/// ensuring proper synchronization through asynchronous tasks.
+///
+/// # Fiedls
+/// - `camera_controller`: A shared reference to the camera controller, used for image-related operations.
+/// - `task_controller`: A shared reference to the task controller, used for managing tasks.
+/// - `endpoint`: A shared reference to the console endpoint, used for sending and receiving messages.
+pub struct ConsoleMessenger {
+    /// A shared reference to the camera controller, used for image-related operations.
     camera_controller: Arc<CameraController>,
+    /// A shared reference to the task controller, used for managing tasks.
     task_controller: Arc<TaskController>,
+    /// A shared reference to the console endpoint, used for sending and receiving messages.
     endpoint: Arc<ConsoleEndpoint>,
 }
 
 impl ConsoleMessenger {
+    /// Starts the `ConsoleMessenger`, initializing the console endpoint.
+    /// Listens for incoming console events asynchronously.
+    ///
+    /// # Arguments
+    /// - `camera_controller`: Shared reference to `CameraController`.
+    /// - `task_controller`: Shared reference to `TaskController`.
+    ///
+    /// # Returns
+    /// An instance of `ConsoleMessenger`.
     pub(crate) fn start(
         camera_controller: Arc<CameraController>,
         task_controller: Arc<TaskController>,
@@ -127,6 +150,13 @@ impl ConsoleMessenger {
         }
     }
 
+    /// Sends a thumbnail image to the operator console.
+    ///
+    /// If the console is not connected, this method does nothing.
+    ///
+    /// # Arguments
+    /// - `offset`: The offset coordinates for the thumbnail image.
+    /// - `angle`: The camera angle for the thumbnail.
     pub(crate) fn send_thumbnail(&self, offset: Vec2D<u32>, angle: CameraAngle) {
         if !self.endpoint.is_console_connected() {
             return;
@@ -147,6 +177,9 @@ impl ConsoleMessenger {
         });
     }
 
+    /// Sends the task list to the operator console.
+    ///
+    /// If the console is not connected, this method does nothing.
     pub(crate) async fn send_tasklist(&self) {
         if !self.endpoint.is_console_connected() {
             return;

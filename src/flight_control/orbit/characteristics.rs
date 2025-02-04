@@ -6,16 +6,36 @@ use fixed::types::I32F32;
 use num::ToPrimitive;
 use tokio::sync::RwLock;
 
+/// Represents the characteristics of an orbital path including imaging frequency,
+/// orbital period, and the entry position. This struct provides utilities to initialize
+/// and manage orbital parameters over time.
 #[derive(Debug, Copy, Clone)]
 pub struct OrbitCharacteristics {
+    /// The maximum time interval between image captures.
     img_dt: I32F32,
+    /// The timestamp at which the orbital segment ends.
     orbit_s_end: chrono::DateTime<chrono::Utc>,
+    /// The full period of the orbit in terms of iterations.
     orbit_full_period: usize,
+    /// The entry position of the orbit indexed in time and position.
     i_entry: IndexedOrbitPosition,
 }
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 impl OrbitCharacteristics {
+    /// Creates a new `OrbitCharacteristics` instance using data from a provided closed orbit
+    /// and a flight computer.
+    ///
+    /// # Arguments
+    /// - `c_orbit`: A reference to the `ClosedOrbit` to derive orbital parameters.
+    /// - `f_cont`: A reference to a thread-safe, asynchronous flight computer instance.
+    ///
+    /// # Returns
+    /// A new `OrbitCharacteristics` instance.
+    ///
+    /// # Panics
+    /// This function will panic if the `ClosedOrbit`'s period cannot be converted to an
+    /// `usize` or `i64`.
     pub async fn new(c_orbit: &ClosedOrbit, f_cont: &RwLock<FlightComputer>) -> Self {
         let img_dt = c_orbit.max_image_dt();
         let orbit_s_end = c_orbit.base_orbit_ref().start_timestamp()
@@ -31,10 +51,22 @@ impl OrbitCharacteristics {
         }
     }
 
+    /// Retrieves the maximum image capture time interval.
     pub fn img_dt(&self) -> I32F32 { self.img_dt }
+
+    /// Retrieves the end timestamp of the orbital segment.
     pub fn orbit_s_end(&self) -> chrono::DateTime<chrono::Utc> { self.orbit_s_end }
+
+    /// Retrieves the full orbital period.
     pub fn orbit_full_period(&self) -> usize { self.orbit_full_period }
+
+    /// Retrieves the indexed entry position of the orbit.
     pub fn i_entry(&self) -> IndexedOrbitPosition { self.i_entry }
+
+    /// Marks the end of an orbital task schedule and updates the entry position.
+    ///
+    /// # Arguments
+    /// - `now`: The new `IndexedOrbitPosition` representing the current state.
     pub fn finish(&mut self, now: IndexedOrbitPosition) {
         println!(
             "[INFO] Finished Task Schedule after: {}",

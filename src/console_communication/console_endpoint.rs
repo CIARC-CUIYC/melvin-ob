@@ -13,6 +13,12 @@ use tokio::{
     sync::{broadcast, oneshot},
 };
 
+/// Represents the different console endpoint event types.
+///
+/// # Variants
+/// - `Connected`: Indicates a new console connection.
+/// - `Disconnected`: Indicates when a console connection is closed.
+/// - `Message`: Represents an upstream message received from the console.
 #[derive(Debug, Clone)]
 pub enum ConsoleEvent {
     Connected,
@@ -20,13 +26,31 @@ pub enum ConsoleEvent {
     Message(melvin_messages::UpstreamContent),
 }
 
+/// The `ConsoleEndpoint` handles communication with MELVINs operator console.
+///
+/// # Fields
+/// - `downstream_sender`: Used to send downstream messages to connected consoles.
+/// - `upstream_event_sender`: Used to broadcast upstream events from consoles.
+/// - `close_oneshot_sender`: A channel sender to trigger endpoint shutdown.
 pub(crate) struct ConsoleEndpoint {
+    /// Used to send downstream messages to connected consoles.
     downstream_sender: broadcast::Sender<Option<Arc<Vec<u8>>>>,
+    /// Used to broadcast upstream events from consoles.
     upstream_event_sender: broadcast::Sender<ConsoleEvent>,
+    /// A channel sender to trigger endpoint shutdown.
     close_oneshot_sender: Option<oneshot::Sender<()>>,
 }
 
 impl ConsoleEndpoint {
+    /// Handles incoming data from the connected console. It listens for messages
+    /// and broadcasts them as upstream events.
+    ///
+    /// # Parameters
+    /// - `socket`: The reading end of the connection.
+    /// - `upstream_event_sender`: The sender used to broadcast received upstream events.
+    ///
+    /// # Errors
+    /// Returns I/O errors if issues arise when reading data from the socket.
     async fn handle_connection_rx(
         socket: &mut ReadHalf<'_>,
         upstream_event_sender: &broadcast::Sender<ConsoleEvent>,
@@ -47,6 +71,15 @@ impl ConsoleEndpoint {
         }
     }
 
+    /// Handles sending downstream messages to the connected console. It listens to a receiver
+    /// for messages and sends them to the console.
+    ///
+    /// # Parameters
+    /// - `socket`: The write end of the connection.
+    /// - `downstream_receiver`: A receiver to get downstream messages.
+    ///
+    /// # Errors
+    /// Returns I/O errors if issues arise when sending data to the socket.
     #[allow(clippy::cast_possible_truncation)]
     async fn handle_connection_tx(
         socket: &mut WriteHalf<'_>,
@@ -60,6 +93,13 @@ impl ConsoleEndpoint {
         Ok(())
     }
 
+    /// Starts the `ConsoleEndpoint`, binding to a TCP listener and handling new connections.
+    ///
+    /// # Returns
+    /// An instance of `ConsoleEndpoint`.
+    ///
+    /// # Notes
+    /// This method spawns an asynchronous task to listen for and handle incoming connections.
     pub(crate) fn start() -> Self {
         let downstream_sender = broadcast::Sender::new(5);
         let upstream_event_sender = broadcast::Sender::new(5);
@@ -70,7 +110,7 @@ impl ConsoleEndpoint {
             close_oneshot_sender: Some(close_oneshot_sender),
         };
         tokio::spawn(async move {
-            println!("[INFO] Started Console Endpoint",);
+            println!("[INFO] Started Console Endpoint");
             let listener = TcpListener::bind("0.0.0.0:1337").await.unwrap();
             loop {
                 let accept = tokio::select! {
@@ -84,7 +124,7 @@ impl ConsoleEndpoint {
                     let mut downstream_receiver = downstream_sender.subscribe();
 
                     tokio::spawn(async move {
-                        println!("[INFO] New connection from console",);
+                        println!("[INFO] New connection from console");
                         let (mut rx_socket, mut tx_socket) = socket.split();
 
                         let result = tokio::select! {
@@ -116,21 +156,36 @@ impl ConsoleEndpoint {
         inst
     }
 
+    /// Sends a downstream message to the operator console.
+    ///
+    /// # Parameters
+    /// - `msg`: A `DownstreamContent` message to send.
     pub(crate) fn send_downstream(&self, msg: melvin_messages::DownstreamContent) {
         let _ = self.downstream_sender.send(Some(Arc::new(
             melvin_messages::Downstream { content: Some(msg) }.encode_to_vec(),
         )));
     }
+
+    /// Checks whether any console is currently connected to the endpoint.
+    ///
+    /// # Returns
+    /// `true` if at least one console is connected; otherwise, `false`.
     pub(crate) fn is_console_connected(&self) -> bool {
         self.downstream_sender.receiver_count() > 0
     }
 
+    /// Subscribes to upstream events from the connected console.
+    ///
+    /// # Returns
+    /// A broadcast receiver to listen for upstream events.
     pub(crate) fn subscribe_upstream_events(&self) -> broadcast::Receiver<ConsoleEvent> {
         self.upstream_event_sender.subscribe()
     }
 }
 
 impl Drop for ConsoleEndpoint {
+    /// Handles graceful shutdown of the `ConsoleEndpoint`. Signals the close channel
+    /// and notifies all downstream subscribers of disconnection.
     fn drop(&mut self) {
         self.close_oneshot_sender.take().unwrap().send(()).unwrap();
         self.downstream_sender.send(None).unwrap();
