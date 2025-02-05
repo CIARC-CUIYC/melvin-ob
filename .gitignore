@@ -25,6 +25,7 @@ Cargo.lock
 #Custom
 .idea
 *.bin
+*.DS_Store
 legacy/
 world.png
 pos.csv
