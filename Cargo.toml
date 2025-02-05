@@ -1,5 +1,5 @@
 [package]
-name = "MELVIN-OB"
+name = "melvin-ob"
 authors = ["Felix Renzikowski <felix.renzi@outlook.de", "Nicolai Kallis <nicolai.kallis@gmx.de>"]
 version = "0.5.1"
 edition = "2021"
