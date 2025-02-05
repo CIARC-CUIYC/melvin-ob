@@ -78,7 +78,7 @@ impl Supervisor {
                 // Check flight state and handle safe mode (placeholder for now)
                 if is_safe_trans {
                     println!("[WARN] Unplanned Safe Mode Transition Detected! Notifying!");
-                    //tokio::spawn(self.handle_safe_mode());
+                    self.safe_mode_notify.notify_one();
                 }
             }
 
@@ -88,11 +88,5 @@ impl Supervisor {
 
             tokio::time::sleep(Self::UPDATE_INTERVAL).await;
         }
-    }
-
-    /// Placeholder for handling safe mode events
-    async fn handle_safe_mode(&self) {
-        println!("[WARN] Entering Safe Mode. Supervisor is reacting...");
-        // Implement safe mode handling logic here
     }
 }
