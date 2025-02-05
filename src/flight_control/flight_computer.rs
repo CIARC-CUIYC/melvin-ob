@@ -84,6 +84,10 @@ impl FlightComputer {
     const DEF_COND_TO: u16 = 3000;
     /// Constant timeout for the `wait_for_condition`-method
     const DEF_COND_PI: u16 = 500;
+    /// Constant transition to SAFE sleep time for all states
+    const TO_SAFE_SLEEP: Duration = Duration::from_secs(60);
+    /// Minimum battery used in decision-making for after safe transition
+    const AFTER_SAFE_MIN_BATT: I32F32 = I32F32::lit("50");
     /// Legal Target States for State Change
     const LEGAL_TARGET_STATES: [FlightState; 3] = [
         FlightState::Acquisition,
@@ -136,7 +140,7 @@ impl FlightComputer {
     }
 
     /// Precomputes possible turns of MELVIN, splitting paths into clockwise and counterclockwise
-    /// directions based on the initial velocity. These precomputed paths are useful for calculating 
+    /// directions based on the initial velocity. These precomputed paths are useful for calculating
     /// optimal burns.
     ///
     /// # Arguments
@@ -287,6 +291,9 @@ impl FlightComputer {
     pub async fn reset(&self) {
         ResetRequest {}.send_request(&self.request_client).await.expect("ERROR: Failed to reset");
     }
+    
+    /// Indicates that a `Supervisor` detected a safe mode event
+    pub fn safe_detected(&mut self) { self.target_state = Some(FlightState::Safe); }
 
     /// Waits for a given amount of time with debug prints, this is a static method.
     ///
@@ -337,6 +344,26 @@ impl FlightComputer {
             tokio::time::sleep(Duration::from_millis(u64::from(poll_interval))).await;
         }
         println!("[LOG] Condition not met after {timeout_millis} ms");
+    }
+    
+    pub async fn escape_safe(locked_self: Arc<RwLock<Self>>) {
+        let target_state = {
+            let init_batt = locked_self.read().await.current_battery();
+            if init_batt <= Self::AFTER_SAFE_MIN_BATT {
+                FlightState::Charge
+            } else {
+                FlightState::Acquisition
+            }
+        };
+        println!("[INFO] Safe Mode Runtime initiated. Transitioning back to {target_state} asap.");
+        Self::wait_for_duration(Self::TO_SAFE_SLEEP).await;
+        let cond = (
+            // TODO: later this condition must be == FlightState::Safe
+            |cont: &FlightComputer| cont.state() != FlightState::Transition,
+            format!("State is not {}", FlightState::Transition),
+        );
+        Self::wait_for_condition(&locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
+        Self::set_state_wait(locked_self, target_state).await;
     }
 
     /// Transitions the satellite to a new operational state and waits for transition completion.
@@ -410,7 +437,7 @@ impl FlightComputer {
     ///
     /// # Behavior
     /// - If the current angle matches the new angle, logs the status and exits.
-    /// - Checks if the current state permits changing the camera angle. 
+    /// - Checks if the current state permits changing the camera angle.
     ///   If not, it panics with a fatal error.
     /// - Sets the new angle and waits until the system confirms it has been applied.
     pub async fn set_angle_wait(locked_self: Arc<RwLock<Self>>, new_angle: CameraAngle) {
@@ -580,7 +607,7 @@ impl FlightComputer {
     /// - It factors in the power consumption rates associated with flight states and maneuvers.
     ///
     /// # Behavior
-    /// - Adjusts the maneuver acquisition time based on task controller detumble minimums and 
+    /// - Adjusts the maneuver acquisition time based on task controller detumble minimums and
     ///   transition delays.
     /// - Multiples the derived travel time with the power rates of the acquisition phase for
     ///   charge estimation.
@@ -594,11 +621,11 @@ impl FlightComputer {
             let acq_charge_dt = i32::try_from(
                 TRANSITION_DELAY_LOOKUP[&(FlightState::Acquisition, FlightState::Charge)].as_secs(),
             )
-                .unwrap_or(i32::MAX);
+            .unwrap_or(i32::MAX);
             let charge_acq_dt = i32::try_from(
                 TRANSITION_DELAY_LOOKUP[&(FlightState::Acquisition, FlightState::Charge)].as_secs(),
             )
-                .unwrap_or(i32::MAX);
+            .unwrap_or(i32::MAX);
             let poss_charge_dt = i32::try_from(trunc_detumble_time).unwrap_or(i32::MIN)
                 - acq_charge_dt
                 - charge_acq_dt;

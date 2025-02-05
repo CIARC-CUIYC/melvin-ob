@@ -14,7 +14,7 @@ pub struct Supervisor {
 impl Supervisor {
     /// Constant update interval for the `run()` method
     const UPDATE_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
-    
+
     /// Creates a new instance of `Supervisor`
     pub fn new(f_cont_lock: Arc<RwLock<FlightComputer>>) -> Supervisor {
         Self {
@@ -23,11 +23,11 @@ impl Supervisor {
             reset_pos_monitor: Arc::new(Notify::new()),
         }
     }
-    
+
     pub fn safe_mode_notify(&self) -> Arc<Notify> {
         Arc::clone(&self.safe_mode_notify)
     }
-    
+
     pub fn reset_pos_monitor(&self) -> Arc<Notify> {
         Arc::clone(&self.reset_pos_monitor)
     }
@@ -35,7 +35,7 @@ impl Supervisor {
     pub fn notifiers(&self) -> (Arc<Notify>, Arc<Notify>) {
         (self.reset_pos_monitor(), self.safe_mode_notify())
     }
-    
+
     /// Starts the supervisor loop to periodically call `update_observation`
     /// and monitor position & state deviations.
     #[allow(clippy::cast_precision_loss)]
@@ -79,6 +79,7 @@ impl Supervisor {
                 if is_safe_trans {
                     println!("[WARN] Unplanned Safe Mode Transition Detected! Notifying!");
                     self.safe_mode_notify.notify_one();
+                    self.f_cont_lock.write().await.safe_detected();
                 }
             }
 

@@ -93,7 +93,7 @@ async fn main() {
     let mut global_mode = GlobalMode::MappingMode;
     let safe_event_notify = supervisor.safe_mode_notify();
 
-    loop {
+    'outer: loop {
         let mut phases = 0;
         println!("[INFO] Starting new phase in {global_mode}!");
         let cancel_task = CancellationToken::new();
@@ -113,6 +113,8 @@ async fn main() {
             _ = safe_event_notify.notified() => {
                 cancel_task.cancel();
                 // TODO: handle safe event properly
+                FlightComputer::escape_safe(k.f_cont()).await;
+                continue 'outer;
             }
         );
 
@@ -199,8 +201,7 @@ async fn main() {
                     TaskController::calculate_orbit_correction_burn(vel, dev, detumble_dt);
                     global_mode = GlobalMode::ZonedObjectiveMode(objective);
                 }
-                
-                
+
                 BaseTask::SwitchState(switch) => match switch.target_state() {
                     FlightState::Acquisition => {
                         FlightComputer::set_state_wait(k.f_cont(), FlightState::Acquisition).await;
