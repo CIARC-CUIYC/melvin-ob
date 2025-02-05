@@ -87,7 +87,7 @@ async fn main() {
         true,
         [4750, 5300, 5350, 5900],
         "narrow".to_string(),
-        I32F32::lit("1.0"),
+        1.0,
         "Test Objective".to_string(),
         "test_objective.png".to_string(),
         false,
