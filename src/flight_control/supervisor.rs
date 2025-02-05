@@ -12,8 +12,30 @@ pub struct Supervisor {
 }
 
 impl Supervisor {
+    /// Constant update interval for the `run()` method
     const UPDATE_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+    
+    /// Creates a new instance of `Supervisor`
+    pub fn new(f_cont_lock: Arc<RwLock<FlightComputer>>) -> Supervisor {
+        Self {
+            f_cont_lock,
+            safe_mode_notify: Arc::new(Notify::new()),
+            reset_pos_monitor: Arc::new(Notify::new()),
+        }
+    }
+    
+    pub fn safe_mode_notify(&self) -> Arc<Notify> {
+        Arc::clone(&self.safe_mode_notify)
+    }
+    
+    pub fn reset_pos_monitor(&self) -> Arc<Notify> {
+        Arc::clone(&self.reset_pos_monitor)
+    }
 
+    pub fn notifiers(&self) -> (Arc<Notify>, Arc<Notify>) {
+        (self.reset_pos_monitor(), self.safe_mode_notify())
+    }
+    
     /// Starts the supervisor loop to periodically call `update_observation`
     /// and monitor position & state deviations.
     #[allow(clippy::cast_precision_loss)]
@@ -45,7 +67,7 @@ impl Supervisor {
                 let expected_pos = previous_pos + last_vel * I32F32::from_num(dt_secs);
 
                 let expected_pos_wrapped = expected_pos.wrap_around_map();
-                // TODO: this diff value shoul also consider wrapping (if actual pos wrapped, but expected didnt)
+                // TODO: this diff value should also consider wrapping (if actual pos wrapped, but expected didnt)
                 let diff = current_pos - expected_pos_wrapped;
 
                 println!(

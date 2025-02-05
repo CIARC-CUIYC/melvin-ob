@@ -6,9 +6,10 @@ mod flight_control;
 mod http_handler;
 mod keychain;
 
+use crate::flight_control::supervisor::Supervisor;
 use crate::flight_control::{
     camera_state::CameraAngle,
-    common::{pinned_dt::PinnedTimeDelay, vec2d::Vec2D},
+    common::{pinned_dt::PinnedTimeDelay},
     flight_computer::FlightComputer,
     flight_state::FlightState,
     orbit::{
@@ -60,9 +61,9 @@ const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 async fn main() {
     let base_url_var = env::var("DRS_BASE_URL");
     let base_url = base_url_var.as_ref().map_or("http://localhost:33000", |v| v.as_str());
-    let (k, mut orbit_char) = {
+    let (k, mut orbit_char, supervisor) = {
         let res = init(base_url).await;
-        (Arc::new(res.0), res.1)
+        (Arc::new(res.0), res.1, res.2)
     };
 
     let sched = k.t_cont().sched_arc();
@@ -199,39 +200,13 @@ async fn main() {
 }
 
 #[allow(clippy::cast_precision_loss)]
-async fn init(url: &str) -> (KeychainWithOrbit, OrbitCharacteristics) {
+async fn init(url: &str) -> (KeychainWithOrbit, OrbitCharacteristics, Arc<Supervisor>) {
     let init_k = Keychain::new(url).await;
     let init_k_f_cont_clone = init_k.f_cont();
+    let supervisor = Arc::new(Supervisor::new(init_k_f_cont_clone));
+    let supervisor_clone = Arc::clone(&supervisor);
     tokio::spawn(async move {
-        let mut first = true; // DEBUG ARTIFACT
-        let mut last_pos: Vec2D<I32F32> = Vec2D::new(I32F32::lit("-100.0"), I32F32::lit("-100.0"));
-        let mut last_timestamp = chrono::Utc::now();
-        loop {
-            {
-                let mut f_cont = init_k_f_cont_clone.write().await;
-                (*f_cont).update_observation().await;
-                if first && f_cont.current_vel().eq(&STATIC_ORBIT_VEL.into()) {
-                    last_pos = f_cont.current_pos();
-                    drop(f_cont);
-                    last_timestamp = chrono::Utc::now();
-                    first = false;
-                } else if !first {
-                    let current_pos = f_cont.current_pos();
-
-                    drop(f_cont);
-                    let dt = chrono::Utc::now() - last_timestamp;
-                    last_timestamp = chrono::Utc::now();
-                    let mut expected_pos = last_pos
-                        + <(I32F32, I32F32) as Into<Vec2D<I32F32>>>::into(STATIC_ORBIT_VEL)
-                            * I32F32::from_num(dt.num_milliseconds() as f32 / 1000.0);
-                    expected_pos = expected_pos.wrap_around_map();
-                    let diff = current_pos - expected_pos;
-                    // TODO: do something with those informations
-                    last_pos = expected_pos;
-                }
-            };
-            tokio::time::sleep(std::time::Duration::from_millis(400)).await;
-        }
+        supervisor_clone.run().await;
     });
 
     let c_orbit: ClosedOrbit = {
@@ -248,9 +223,11 @@ async fn init(url: &str) -> (KeychainWithOrbit, OrbitCharacteristics) {
             }
         })
     };
+    
+    supervisor.reset_pos_monitor().notify_one();
 
     let orbit_char = OrbitCharacteristics::new(&c_orbit, &init_k.f_cont()).await;
-    (KeychainWithOrbit::new(init_k, c_orbit), orbit_char)
+    (KeychainWithOrbit::new(init_k, c_orbit), orbit_char, supervisor)
 }
 
 async fn schedule_undisturbed_orbit(
