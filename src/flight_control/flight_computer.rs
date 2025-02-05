@@ -291,7 +291,7 @@ impl FlightComputer {
     pub async fn reset(&self) {
         ResetRequest {}.send_request(&self.request_client).await.expect("ERROR: Failed to reset");
     }
-    
+
     /// Indicates that a `Supervisor` detected a safe mode event
     pub fn safe_detected(&mut self) { self.target_state = Some(FlightState::Safe); }
 
@@ -345,7 +345,7 @@ impl FlightComputer {
         }
         println!("[LOG] Condition not met after {timeout_millis} ms");
     }
-    
+
     pub async fn escape_safe(locked_self: Arc<RwLock<Self>>) {
         let target_state = {
             let init_batt = locked_self.read().await.current_battery();
@@ -414,7 +414,6 @@ impl FlightComputer {
             panic!("[FATAL] Velocity cant be changed in state {current_state}");
             // return; // TODO: here an error should be logged or returned
         }
-        // TODO: there is a http error in this method
         let vel_change_dt = Duration::from_secs_f32(
             (new_vel.to(&current_vel).abs() / Self::ACC_CONST).to_f32().unwrap(),
         );
@@ -508,7 +507,6 @@ impl FlightComputer {
                 }
                 Err(_) => {
                     println!("[ERROR] Unnoticed HTTP Error in updateObservation()");
-                    /* TODO: log error here */
                 }
             }
         }
@@ -533,7 +531,6 @@ impl FlightComputer {
                 }
                 Err(_) => {
                     println!("[ERROR] Unnoticed HTTP Error in set_state()");
-                    /* TODO: log error here */
                 }
             }
         }
@@ -563,7 +560,6 @@ impl FlightComputer {
                 }
                 Err(_) => {
                     println!("[ERROR] Unnoticed HTTP Error in set_vel()");
-                    /* TODO: log error here */
                 }
             }
         }

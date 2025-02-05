@@ -22,7 +22,6 @@ use crate::keychain::{Keychain, KeychainWithOrbit};
 use crate::MappingModeEnd::{Join, Timestamp};
 use chrono::{DateTime, TimeDelta};
 use fixed::types::I32F32;
-use futures::{FutureExt, TryFutureExt};
 use std::future::Future;
 use std::pin::Pin;
 use std::{
@@ -30,12 +29,19 @@ use std::{
     {env, sync::Arc},
 };
 use strum_macros::Display;
-use tokio::{sync::Notify, task::JoinHandle};
+use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 enum MappingModeEnd {
     Timestamp(DateTime<chrono::Utc>),
     Join(JoinHandle<()>),
+}
+
+#[derive(Debug)]
+enum PeriodicImagingEndSignal {
+    KillNow,
+    KillLastImage,
 }
 
 #[derive(Display)]
@@ -110,9 +116,8 @@ async fn main() {
             () = fut => {
                 k.con().send_tasklist().await;
             },
-            _ = safe_event_notify.notified() => {
+            () = safe_event_notify.notified() => {
                 cancel_task.cancel();
-                // TODO: handle safe event properly
                 FlightComputer::escape_safe(k.f_cont()).await;
                 continue 'outer;
             }
@@ -121,7 +126,7 @@ async fn main() {
         while let Some(task) = { (*sched).write().await.pop_front() } {
             phases += 1;
             let task_type = task.task_type();
-            let mut due_time = task.dt().time_left();
+            let due_time = task.dt().time_left();
             println!(
                 "[INFO] Iteration {phases}: {task_type} in  {}s!",
                 due_time.num_seconds()
@@ -165,6 +170,9 @@ async fn main() {
                 () = task_fut => {},
                 () = safe_event_notify.notified() => {
                         cancel_task.cancel();
+                        FlightComputer::escape_safe(k.f_cont()).await;
+                        // TODO: here it should be checked if we were in objective retrieval
+                        continue 'outer;
                 }
             }
 
@@ -361,13 +369,13 @@ async fn execute_mapping(
             let ((), res) = tokio::join!(
                 async move {
                     tokio::select! {
-                        _ = cancel_token.cancelled() => {
-                            // TODO: here notify to kill instantly
-                            acq_phase.1.notify_one();
+                        () = cancel_token.cancelled() => {
+                            let sig = PeriodicImagingEndSignal::KillNow;
+                            acq_phase.1.send(sig).expect("[FATAL] Receiver hung up!");
                         },
                         _ = join_handle => {
-                            // TODO: here notify last image
-                            acq_phase.1.notify_one();
+                            let sig = PeriodicImagingEndSignal::KillLastImage;
+                            acq_phase.1.send(sig).expect("[FATAL] Receiver hung up!");
                         }
                     }
                 },
@@ -376,9 +384,9 @@ async fn execute_mapping(
             res
         } else {
             tokio::select! {
-                _ = cancel_token.cancelled() => {
-                    // TODO: here notify to kill instantly
-                    acq_phase.1.notify_one();
+                () = cancel_token.cancelled() => {
+                    let sig = PeriodicImagingEndSignal::KillNow;
+                    acq_phase.1.send(sig).expect("[FATAL] Receiver hung up!");
                     Vec::new()
                 }
                 res = acq_phase.0 => {
@@ -411,10 +419,12 @@ async fn start_periodic_imaging(
     img_dt: I32F32,
     angle: CameraAngle,
     i_shift: IndexedOrbitPosition,
-) -> (JoinHandle<Vec<(isize, isize)>>, Arc<Notify>) {
+) -> (
+    JoinHandle<Vec<(isize, isize)>>,
+    oneshot::Sender<PeriodicImagingEndSignal>,
+) {
     let f_cont_lock = Arc::clone(&k_clone.f_cont());
-    let last_image_notify = Arc::new(Notify::new());
-    let last_image_notify_cloned = Arc::clone(&last_image_notify);
+    let (tx, rx) = oneshot::channel();
 
     let i_start = i_shift.new_from_pos(f_cont_lock.read().await.current_pos());
 
@@ -424,12 +434,12 @@ async fn start_periodic_imaging(
             .execute_acquisition_cycle(
                 f_cont_lock,
                 k_clone.con(),
-                (end_time, last_image_notify_cloned),
+                (end_time, rx),
                 img_dt,
                 angle,
                 i_start.index(),
             )
             .await
     });
-    (handle, last_image_notify)
+    (handle, tx)
 }

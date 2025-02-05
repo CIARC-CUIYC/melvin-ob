@@ -11,7 +11,7 @@ use crate::http_handler::{
         shoot_image_get::ShootImageRequest,
     },
 };
-use crate::DT_0_STD;
+use crate::{PeriodicImagingEndSignal, DT_0_STD};
 use bitvec::boxed::BitBox;
 use chrono::TimeDelta;
 use fixed::types::I32F32;
@@ -23,7 +23,7 @@ use std::{
     path::Path,
     {io::Cursor, sync::Arc},
 };
-use tokio::sync::{Mutex, Notify, RwLock};
+use tokio::sync::{oneshot, Mutex, Notify, RwLock};
 
 use super::imaging::map_image::{
     EncodedImageExtract, FullsizeMapImage, MapImage, ThumbnailMapImage,
@@ -106,8 +106,8 @@ impl CameraController {
                     offset.x() as i32 + additional_offset_x,
                     offset.y() as i32 + additional_offset_y,
                 )
-                    .wrap_around_map()
-                    .to_unsigned();
+                .wrap_around_map()
+                .to_unsigned();
                 let map_image_view = base.vec_view(
                     current_offset,
                     Vec2D::new(decoded_image.width(), decoded_image.height()),
@@ -164,7 +164,7 @@ impl CameraController {
             position.x().round().to_num::<i32>() - i32::from(angle_const),
             position.y().round().to_num::<i32>() - i32::from(angle_const),
         )
-            .wrap_around_map();
+        .wrap_around_map();
 
         let tot_offset_u32 = {
             let mut fullsize_map_image = self.fullsize_map_image.write().await;
@@ -197,8 +197,8 @@ impl CameraController {
             offset.x() as i32 - ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR as i32 * 2,
             offset.y() as i32 - ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR as i32 * 2,
         )
-            .wrap_around_map()
-            .to_unsigned();
+        .wrap_around_map()
+        .to_unsigned();
         let size_scaled = size * 2 + ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR * 4;
         let fullsize_map_image = self.fullsize_map_image.read().await;
         let map_image_view =
@@ -260,7 +260,7 @@ impl CameraController {
 
         Ok(resized_image)
     }
-    
+
     /// Exports a specific region of the map as a PNG and uploads it to the server associated with the given objective ID.
     ///
     /// # Arguments
@@ -287,7 +287,7 @@ impl CameraController {
             .await?;
         Ok(())
     }
-    
+
     /// Uploads the daily map snapshot as a PNG to the server.
     ///
     /// # Returns
@@ -378,7 +378,7 @@ impl CameraController {
             .diff_with_snapshot(Path::new(&self.base_path).join(SNAPSHOT_THUMBNAIL_PATH))
             .await
     }
-    
+
     /// Executes a series of image acquisitions, processes them, and updates the associated map buffers.
     ///
     /// # Arguments
@@ -398,11 +398,15 @@ impl CameraController {
         self: Arc<Self>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
         console_messenger: Arc<ConsoleMessenger>,
-        (end_time, last_img_kill): (chrono::DateTime<chrono::Utc>, Arc<Notify>),
+        (end_time, kill): (
+            chrono::DateTime<chrono::Utc>,
+            oneshot::Receiver<PeriodicImagingEndSignal>,
+        ),
         image_max_dt: I32F32,
         lens: CameraAngle,
         start_index: usize,
     ) -> Vec<(isize, isize)> {
+        let mut kill_box = Box::pin(kill);
         let mut last_image_flag = false;
         let st = start_index as isize;
         let pic_count = 0;
@@ -476,8 +480,11 @@ impl CameraController {
             let sleep_time = next_img_due - chrono::Utc::now();
             tokio::select! {
                 () = tokio::time::sleep(sleep_time.to_std().unwrap_or(DT_0_STD)) => {},
-                () = last_img_kill.notified() => {
-                    last_image_flag = true;
+                msg = &mut kill_box => {
+                    match msg.ok().unwrap(){
+                        PeriodicImagingEndSignal::KillLastImage => last_image_flag = true,
+                        PeriodicImagingEndSignal::KillNow => return done_ranges
+                    }
                 }
             }
         }
