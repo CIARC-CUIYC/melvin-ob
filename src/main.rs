@@ -9,7 +9,7 @@ mod keychain;
 use crate::flight_control::supervisor::Supervisor;
 use crate::flight_control::{
     camera_state::CameraAngle,
-    common::{pinned_dt::PinnedTimeDelay},
+    common::pinned_dt::PinnedTimeDelay,
     flight_computer::FlightComputer,
     flight_state::FlightState,
     orbit::{
@@ -22,12 +22,16 @@ use crate::keychain::{Keychain, KeychainWithOrbit};
 use crate::MappingModeEnd::{Join, Timestamp};
 use chrono::{DateTime, TimeDelta};
 use fixed::types::I32F32;
+use futures::{FutureExt, TryFutureExt};
+use std::future::Future;
+use std::pin::Pin;
 use std::{
     collections::VecDeque,
     {env, sync::Arc},
 };
 use strum_macros::Display;
 use tokio::{sync::Notify, task::JoinHandle};
+use tokio_util::sync::CancellationToken;
 
 enum MappingModeEnd {
     Timestamp(DateTime<chrono::Utc>),
@@ -87,19 +91,30 @@ async fn main() {
     objective_queue.push_back(debug_objective.clone());
     //schedule_zoned_objective_retrieval(Arc::clone(&k), orbit_char, debug_objective).await;
     let mut global_mode = GlobalMode::MappingMode;
+    let safe_event_notify = supervisor.safe_mode_notify();
+
     loop {
-        schedule_undisturbed_orbit(Arc::clone(&k), orbit_char).await;
-        k.con().send_tasklist().await;
         let mut phases = 0;
         println!("[INFO] Starting new phase in {global_mode}!");
-        match global_mode {
+        let cancel_task = CancellationToken::new();
+        let fut = match global_mode {
             GlobalMode::MappingMode => {
-                schedule_undisturbed_orbit(Arc::clone(&k), orbit_char).await;
+                schedule_undisturbed_orbit(Arc::clone(&k), orbit_char, cancel_task.clone())
             }
             GlobalMode::ZonedObjectiveMode(_) => {
                 todo!()
             }
-        }
+        };
+
+        tokio::select!(
+            () = fut => {
+                k.con().send_tasklist().await;
+            },
+            _ = safe_event_notify.notified() => {
+                cancel_task.cancel();
+                // TODO: handle safe event properly
+            }
+        );
 
         while let Some(task) = { (*sched).write().await.pop_front() } {
             phases += 1;
@@ -111,28 +126,44 @@ async fn main() {
             );
 
             let current_state = { k.f_cont().read().await.state() };
-            if current_state == FlightState::Acquisition {
-                match global_mode {
+            let cancel_task = CancellationToken::new();
+            let task_fut: Pin<Box<dyn Future<Output = ()>>> = match current_state {
+                FlightState::Acquisition => match global_mode {
                     GlobalMode::MappingMode => {
                         if due_time > DT_MIN {
                             let k_clone = Arc::clone(&k);
-                            execute_mapping(
+                            Box::pin(execute_mapping(
                                 k_clone,
                                 Timestamp(chrono::Utc::now() + due_time),
                                 orbit_char.img_dt(),
                                 orbit_char.i_entry(),
-                            )
-                            .await;
+                                cancel_task.clone(),
+                            ))
+                        } else {
+                            println!("This never happens, right?");
+                            Box::pin(tokio::time::sleep(due_time.to_std().unwrap_or(DT_0_STD)))
                         }
                     }
-                    GlobalMode::ZonedObjectiveMode(_) => {}
+                    GlobalMode::ZonedObjectiveMode(_) => {
+                        todo!()
+                    }
+                },
+                FlightState::Charge => Box::pin(FlightComputer::wait_for_duration(
+                    due_time.to_std().unwrap_or(DT_0_STD),
+                )),
+                FlightState::Comms => {
+                    todo!()
                 }
-                due_time = task.dt().time_left();
-                FlightComputer::wait_for_duration(due_time.to_std().unwrap_or(DT_0_STD)).await;
-            } else if current_state == FlightState::Charge && due_time > DT_0 {
-                FlightComputer::wait_for_duration(due_time.to_std().unwrap_or(DT_0_STD)).await;
-            } else {
-                panic!("[FATAL] Illegal state ({current_state}) or too little time left for task ({due_time})!")
+                _ => {
+                    panic!("[FATAL] Illegal state ({current_state})!")
+                }
+            };
+
+            tokio::select! {
+                () = task_fut => {},
+                () = safe_event_notify.notified() => {
+                        cancel_task.cancel();
+                }
             }
 
             match task_type {
@@ -168,6 +199,8 @@ async fn main() {
                     TaskController::calculate_orbit_correction_burn(vel, dev, detumble_dt);
                     global_mode = GlobalMode::ZonedObjectiveMode(objective);
                 }
+                
+                
                 BaseTask::SwitchState(switch) => match switch.target_state() {
                     FlightState::Acquisition => {
                         FlightComputer::set_state_wait(k.f_cont(), FlightState::Acquisition).await;
@@ -223,16 +256,21 @@ async fn init(url: &str) -> (KeychainWithOrbit, OrbitCharacteristics, Arc<Superv
             }
         })
     };
-    
+
     supervisor.reset_pos_monitor().notify_one();
 
     let orbit_char = OrbitCharacteristics::new(&c_orbit, &init_k.f_cont()).await;
-    (KeychainWithOrbit::new(init_k, c_orbit), orbit_char, supervisor)
+    (
+        KeychainWithOrbit::new(init_k, c_orbit),
+        orbit_char,
+        supervisor,
+    )
 }
 
 async fn schedule_undisturbed_orbit(
     k_clone: Arc<KeychainWithOrbit>,
     orbit_char: OrbitCharacteristics,
+    cancel_token: CancellationToken,
 ) {
     let schedule_join_handle = {
         let k_clone_clone = Arc::clone(&k_clone);
@@ -255,6 +293,7 @@ async fn schedule_undisturbed_orbit(
             Join(schedule_join_handle),
             orbit_char.img_dt(),
             orbit_char.i_entry(),
+            cancel_token,
         )
         .await;
     } else {
@@ -266,6 +305,7 @@ async fn schedule_zoned_objective_retrieval(
     k_clone: Arc<KeychainWithOrbit>,
     orbit_char: OrbitCharacteristics,
     objective: ZonedObjective,
+    cancel_token: CancellationToken,
 ) {
     let schedule_join_handle = {
         let k_clone_clone = Arc::clone(&k_clone);
@@ -289,6 +329,7 @@ async fn schedule_zoned_objective_retrieval(
             Join(schedule_join_handle),
             orbit_char.img_dt(),
             orbit_char.i_entry(),
+            cancel_token,
         )
         .await;
     } else {
@@ -302,6 +343,7 @@ async fn execute_mapping(
     end: MappingModeEnd,
     img_dt: I32F32,
     i_entry: IndexedOrbitPosition,
+    cancel_token: CancellationToken,
 ) {
     let end_t = {
         match end {
@@ -312,20 +354,39 @@ async fn execute_mapping(
     let k_clone_clone = Arc::clone(&k_clone);
     let acq_phase =
         start_periodic_imaging(k_clone_clone, end_t, img_dt, CONST_ANGLE, i_entry).await;
+
     let ranges = {
         if let Join(join_handle) = end {
             let ((), res) = tokio::join!(
                 async move {
-                    join_handle.await.ok();
-                    acq_phase.1.notify_one();
+                    tokio::select! {
+                        _ = cancel_token.cancelled() => {
+                            // TODO: here notify to kill instantly
+                            acq_phase.1.notify_one();
+                        },
+                        _ = join_handle => {
+                            // TODO: here notify last image
+                            acq_phase.1.notify_one();
+                        }
+                    }
                 },
                 async move { acq_phase.0.await.ok().unwrap_or(Vec::new()) }
             );
             res
         } else {
-            acq_phase.0.await.ok().unwrap_or(Vec::new())
+            tokio::select! {
+                _ = cancel_token.cancelled() => {
+                    // TODO: here notify to kill instantly
+                    acq_phase.1.notify_one();
+                    Vec::new()
+                }
+                res = acq_phase.0 => {
+                    res.ok().unwrap_or(Vec::new())
+                }
+            }
         }
     };
+
     let fixed_ranges = IndexedOrbitPosition::map_ranges(&ranges, i_entry.period() as isize);
     print!("[INFO] Marking done: {} - {}", ranges[0].0, ranges[0].1);
     if let Some(r) = ranges.get(1) {

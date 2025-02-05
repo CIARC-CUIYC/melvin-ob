@@ -40,6 +40,7 @@ impl Supervisor {
     /// and monitor position & state deviations.
     #[allow(clippy::cast_precision_loss)]
     pub async fn run(&self) {
+        // TODO: pos monitoring in kalman filter + listening for reset_pos events
         let mut last_pos: Option<Vec2D<I32F32>> = None;
         let mut last_timestamp = chrono::Utc::now();
         let mut last_vel = self.f_cont_lock.read().await.current_vel();
