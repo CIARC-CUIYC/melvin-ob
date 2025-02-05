@@ -106,7 +106,7 @@ impl FlightComputer {
         let mut return_controller = FlightComputer {
             current_pos: Vec2D::new(I32F32::zero(), I32F32::zero()),
             current_vel: Vec2D::new(I32F32::zero(), I32F32::zero()),
-            current_state: FlightState::Safe,
+            current_state: FlightState::Deployment,
             target_state: None,
             current_angle: CameraAngle::Normal,
             current_battery: I32F32::zero(),
