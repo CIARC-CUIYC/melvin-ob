@@ -57,6 +57,8 @@ pub struct FlightComputer {
     current_vel: Vec2D<I32F32>,
     /// Current state of the satellite based on `FlightState`.
     current_state: FlightState,
+    /// Target State if `current_state` is `FlightState::Transition`
+    target_state: Option<FlightState>,
     /// Current angle of the satellite's camera (e.g., Narrow, Normal, Wide).
     current_angle: CameraAngle,
     /// Current battery level of the satellite.
@@ -101,6 +103,7 @@ impl FlightComputer {
             current_pos: Vec2D::new(I32F32::zero(), I32F32::zero()),
             current_vel: Vec2D::new(I32F32::zero(), I32F32::zero()),
             current_state: FlightState::Safe,
+            target_state: None,
             current_angle: CameraAngle::Normal,
             current_battery: I32F32::zero(),
             max_battery: I32F32::zero(),
@@ -261,6 +264,14 @@ impl FlightComputer {
     /// - A `FlightState` enum denoting the active operational state.
     pub fn state(&self) -> FlightState { self.current_state }
 
+    /// Retrieves the current target state of the satellite.
+    ///
+    /// The target state represents the resulting state of a commanded State change.
+    ///
+    /// # Returns
+    /// - A `Option<FlightState>` denoting the target state of the commanded state change.
+    pub fn target_state(&self) -> Option<FlightState> { self.target_state }
+
     /// Retrieves a clone of the HTTP client used by the flight computer for sending requests.
     ///
     /// # Returns
@@ -305,7 +316,7 @@ impl FlightComputer {
     ///   - The timeout expires.
     /// - Logs the rationale and results of the wait.
     async fn wait_for_condition<F>(
-        locked_self: Arc<RwLock<Self>>,
+        locked_self: &RwLock<Self>,
         (condition, rationale): (F, String),
         timeout_millis: u16,
         poll_interval: u16,
@@ -345,6 +356,7 @@ impl FlightComputer {
             panic!("[FATAL] State cant be changed when in {init_state}");
             // return; // TODO: here an error should be returned or logged or sth.
         }
+        locked_self.write().await.target_state = Some(new_state);
         locked_self.read().await.set_state(new_state).await;
 
         let transition_t =
@@ -357,7 +369,8 @@ impl FlightComputer {
             |cont: &FlightComputer| cont.state() == new_state,
             format!("State equals {new_state}"),
         );
-        Self::wait_for_condition(locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
+        Self::wait_for_condition(&locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
+        locked_self.write().await.target_state = None;
     }
 
     /// Adjusts the velocity of the satellite and waits until the target velocity is reached.
@@ -386,7 +399,7 @@ impl FlightComputer {
             |cont: &FlightComputer| cont.current_vel() == comp_new_vel,
             format!("Vel equals {new_vel}"),
         );
-        Self::wait_for_condition(locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
+        Self::wait_for_condition(&locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
     }
 
     /// Adjusts the satellite's camera angle and waits until the target angle is reached.
@@ -419,10 +432,10 @@ impl FlightComputer {
             |cont: &FlightComputer| cont.current_angle() == new_angle,
             format!("Lens equals {new_angle}"),
         );
-        Self::wait_for_condition(locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
+        Self::wait_for_condition(&locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
     }
 
-    /// Evaluates how a sequence of thruster burns has affected the MELVINs trajectory.
+    /// Evaluates how a sequence of thruster burns has affected the MELVIN's trajectory.
     ///
     /// # Arguments
     /// - `locked_self`: A `RwLock<Self>` reference to the active flight computer.
