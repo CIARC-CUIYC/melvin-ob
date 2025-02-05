@@ -67,7 +67,7 @@ impl From<&str> for FlightState {
             "charge" => FlightState::Charge,
             "comms" => FlightState::Comms,
             "safe" => FlightState::Safe,
-            _ => panic!("Couldn't convert flight_state string"), // TODO: conversion error should be logged
+            _ => panic!("Couldn't convert flight_state string"),
         }
     }
 }

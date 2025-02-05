@@ -6,3 +6,4 @@ pub mod flight_state;
 pub(super) mod imaging;
 pub mod orbit;
 pub mod task;
+pub mod supervisor;

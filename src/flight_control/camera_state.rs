@@ -40,7 +40,7 @@ impl From<&str> for CameraAngle {
             "narrow" => CameraAngle::Narrow,
             "wide" => CameraAngle::Wide,
             "normal" => CameraAngle::Normal,
-            _ => panic!("Couldn't convert camera_angle string"), // TODO: conversion error should be logged
+            _ => panic!("Couldn't convert camera_angle string"),
         }
     }
 }
