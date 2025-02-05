@@ -70,11 +70,11 @@ impl Supervisor {
                 let expected_pos_wrapped = expected_pos.wrap_around_map();
                 // TODO: this diff value should also consider wrapping (if actual pos wrapped, but expected didnt)
                 let diff = current_pos - expected_pos_wrapped;
-
+                /*
                 println!(
                     "[INFO] Position tracking: Current: {current_pos}, \
                     Expected: {expected_pos_wrapped}, Diff: {diff}");
-
+                    */
                 // Check flight state and handle safe mode (placeholder for now)
                 if is_safe_trans {
                     println!("[WARN] Unplanned Safe Mode Transition Detected! Notifying!");

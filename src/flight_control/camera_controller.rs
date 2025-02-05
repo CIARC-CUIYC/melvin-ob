@@ -23,7 +23,7 @@ use std::{
     path::Path,
     {io::Cursor, sync::Arc},
 };
-use tokio::sync::{oneshot, Mutex, Notify, RwLock};
+use tokio::sync::{oneshot, Mutex, RwLock};
 
 use super::imaging::map_image::{
     EncodedImageExtract, FullsizeMapImage, MapImage, ThumbnailMapImage,

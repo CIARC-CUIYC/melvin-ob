@@ -16,7 +16,7 @@ pub struct ZonedObjective {
     zone: [i32; 4],
     // TODO: make an enum out of optic_required
     optic_required: String,
-    coverage_required: I32F32,
+    coverage_required: f64,
     description: String,
     sprite: String,
     secret: bool,
@@ -32,7 +32,7 @@ impl ZonedObjective {
         enabled: bool,
         zone: [i32; 4],
         optic_required: String,
-        coverage_required: I32F32,
+        coverage_required: f64,
         description: String,
         sprite: String,
         secret: bool,
@@ -60,7 +60,7 @@ impl ZonedObjective {
     pub fn is_enabled(&self) -> bool { self.enabled }
     pub fn zone(&self) -> &[i32; 4] { &self.zone }
     pub fn optic_required(&self) -> &str { &self.optic_required }
-    pub fn coverage_required(&self) -> I32F32 { self.coverage_required }
+    pub fn coverage_required(&self) -> f64 { self.coverage_required }
     pub fn sprite(&self) -> &str { &self.sprite }
     pub fn is_secret(&self) -> bool { self.secret }
 
@@ -84,7 +84,8 @@ impl ZonedObjective {
         let total_zone_area_size = zone_width * zone_height;
         let lens_area_size = I32F32::from(lens_square_side_length.pow(2));
 
-        let min_area_required = I32F32::from(total_zone_area_size) * self.coverage_required;
+        let min_area_required =
+            I32F32::from(total_zone_area_size) * I32F32::from_num(self.coverage_required);
 
         let min_number_of_images_required = (min_area_required / lens_area_size).ceil();
         min_number_of_images_required.to_i32().unwrap()

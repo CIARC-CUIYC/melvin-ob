@@ -106,7 +106,7 @@ impl FlightComputer {
         let mut return_controller = FlightComputer {
             current_pos: Vec2D::new(I32F32::zero(), I32F32::zero()),
             current_vel: Vec2D::new(I32F32::zero(), I32F32::zero()),
-            current_state: FlightState::Safe,
+            current_state: FlightState::Deployment,
             target_state: None,
             current_angle: CameraAngle::Normal,
             current_battery: I32F32::zero(),
@@ -290,6 +290,8 @@ impl FlightComputer {
     /// - If the reset request fails, this method will panic with an error message.
     pub async fn reset(&self) {
         ResetRequest {}.send_request(&self.request_client).await.expect("ERROR: Failed to reset");
+        Self::wait_for_duration(Duration::from_secs(4)).await;
+        
     }
 
     /// Indicates that a `Supervisor` detected a safe mode event
@@ -495,14 +497,14 @@ impl FlightComputer {
         loop {
             match (ObservationRequest {}.send_request(&self.request_client).await) {
                 Ok(obs) => {
-                    self.current_pos = Vec2D::from((obs.pos_x(), obs.pos_y()));
-                    self.current_vel = Vec2D::from((obs.vel_x(), obs.vel_y()));
+                    self.current_pos = Vec2D::from((I32F32::from_num(obs.pos_x()), I32F32::from_num(obs.pos_y())));
+                    self.current_vel = Vec2D::from((I32F32::from_num(obs.vel_x()), I32F32::from_num(obs.vel_y())));
                     self.current_state = FlightState::from(obs.state());
                     self.current_angle = CameraAngle::from(obs.angle());
                     self.last_observation_timestamp = obs.timestamp();
-                    self.current_battery = obs.battery();
-                    self.max_battery = obs.max_battery();
-                    self.fuel_left = obs.fuel();
+                    self.current_battery = I32F32::from_num(obs.battery());
+                    self.max_battery = I32F32::from_num(obs.max_battery());
+                    self.fuel_left = I32F32::from_num(obs.fuel());
                     return;
                 }
                 Err(_) => {
@@ -518,8 +520,8 @@ impl FlightComputer {
     /// - `new_state`: The new operational state.
     async fn set_state(&self, new_state: FlightState) {
         let req = ControlSatelliteRequest {
-            vel_x: self.current_vel.x(),
-            vel_y: self.current_vel.y(),
+            vel_x: self.current_vel.x().to_f64().unwrap(),
+            vel_y: self.current_vel.y().to_f64().unwrap(),
             camera_angle: self.current_angle.into(),
             state: new_state.into(),
         };
@@ -543,8 +545,8 @@ impl FlightComputer {
     async fn set_vel(&self, new_vel: Vec2D<I32F32>) {
         let (vel, _) = Self::trunc_vel(new_vel);
         let req = ControlSatelliteRequest {
-            vel_x: vel.x(),
-            vel_y: vel.y(),
+            vel_x: vel.x().to_f64().unwrap(),
+            vel_y: vel.y().to_f64().unwrap(),
             camera_angle: self.current_angle.into(),
             state: self.current_state.into(),
         };
@@ -571,8 +573,8 @@ impl FlightComputer {
     /// - `new_angle`: The new Camera Angle.
     async fn set_angle(&self, new_angle: CameraAngle) {
         let req = ControlSatelliteRequest {
-            vel_x: self.current_vel.x(),
-            vel_y: self.current_vel.y(),
+            vel_x: self.current_vel.x().to_f64().unwrap(),
+            vel_y: self.current_vel.y().to_f64().unwrap(),
             camera_angle: new_angle.into(),
             state: self.current_state.into(),
         };

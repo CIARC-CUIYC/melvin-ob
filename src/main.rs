@@ -87,7 +87,7 @@ async fn main() {
         true,
         [4750, 5300, 5350, 5900],
         "narrow".to_string(),
-        I32F32::lit("1.0"),
+        1.0,
         "Test Objective".to_string(),
         "test_objective.png".to_string(),
         false,
@@ -244,6 +244,7 @@ async fn main() {
 #[allow(clippy::cast_precision_loss)]
 async fn init(url: &str) -> (KeychainWithOrbit, OrbitCharacteristics, Arc<Supervisor>) {
     let init_k = Keychain::new(url).await;
+    init_k.f_cont().write().await.reset().await;
     let init_k_f_cont_clone = init_k.f_cont();
     let supervisor = Arc::new(Supervisor::new(init_k_f_cont_clone));
     let supervisor_clone = Arc::clone(&supervisor);
@@ -253,7 +254,6 @@ async fn init(url: &str) -> (KeychainWithOrbit, OrbitCharacteristics, Arc<Superv
 
     let c_orbit: ClosedOrbit = {
         let f_cont_lock = init_k.f_cont();
-        f_cont_lock.write().await.reset().await;
         FlightComputer::set_state_wait(init_k.f_cont(), FlightState::Acquisition).await;
         FlightComputer::set_vel_wait(init_k.f_cont(), STATIC_ORBIT_VEL.into()).await;
         FlightComputer::set_angle_wait(init_k.f_cont(), CONST_ANGLE).await;
