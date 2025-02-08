@@ -5,6 +5,7 @@ pub mod http_response;
 
 pub use common::HTTPError;
 pub use common::ZonedObjective;
+pub use common::ZoneType;
 
 /*
 pub use http_handler_common::Achievement;

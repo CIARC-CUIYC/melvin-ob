@@ -16,7 +16,7 @@ use crate::flight_control::{
     },
     task::{base_task::BaseTask, TaskController},
 };
-use crate::http_handler::ZonedObjective;
+use crate::http_handler::{ZoneType, ZonedObjective};
 use crate::keychain::{Keychain, KeychainWithOrbit};
 use crate::MappingModeEnd::{Join, Timestamp};
 use chrono::{DateTime, TimeDelta};
@@ -27,6 +27,10 @@ use std::{
 };
 use strum_macros::Display;
 use tokio::{sync::Notify, task::JoinHandle};
+use crate::http_handler::http_client::HTTPClient;
+use crate::http_handler::http_request::objective_list_get::ObjectiveListRequest;
+use crate::http_handler::http_request::request_common::NoBodyHTTPRequestType;
+use crate::http_handler::http_response::objective_list::ObjectiveListResponse;
 
 enum MappingModeEnd {
     Timestamp(DateTime<chrono::Utc>),
@@ -72,11 +76,10 @@ async fn main() {
         chrono::Utc::now(),
         chrono::Utc::now() + TimeDelta::hours(7),
         "Test Objective".to_string(),
-        0,
-        true,
-        [4750, 5300, 5350, 5900],
+        0.0,
+        ZoneType::KnownZone([4750, 5300, 5350, 5900]),
         "narrow".to_string(),
-        I32F32::lit("1.0"),
+        1.0,
         "Test Objective".to_string(),
         "test_objective.png".to_string(),
         false,
