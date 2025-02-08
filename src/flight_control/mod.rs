@@ -7,3 +7,4 @@ pub(super) mod imaging;
 pub mod orbit;
 pub mod task;
 pub mod objective;
+pub mod supervisor;

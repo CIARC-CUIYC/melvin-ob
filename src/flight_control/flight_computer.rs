@@ -57,6 +57,8 @@ pub struct FlightComputer {
     current_vel: Vec2D<I32F32>,
     /// Current state of the satellite based on `FlightState`.
     current_state: FlightState,
+    /// Target State if `current_state` is `FlightState::Transition`
+    target_state: Option<FlightState>,
     /// Current angle of the satellite's camera (e.g., Narrow, Normal, Wide).
     current_angle: CameraAngle,
     /// Current battery level of the satellite.
@@ -82,6 +84,10 @@ impl FlightComputer {
     const DEF_COND_TO: u16 = 3000;
     /// Constant timeout for the `wait_for_condition`-method
     const DEF_COND_PI: u16 = 500;
+    /// Constant transition to SAFE sleep time for all states
+    const TO_SAFE_SLEEP: Duration = Duration::from_secs(60);
+    /// Minimum battery used in decision-making for after safe transition
+    const AFTER_SAFE_MIN_BATT: I32F32 = I32F32::lit("50");
     /// Legal Target States for State Change
     const LEGAL_TARGET_STATES: [FlightState; 3] = [
         FlightState::Acquisition,
@@ -100,7 +106,8 @@ impl FlightComputer {
         let mut return_controller = FlightComputer {
             current_pos: Vec2D::new(I32F32::zero(), I32F32::zero()),
             current_vel: Vec2D::new(I32F32::zero(), I32F32::zero()),
-            current_state: FlightState::Safe,
+            current_state: FlightState::Deployment,
+            target_state: None,
             current_angle: CameraAngle::Normal,
             current_battery: I32F32::zero(),
             max_battery: I32F32::zero(),
@@ -133,7 +140,7 @@ impl FlightComputer {
     }
 
     /// Precomputes possible turns of MELVIN, splitting paths into clockwise and counterclockwise
-    /// directions based on the initial velocity. These precomputed paths are useful for calculating 
+    /// directions based on the initial velocity. These precomputed paths are useful for calculating
     /// optimal burns.
     ///
     /// # Arguments
@@ -261,6 +268,14 @@ impl FlightComputer {
     /// - A `FlightState` enum denoting the active operational state.
     pub fn state(&self) -> FlightState { self.current_state }
 
+    /// Retrieves the current target state of the satellite.
+    ///
+    /// The target state represents the resulting state of a commanded State change.
+    ///
+    /// # Returns
+    /// - A `Option<FlightState>` denoting the target state of the commanded state change.
+    pub fn target_state(&self) -> Option<FlightState> { self.target_state }
+
     /// Retrieves a clone of the HTTP client used by the flight computer for sending requests.
     ///
     /// # Returns
@@ -275,7 +290,12 @@ impl FlightComputer {
     /// - If the reset request fails, this method will panic with an error message.
     pub async fn reset(&self) {
         ResetRequest {}.send_request(&self.request_client).await.expect("ERROR: Failed to reset");
+        Self::wait_for_duration(Duration::from_secs(4)).await;
+        
     }
+
+    /// Indicates that a `Supervisor` detected a safe mode event
+    pub fn safe_detected(&mut self) { self.target_state = Some(FlightState::Safe); }
 
     /// Waits for a given amount of time with debug prints, this is a static method.
     ///
@@ -305,7 +325,7 @@ impl FlightComputer {
     ///   - The timeout expires.
     /// - Logs the rationale and results of the wait.
     async fn wait_for_condition<F>(
-        locked_self: Arc<RwLock<Self>>,
+        locked_self: &RwLock<Self>,
         (condition, rationale): (F, String),
         timeout_millis: u16,
         poll_interval: u16,
@@ -328,6 +348,26 @@ impl FlightComputer {
         println!("[LOG] Condition not met after {timeout_millis} ms");
     }
 
+    pub async fn escape_safe(locked_self: Arc<RwLock<Self>>) {
+        let target_state = {
+            let init_batt = locked_self.read().await.current_battery();
+            if init_batt <= Self::AFTER_SAFE_MIN_BATT {
+                FlightState::Charge
+            } else {
+                FlightState::Acquisition
+            }
+        };
+        println!("[INFO] Safe Mode Runtime initiated. Transitioning back to {target_state} asap.");
+        Self::wait_for_duration(Self::TO_SAFE_SLEEP).await;
+        let cond = (
+            // TODO: later this condition must be == FlightState::Safe
+            |cont: &FlightComputer| cont.state() != FlightState::Transition,
+            format!("State is not {}", FlightState::Transition),
+        );
+        Self::wait_for_condition(&locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
+        Self::set_state_wait(locked_self, target_state).await;
+    }
+
     /// Transitions the satellite to a new operational state and waits for transition completion.
     ///
     /// # Arguments
@@ -345,6 +385,7 @@ impl FlightComputer {
             panic!("[FATAL] State cant be changed when in {init_state}");
             // return; // TODO: here an error should be returned or logged or sth.
         }
+        locked_self.write().await.target_state = Some(new_state);
         locked_self.read().await.set_state(new_state).await;
 
         let transition_t =
@@ -357,7 +398,8 @@ impl FlightComputer {
             |cont: &FlightComputer| cont.state() == new_state,
             format!("State equals {new_state}"),
         );
-        Self::wait_for_condition(locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
+        Self::wait_for_condition(&locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
+        locked_self.write().await.target_state = None;
     }
 
     /// Adjusts the velocity of the satellite and waits until the target velocity is reached.
@@ -374,7 +416,6 @@ impl FlightComputer {
             panic!("[FATAL] Velocity cant be changed in state {current_state}");
             // return; // TODO: here an error should be logged or returned
         }
-        // TODO: there is a http error in this method
         let vel_change_dt = Duration::from_secs_f32(
             (new_vel.to(&current_vel).abs() / Self::ACC_CONST).to_f32().unwrap(),
         );
@@ -386,7 +427,7 @@ impl FlightComputer {
             |cont: &FlightComputer| cont.current_vel() == comp_new_vel,
             format!("Vel equals {new_vel}"),
         );
-        Self::wait_for_condition(locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
+        Self::wait_for_condition(&locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
     }
 
     /// Adjusts the satellite's camera angle and waits until the target angle is reached.
@@ -397,7 +438,7 @@ impl FlightComputer {
     ///
     /// # Behavior
     /// - If the current angle matches the new angle, logs the status and exits.
-    /// - Checks if the current state permits changing the camera angle. 
+    /// - Checks if the current state permits changing the camera angle.
     ///   If not, it panics with a fatal error.
     /// - Sets the new angle and waits until the system confirms it has been applied.
     pub async fn set_angle_wait(locked_self: Arc<RwLock<Self>>, new_angle: CameraAngle) {
@@ -419,10 +460,10 @@ impl FlightComputer {
             |cont: &FlightComputer| cont.current_angle() == new_angle,
             format!("Lens equals {new_angle}"),
         );
-        Self::wait_for_condition(locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
+        Self::wait_for_condition(&locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
     }
 
-    /// Evaluates how a sequence of thruster burns has affected the MELVINs trajectory.
+    /// Evaluates how a sequence of thruster burns has affected the MELVIN's trajectory.
     ///
     /// # Arguments
     /// - `locked_self`: A `RwLock<Self>` reference to the active flight computer.
@@ -456,19 +497,18 @@ impl FlightComputer {
         loop {
             match (ObservationRequest {}.send_request(&self.request_client).await) {
                 Ok(obs) => {
-                    self.current_pos = Vec2D::from((obs.pos_x(), obs.pos_y()));
-                    self.current_vel = Vec2D::from((obs.vel_x(), obs.vel_y()));
+                    self.current_pos = Vec2D::from((I32F32::from_num(obs.pos_x()), I32F32::from_num(obs.pos_y())));
+                    self.current_vel = Vec2D::from((I32F32::from_num(obs.vel_x()), I32F32::from_num(obs.vel_y())));
                     self.current_state = FlightState::from(obs.state());
                     self.current_angle = CameraAngle::from(obs.angle());
                     self.last_observation_timestamp = obs.timestamp();
-                    self.current_battery = obs.battery();
-                    self.max_battery = obs.max_battery();
-                    self.fuel_left = obs.fuel();
+                    self.current_battery = I32F32::from_num(obs.battery());
+                    self.max_battery = I32F32::from_num(obs.max_battery());
+                    self.fuel_left = I32F32::from_num(obs.fuel());
                     return;
                 }
                 Err(_) => {
                     println!("[ERROR] Unnoticed HTTP Error in updateObservation()");
-                    /* TODO: log error here */
                 }
             }
         }
@@ -480,8 +520,8 @@ impl FlightComputer {
     /// - `new_state`: The new operational state.
     async fn set_state(&self, new_state: FlightState) {
         let req = ControlSatelliteRequest {
-            vel_x: self.current_vel.x(),
-            vel_y: self.current_vel.y(),
+            vel_x: self.current_vel.x().to_f64().unwrap(),
+            vel_y: self.current_vel.y().to_f64().unwrap(),
             camera_angle: self.current_angle.into(),
             state: new_state.into(),
         };
@@ -493,7 +533,6 @@ impl FlightComputer {
                 }
                 Err(_) => {
                     println!("[ERROR] Unnoticed HTTP Error in set_state()");
-                    /* TODO: log error here */
                 }
             }
         }
@@ -506,8 +545,8 @@ impl FlightComputer {
     async fn set_vel(&self, new_vel: Vec2D<I32F32>) {
         let (vel, _) = Self::trunc_vel(new_vel);
         let req = ControlSatelliteRequest {
-            vel_x: vel.x(),
-            vel_y: vel.y(),
+            vel_x: vel.x().to_f64().unwrap(),
+            vel_y: vel.y().to_f64().unwrap(),
             camera_angle: self.current_angle.into(),
             state: self.current_state.into(),
         };
@@ -523,7 +562,6 @@ impl FlightComputer {
                 }
                 Err(_) => {
                     println!("[ERROR] Unnoticed HTTP Error in set_vel()");
-                    /* TODO: log error here */
                 }
             }
         }
@@ -535,8 +573,8 @@ impl FlightComputer {
     /// - `new_angle`: The new Camera Angle.
     async fn set_angle(&self, new_angle: CameraAngle) {
         let req = ControlSatelliteRequest {
-            vel_x: self.current_vel.x(),
-            vel_y: self.current_vel.y(),
+            vel_x: self.current_vel.x().to_f64().unwrap(),
+            vel_y: self.current_vel.y().to_f64().unwrap(),
             camera_angle: new_angle.into(),
             state: self.current_state.into(),
         };
@@ -567,7 +605,7 @@ impl FlightComputer {
     /// - It factors in the power consumption rates associated with flight states and maneuvers.
     ///
     /// # Behavior
-    /// - Adjusts the maneuver acquisition time based on task controller detumble minimums and 
+    /// - Adjusts the maneuver acquisition time based on task controller detumble minimums and
     ///   transition delays.
     /// - Multiples the derived travel time with the power rates of the acquisition phase for
     ///   charge estimation.
@@ -581,11 +619,11 @@ impl FlightComputer {
             let acq_charge_dt = i32::try_from(
                 TRANSITION_DELAY_LOOKUP[&(FlightState::Acquisition, FlightState::Charge)].as_secs(),
             )
-                .unwrap_or(i32::MAX);
+            .unwrap_or(i32::MAX);
             let charge_acq_dt = i32::try_from(
                 TRANSITION_DELAY_LOOKUP[&(FlightState::Acquisition, FlightState::Charge)].as_secs(),
             )
-                .unwrap_or(i32::MAX);
+            .unwrap_or(i32::MAX);
             let poss_charge_dt = i32::try_from(trunc_detumble_time).unwrap_or(i32::MIN)
                 - acq_charge_dt
                 - charge_acq_dt;
