@@ -4,7 +4,7 @@ pub mod http_request;
 pub mod http_response;
 
 pub use common::HTTPError;
-pub use common::ZonedObjective;
+pub use common::ImageObjective;
 pub use common::ZoneType;
 
 /*

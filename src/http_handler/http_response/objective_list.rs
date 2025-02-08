@@ -1,11 +1,11 @@
 use crate::http_handler::{
-    common::{BeaconObjective, ZonedObjective},
+    common::{BeaconObjective, ImageObjective},
     http_response::response_common::SerdeJSONBodyHTTPResponseType,
 };
 
 #[derive(serde::Deserialize, Debug)]
 pub struct ObjectiveListResponse {
-    zoned_objectives: Vec<ZonedObjective>,
+    zoned_objectives: Vec<ImageObjective>,
     beacon_objectives: Vec<BeaconObjective>,
 }
 

@@ -16,7 +16,6 @@ use crate::flight_control::{
     },
     task::{base_task::BaseTask, TaskController},
 };
-use crate::http_handler::{ZoneType, ZonedObjective};
 use crate::keychain::{Keychain, KeychainWithOrbit};
 use crate::MappingModeEnd::{Join, Timestamp};
 use chrono::{DateTime, TimeDelta};
@@ -27,10 +26,7 @@ use std::{
 };
 use strum_macros::Display;
 use tokio::{sync::Notify, task::JoinHandle};
-use crate::http_handler::http_client::HTTPClient;
-use crate::http_handler::http_request::objective_list_get::ObjectiveListRequest;
-use crate::http_handler::http_request::request_common::NoBodyHTTPRequestType;
-use crate::http_handler::http_response::objective_list::ObjectiveListResponse;
+use crate::flight_control::objective::known_img_objective::KnownImgObjective;
 
 enum MappingModeEnd {
     Timestamp(DateTime<chrono::Utc>),
@@ -40,7 +36,7 @@ enum MappingModeEnd {
 #[derive(Display)]
 enum GlobalMode {
     MappingMode,
-    ZonedObjectiveMode(ZonedObjective),
+    ZonedObjectiveMode(KnownImgObjective),
 }
 
 const DT_MIN: TimeDelta = TimeDelta::seconds(5);
@@ -71,18 +67,13 @@ async fn main() {
 
     let sched = k.t_cont().sched_arc();
 
-    let debug_objective = ZonedObjective::new(
+    let debug_objective = KnownImgObjective::new(
         0,
         chrono::Utc::now(),
         chrono::Utc::now() + TimeDelta::hours(7),
         "Test Objective".to_string(),
-        0.0,
-        ZoneType::KnownZone([4750, 5300, 5350, 5900]),
-        "narrow".to_string(),
-        1.0,
-        "Test Objective".to_string(),
-        "test_objective.png".to_string(),
-        false,
+        [4750, 5300, 5350, 5900],
+        "narrow"
     );
 
     let mut objective_queue = VecDeque::new();
@@ -291,7 +282,7 @@ async fn schedule_undisturbed_orbit(
 async fn schedule_zoned_objective_retrieval(
     k_clone: Arc<KeychainWithOrbit>,
     orbit_char: OrbitCharacteristics,
-    objective: ZonedObjective,
+    objective: KnownImgObjective,
 ) {
     let schedule_join_handle = {
         let k_clone_clone = Arc::clone(&k_clone);

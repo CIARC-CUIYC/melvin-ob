@@ -8,7 +8,6 @@ use crate::flight_control::{
         score_grid::ScoreGrid,
     },
 };
-use crate::http_handler::ZonedObjective;
 use crate::{MAX_BATTERY_THRESHOLD, MIN_BATTERY_THRESHOLD};
 use bitvec::prelude::BitRef;
 use fixed::types::I32F32;
@@ -19,6 +18,7 @@ use std::{
     sync::{Arc, Condvar},
 };
 use tokio::sync::RwLock;
+use crate::flight_control::objective::known_img_objective::KnownImgObjective;
 
 /// `TaskController` manages and schedules tasks for MELVIN.
 /// It leverages a thread-safe task queue and notifies waiting threads when
@@ -553,7 +553,7 @@ impl TaskController {
         orbit_lock: Arc<RwLock<ClosedOrbit>>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
         scheduling_start_i: IndexedOrbitPosition,
-        objective: ZonedObjective,
+        objective: KnownImgObjective,
     ) {
         let computation_start = chrono::Utc::now();
         println!(
