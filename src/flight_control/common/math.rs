@@ -149,7 +149,7 @@ pub fn interpolate(x1: I32F32, x2: I32F32, y1: I32F32, y2: I32F32, t: I32F32) ->
 /// # Returns
 /// - A tuple of `(t_min_clamped, pos_min)`, where:
 ///   - `t_min_clamped`: The clamped parameter along x that minimizes the absolute y-value.
-///   - `pos_min`: A tuple `(x, y)` representing the position (x-coordinate and y-coordinate) at t_min.
+///   - `pos_min`: A tuple `(x, y)` representing the position (x-coordinate and y-coordinate) at `t_min`.
 pub fn find_min_y_abs_for_x_range(
     a_x: I32F32,
     a_y: (I32F32, I32F32),

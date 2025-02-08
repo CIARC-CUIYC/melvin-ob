@@ -1,8 +1,5 @@
 use super::http_request::request_common::RequestError;
 use super::http_response::response_common::ResponseError;
-use crate::flight_control::{camera_state::CameraAngle, common::vec2d::Vec2D};
-use fixed::types::I32F32;
-use num::ToPrimitive;
 use strum_macros::Display;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]

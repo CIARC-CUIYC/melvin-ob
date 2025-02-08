@@ -21,9 +21,9 @@ impl KnownImgObjective {
         end: chrono::DateTime<chrono::Utc>,
         name: String,
         zone: [i32; 4],
-        optic_required: &str,
+        optic_str: &str,
     ) -> KnownImgObjective {
-        let optic_required = CameraAngle::from(optic_required);
+        let optic_required = CameraAngle::from(optic_str);
         KnownImgObjective {
             id,
             start,
@@ -54,13 +54,13 @@ impl KnownImgObjective {
     #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
     pub fn min_images(&self) -> i32 {
         let lens_square_side_length =
-            CameraAngle::from(self.optic_required()).get_square_side_length();
+            self.optic_required().get_square_side_length();
 
         let zone_width = self.zone[2] - self.zone[0];
         let zone_height = self.zone[3] - self.zone[1];
 
         let total_zone_area_size = (zone_width * zone_height) as f32;
-        let lens_area_size = (lens_square_side_length.pow(2)) as f32;
+        let lens_area_size = f32::from(lens_square_side_length.pow(2));
 
         let min_area_required = total_zone_area_size * self.coverage_required;
 
