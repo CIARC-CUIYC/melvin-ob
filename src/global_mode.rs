@@ -14,11 +14,8 @@ pub enum GlobalMode {
 
 impl GlobalMode {
     pub fn should_map(&self) -> bool {
-        match self {
-            GlobalMode::MappingMode
+        matches!(self, GlobalMode::MappingMode
             | GlobalMode::BeaconObjectivePassiveScanningMode(_)
-            | GlobalMode::ZonedObjectivePrepMode(_) => true,
-            _ => false,
-        }
+            | GlobalMode::ZonedObjectivePrepMode(_))
     }
 }

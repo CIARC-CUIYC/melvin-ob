@@ -179,7 +179,7 @@ async fn main() {
                             cancel_task.clone(),
                         ))
                     } else {
-                        println!("[LOG] This acquisition mode is not eligibile for mapping. Waiting for {} s", due_time.num_seconds());
+                        println!("[LOG] This acquisition mode is not eligible for mapping. Waiting for {} s", due_time.num_seconds());
                         Box::pin(tokio::time::sleep(due_time.to_std().unwrap_or(DT_0_STD)))
                     }
                 }
@@ -250,7 +250,6 @@ async fn main() {
                         join_handle.await;
                         if has_new_obj { 
                             println!("[INFO] New objective detected, exiting phase {phases}!");
-                            phases+=1;
                             continue 'outer;
                         }
                     }
@@ -261,7 +260,6 @@ async fn main() {
                 },
             }
         }
-        phases += 1;
         orbit_char.finish(orbit_char.i_entry().new_from_pos(k.f_cont().read().await.current_pos()));
     }
     // drop(console_messenger);
@@ -464,7 +462,7 @@ async fn handle_orbit_escape(
         let detumble_time_delta = TimeDelta::seconds(burn.detumble_dt() as i64);
         let detumble_dt = PinnedTimeDelay::new(detumble_time_delta - DETUMBLE_TOL);
         println!("[INFO] Orbit Escape done! Expected position {exp_pos}, Actual Position {current_pos}, Diff {diff}");
-        // TODO: here we shouldnt use objective.get_imaging_points but something already created,
+        // TODO: here we shouldn't use objective.get_imaging_points but something already created,
         // TODO: also the mode change to global mode should happen sometime else
         let (vel, dev) =
             FlightComputer::evaluate_burn(k.f_cont(), burn, obj.get_imaging_points()[0]).await;

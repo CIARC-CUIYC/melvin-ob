@@ -36,7 +36,7 @@ impl VelocityChangeTask {
         &self.burn
     }
 
-    /// Retrieves the velocity change reasone
+    /// Retrieves the reason for the velocity change
     /// 
     /// # Returns
     /// - A `VelocityChangeTaskRationale`

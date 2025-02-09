@@ -21,7 +21,7 @@ use std::sync::Arc;
 /// to process upstream events and send downstream responses or data while
 /// ensuring proper synchronization through asynchronous tasks.
 ///
-/// # Fiedls
+/// # Fields
 /// - `camera_controller`: A shared reference to the camera controller, used for image-related operations.
 /// - `task_controller`: A shared reference to the task controller, used for managing tasks.
 /// - `endpoint`: A shared reference to the console endpoint, used for sending and receiving messages.

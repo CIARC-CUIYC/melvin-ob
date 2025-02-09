@@ -22,7 +22,7 @@ use std::{
 ///
 /// Incorrect use of this struct could result in:
 /// - Data races when the file or the mapped memory is accessed by multiple threads without proper synchronization.
-/// - `munmap` being called on memory that is still in use, leading to segmentation faults.
+/// - `mmap` being called on memory that is still in use, leading to segmentation faults.
 ///
 /// # Advantages
 ///

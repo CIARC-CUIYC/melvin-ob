@@ -19,8 +19,8 @@ tokio-util = {version = "0.7.13"}
 serde = { version = "1.0", features = ["derive"] }
 chrono = { version = "0.4", features = ["serde"] }
 futures-core = "0.3.31"
-strum = "0.26.3"
-strum_macros = "0.26.4"
+strum = "0.27.0"
+strum_macros = "0.27.0"
 bitvec = { version = "1.0.1", features = ["serde"] }
 futures = "0.3.31"
 fixed = {version = "1.28.0", features = ["serde", "num-traits"]}
