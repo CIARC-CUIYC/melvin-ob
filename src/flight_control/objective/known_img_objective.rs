@@ -1,5 +1,6 @@
 use crate::flight_control::camera_state::CameraAngle;
 use crate::flight_control::common::vec2d::Vec2D;
+use crate::http_handler::{ImageObjective, ZoneType};
 use fixed::types::I32F32;
 use num::ToPrimitive;
 
@@ -53,8 +54,7 @@ impl KnownImgObjective {
 
     #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
     pub fn min_images(&self) -> i32 {
-        let lens_square_side_length =
-            self.optic_required().get_square_side_length();
+        let lens_square_side_length = self.optic_required().get_square_side_length();
 
         let zone_width = self.zone[2] - self.zone[0];
         let zone_height = self.zone[3] - self.zone[1];
@@ -66,5 +66,27 @@ impl KnownImgObjective {
 
         let min_number_of_images_required = (min_area_required / lens_area_size).ceil();
         min_number_of_images_required.to_i32().unwrap()
+    }
+}
+
+impl TryFrom<ImageObjective> for KnownImgObjective {
+    type Error = std::io::Error;
+
+    fn try_from(obj: ImageObjective) -> Result<Self, Self::Error> {
+        match obj.zone_type() {
+            ZoneType::KnownZone(zone) => Ok(Self {
+                id: obj.id(),
+                name: String::from(obj.name()),
+                start: obj.start(),
+                end: obj.end(),
+                zone: *zone,
+                optic_required: CameraAngle::from(obj.optic_required()),
+                coverage_required: obj.coverage_required()
+            }),
+            ZoneType::SecretZone(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "[FATAL] Wrong objective conversion!",
+            )),
+        }
     }
 }

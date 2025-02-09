@@ -463,6 +463,23 @@ impl FlightComputer {
         Self::wait_for_condition(&locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
     }
 
+    /// Executes a sequence of thruster burns that affect the trajectory of MELVIN.
+    ///
+    /// # Arguments
+    /// - `locked_self`: A `RwLock<Self>` reference to the active flight computer.
+    /// - `burn_sequence`: A reference to the sequence of executed thruster burns.
+    pub async fn execute_burn(locked_self: Arc<RwLock<Self>>, burn: &BurnSequence) {
+        for vel_change in burn.sequence_vel() {
+            let st = tokio::time::Instant::now();
+            let dt = Duration::from_secs(1);
+            FlightComputer::set_vel_wait(Arc::clone(&locked_self), *vel_change).await;
+            let el = st.elapsed();
+            if el < dt {
+                tokio::time::sleep(dt).await;
+            }
+        }
+    }
+
     /// Evaluates how a sequence of thruster burns has affected the MELVIN's trajectory.
     ///
     /// # Arguments
@@ -610,7 +627,7 @@ impl FlightComputer {
     /// - Multiples the derived travel time with the power rates of the acquisition phase for
     ///   charge estimation.
     #[allow(clippy::cast_precision_loss)]
-    pub fn estimate_min_burn_sequence_charge(burn_sequence: &BurnSequence) -> I32F32 {
+    pub fn estimate_min_burn_charge(burn_sequence: &BurnSequence) -> I32F32 {
         let acc_time = burn_sequence.acc_dt();
         let travel_time = burn_sequence.detumble_dt() + acc_time;
         let detumble_time = travel_time - acc_time;

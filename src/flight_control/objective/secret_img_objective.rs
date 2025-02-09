@@ -1,4 +1,5 @@
 use crate::flight_control::camera_state::CameraAngle;
+use crate::http_handler::ImageObjective;
 
 #[derive(Debug, Clone)]
 pub struct SecretImgObjective {
@@ -8,4 +9,17 @@ pub struct SecretImgObjective {
     end: chrono::DateTime<chrono::Utc>,
     optic_required: CameraAngle,
     coverage_required: f32,
+}
+
+impl From<ImageObjective> for SecretImgObjective {
+    fn from(obj: ImageObjective) -> Self {
+        Self {
+            id: obj.id(),
+            name: String::from(obj.name()),
+            start: obj.start(),
+            end: obj.end(),
+            optic_required: CameraAngle::from(obj.optic_required()),
+            coverage_required: obj.coverage_required(),
+        }
+    }
 }

@@ -28,6 +28,7 @@ pub struct ImageObjective {
 impl ImageObjective {
 
     pub fn id(&self) -> usize { self.id }
+    pub fn start(&self) -> chrono::DateTime<chrono::Utc> { self.start }
     pub fn end(&self) -> chrono::DateTime<chrono::Utc> { self.end }
     pub fn name(&self) -> &str { &self.name }
     pub fn decrease_rate(&self) -> f32 { self.decrease_rate }
