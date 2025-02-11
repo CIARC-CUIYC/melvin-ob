@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use crate::flight_control::camera_state::CameraAngle;
 use crate::flight_control::common::vec2d::Vec2D;
 use crate::http_handler::{ImageObjective, ZoneType};
@@ -18,13 +19,13 @@ pub struct KnownImgObjective {
 impl KnownImgObjective {
     pub fn new(
         id: usize,
+        name: String,
         start: chrono::DateTime<chrono::Utc>,
         end: chrono::DateTime<chrono::Utc>,
-        name: String,
         zone: [i32; 4],
-        optic_str: &str,
+        optic_required: CameraAngle,
+        coverage_required: f32,
     ) -> KnownImgObjective {
-        let optic_required = CameraAngle::from(optic_str);
         KnownImgObjective {
             id,
             start,
@@ -32,7 +33,7 @@ impl KnownImgObjective {
             name,
             zone,
             optic_required,
-            coverage_required: 0.0,
+            coverage_required,
         }
     }
 
@@ -89,4 +90,18 @@ impl TryFrom<ImageObjective> for KnownImgObjective {
             )),
         }
     }
+}
+
+impl Eq for KnownImgObjective {}
+
+impl PartialEq<Self> for KnownImgObjective {
+    fn eq(&self, other: &Self) -> bool { self.end == other.end }
+}
+
+impl PartialOrd<Self> for KnownImgObjective {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
+}
+
+impl Ord for KnownImgObjective {
+    fn cmp(&self, other: &Self) -> Ordering { self.end.cmp(&other.end) }
 }

@@ -8,7 +8,9 @@ mod http_handler;
 mod keychain;
 
 use crate::flight_control::objective::beacon_objective::BeaconObjective;
+use crate::flight_control::objective::objective_base::ObjectiveBase;
 use crate::flight_control::objective::objective_type::ObjectiveType;
+use crate::flight_control::objective::secret_img_objective::SecretImgObjective;
 use crate::flight_control::supervisor::Supervisor;
 use crate::flight_control::task::vel_change_task::{
     VelocityChangeTask, VelocityChangeTaskRationale,
@@ -29,6 +31,7 @@ use crate::MappingModeEnd::{Join, Timestamp};
 use chrono::{DateTime, TimeDelta};
 use fixed::types::I32F32;
 use global_mode::GlobalMode;
+use std::collections::BinaryHeap;
 use std::future::Future;
 use std::pin::Pin;
 use std::{
@@ -80,47 +83,46 @@ async fn main() {
 
     let debug_objective = KnownImgObjective::new(
         0,
+        "Test Objective".to_string(),
         chrono::Utc::now(),
         chrono::Utc::now() + TimeDelta::hours(7),
-        "Test Objective".to_string(),
         [4750, 5300, 5350, 5900],
-        "narrow",
+        "narrow".into(),
+        100.0,
     );
 
-    let mut objective_queue = VecDeque::new();
-
     // TODO: debug artifact
-    objective_queue.push_back(ObjectiveType::KnownImgObj(debug_objective.clone()));
-
-    let mut secret_objective_buffer = VecDeque::new();
+    // objective_queue.push_back(ObjectiveType::KnownImage(debug_objective.clone()));
+    let mut k_img_buffer: BinaryHeap<KnownImgObjective> = BinaryHeap::new();
+    let mut beacon_buffer: BinaryHeap<BeaconObjective> = BinaryHeap::new();
+    let mut s_img_buffer: VecDeque<SecretImgObjective> = VecDeque::new();
 
     let mut global_mode = GlobalMode::MappingMode;
     let safe_event_notify = supervisor.safe_mode_monitor();
 
-    while let Ok(obj) = obj_monitor.try_recv() {
-        objective_queue.push_back(obj);
-    }
+    recv_all_obj(
+        &mut obj_monitor,
+        &mut k_img_buffer,
+        &mut beacon_buffer,
+        &mut s_img_buffer,
+    );
 
     'outer: loop {
         let mut phases = 0;
         println!("[INFO] Starting new phase in {global_mode}!");
         let cancel_task = CancellationToken::new();
-        if objective_queue.is_empty() {
+        if k_img_buffer.is_empty() && beacon_buffer.is_empty() {
             global_mode = GlobalMode::MappingMode;
         } else {
             // TODO: handle multiple tasks at the same time
-            match objective_queue.pop_front().unwrap() {
-                ObjectiveType::BeaconObj(obj) => {
-                    todo!();
-                    global_mode = GlobalMode::BeaconObjectivePassiveScanningMode(obj);
-                }
-                ObjectiveType::KnownImgObj(obj) => {
-                    global_mode = GlobalMode::ZonedObjectivePrepMode(obj);
-                }
-                ObjectiveType::SecretImgObj(obj) => {
-                    secret_objective_buffer.push_front(obj);
-                    global_mode = GlobalMode::MappingMode;
-                }
+            // TODO: handle tasks at all with some kind of "StateResolver"
+            match &global_mode {
+                GlobalMode::MappingMode => {}
+                GlobalMode::BeaconObjectivePassiveScanningMode(obj) => {}
+                GlobalMode::BeaconObjectiveActiveScanningMode(_) => {}
+                GlobalMode::ZonedObjectivePrepMode(obj) => {}
+                GlobalMode::ZonedObjectiveRetrievalMode(_) => {}
+                GlobalMode::ZonedObjectiveReturnMode => {}
             }
         }
 
@@ -240,15 +242,14 @@ async fn main() {
                                 .await
                                 .expect("[WARN] Export failed!");
                         });
-                        let mut has_new_obj = false;
-                        while let Ok(obj) = obj_monitor.try_recv() {
-                            if !has_new_obj {
-                                has_new_obj = true;
-                            }
-                            objective_queue.push_back(obj);
-                        }
+                        let new_obj = recv_all_obj(
+                            &mut obj_monitor,
+                            &mut k_img_buffer,
+                            &mut beacon_buffer,
+                            &mut s_img_buffer,
+                        );
                         join_handle.await;
-                        if has_new_obj { 
+                        if new_obj.0 != 0 || new_obj.1 != 0 {
                             println!("[INFO] New objective detected, exiting phase {phases}!");
                             continue 'outer;
                         }
@@ -272,7 +273,7 @@ async fn init(
     KeychainWithOrbit,
     OrbitCharacteristics,
     Arc<Supervisor>,
-    Receiver<ObjectiveType>,
+    Receiver<ObjectiveBase>,
 ) {
     let init_k = Keychain::new(url).await;
     init_k.f_cont().write().await.reset().await;
@@ -310,6 +311,59 @@ async fn init(
         supervisor,
         obj_rx,
     )
+}
+
+fn recv_all_obj(
+    obj_monitor: &mut Receiver<ObjectiveBase>,
+    k_img_buffer: &mut BinaryHeap<KnownImgObjective>,
+    beacon_buffer: &mut BinaryHeap<BeaconObjective>,
+    s_img_buffer: &mut VecDeque<SecretImgObjective>,
+) -> (usize, usize) {
+    let mut k_img_count = 0;
+    let mut beacon_count = 0;
+    while let Ok(obj) = obj_monitor.try_recv() {
+        let id = obj.id();
+        let name = obj.name().to_string();
+        let start = obj.start();
+        let end = obj.end();
+
+        match obj.obj_type() {
+            ObjectiveType::Beacon => {
+                beacon_buffer.push(BeaconObjective::new(id, name, start, end));
+                beacon_count += 1;
+            }
+            ObjectiveType::SecretImage {
+                optic_required,
+                coverage_required,
+            } => {
+                s_img_buffer.push_front(SecretImgObjective::new(
+                    id,
+                    name,
+                    start,
+                    end,
+                    *optic_required,
+                    *coverage_required,
+                ));
+            }
+            ObjectiveType::KnownImage {
+                zone,
+                optic_required,
+                coverage_required,
+            } => {
+                k_img_buffer.push(KnownImgObjective::new(
+                    id,
+                    name,
+                    start,
+                    end,
+                    *zone,
+                    *optic_required,
+                    *coverage_required,
+                ));
+                k_img_count += 1;
+            }
+        }
+    }
+    (k_img_count, beacon_count)
 }
 
 async fn schedule_undisturbed_orbit(

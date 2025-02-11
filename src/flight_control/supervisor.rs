@@ -5,9 +5,7 @@ use crate::{
         flight_computer::FlightComputer,
         flight_state::FlightState,
         objective::{
-            objective_type::ObjectiveType,
-            known_img_objective::KnownImgObjective,
-            secret_img_objective::SecretImgObjective,
+            objective_base::ObjectiveBase,
         },
     },
     http_handler::http_request::{objective_list_get::ObjectiveListRequest, request_common::NoBodyHTTPRequestType},
@@ -19,7 +17,7 @@ pub struct Supervisor {
     f_cont_lock: Arc<RwLock<FlightComputer>>,
     safe_mode_monitor: Arc<Notify>,
     reset_pos_monitor: Arc<Notify>,
-    objective_monitor: mpsc::Sender<ObjectiveType>,
+    objective_monitor: mpsc::Sender<ObjectiveBase>,
 }
 
 impl Supervisor {
@@ -28,7 +26,7 @@ impl Supervisor {
     /// Constant update interval for objective updates in the `run()` method
     const OBJ_UPDATE_INTERVAL: chrono::TimeDelta = chrono::TimeDelta::seconds(300);
     /// Creates a new instance of `Supervisor`
-    pub fn new(f_cont_lock: Arc<RwLock<FlightComputer>>) -> (Supervisor, Receiver<ObjectiveType>) {
+    pub fn new(f_cont_lock: Arc<RwLock<FlightComputer>>) -> (Supervisor, Receiver<ObjectiveBase>) {
         let (tx, rx) = mpsc::channel(10);
         (
             Self {
@@ -103,13 +101,7 @@ impl Supervisor {
                     let obj_on = img_obj.start() < chrono::Utc::now() && img_obj.end() > chrono::Utc::now();
                     let obj_known = obj_id_list.contains(&img_obj.id());
                     if obj_on && !obj_known {
-                        let monitor_send = {
-                            if img_obj.is_secret() {
-                                ObjectiveType::KnownImgObj(KnownImgObjective::try_from(img_obj.clone()).unwrap())
-                            } else {
-                                ObjectiveType::SecretImgObj(SecretImgObjective::from(img_obj.clone()))
-                            }
-                        };
+                        let monitor_send = ObjectiveBase::from(img_obj.clone());
                         obj_id_list.insert(img_obj.id());
                         self.objective_monitor.send(monitor_send).await.unwrap();
                     }

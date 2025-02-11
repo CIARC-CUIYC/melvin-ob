@@ -1,10 +1,16 @@
-use crate::flight_control::objective::{
-    beacon_objective::BeaconObjective, known_img_objective::KnownImgObjective,
-    secret_img_objective::SecretImgObjective,
-};
+use crate::flight_control::camera_state::CameraAngle;
+use strum_macros::Display;
 
+#[derive(Display, Debug, Clone)]
 pub enum ObjectiveType {
-    BeaconObj(BeaconObjective),
-    KnownImgObj(KnownImgObjective),
-    SecretImgObj(SecretImgObjective),
+    Beacon,
+    KnownImage {
+        zone: [i32; 4],
+        optic_required: CameraAngle,
+        coverage_required: f32,
+    },
+    SecretImage {
+        optic_required: CameraAngle,
+        coverage_required: f32,
+    },
 }

@@ -51,13 +51,13 @@ pub struct BeaconObjective {
 }
 
 impl BeaconObjective {
-    fn name(&self) -> &str { self.name.as_str() }
-    fn id(&self) -> usize { self.id }
-    fn attempts_made(&self) -> u32 { self.attempts_made }
-    fn decrease_rate(&self) -> f32 { self.decrease_rate }
-    fn start(&self) -> chrono::DateTime<chrono::Utc> { self.start }
-    fn end(&self) -> chrono::DateTime<chrono::Utc> { self.end }
-    fn description(&self) -> &str { self.description.as_str() }
+    pub fn name(&self) -> &str { self.name.as_str() }
+    pub fn id(&self) -> usize { self.id }
+    pub fn attempts_made(&self) -> u32 { self.attempts_made }
+    pub fn decrease_rate(&self) -> f32 { self.decrease_rate }
+    pub fn start(&self) -> chrono::DateTime<chrono::Utc> { self.start }
+    pub fn end(&self) -> chrono::DateTime<chrono::Utc> { self.end }
+    pub fn description(&self) -> &str { self.description.as_str() }
 }
 
 #[derive(serde::Deserialize, Debug)]
