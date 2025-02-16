@@ -78,7 +78,6 @@ async fn main() {
         let res = init(base_url).await;
         (Arc::new(res.0), res.1, res.2, res.3)
     };
-
     let sched = k.t_cont().sched_arc();
 
     let debug_objective = KnownImgObjective::new(

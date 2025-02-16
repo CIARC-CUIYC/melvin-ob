@@ -291,7 +291,7 @@ impl FlightComputer {
     pub async fn reset(&self) {
         ResetRequest {}.send_request(&self.request_client).await.expect("ERROR: Failed to reset");
         Self::wait_for_duration(Duration::from_secs(4)).await;
-        
+        println!("[INFO] Reset request complete.");       
     }
 
     /// Indicates that a `Supervisor` detected a safe mode event

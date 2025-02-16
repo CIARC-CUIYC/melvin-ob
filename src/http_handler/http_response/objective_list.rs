@@ -5,6 +5,7 @@ use crate::http_handler::{
 
 #[derive(serde::Deserialize, Debug)]
 pub struct ObjectiveListResponse {
+    #[serde(rename = "zoned_objectives")]
     img_objectives: Vec<ImageObjective>,
     beacon_objectives: Vec<BeaconObjective>,
 }

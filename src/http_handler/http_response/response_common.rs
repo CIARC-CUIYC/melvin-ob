@@ -58,7 +58,7 @@ pub(crate) trait HTTPResponseType {
 
 #[derive(Debug, serde::Deserialize)]
 pub struct BadRequestReturn {
-    detail: Vec<BadRequestDetail>,
+    detail: String,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -87,7 +87,9 @@ impl std::error::Error for ResponseError {}
 impl From<reqwest::Error> for ResponseError {
     fn from(value: reqwest::Error) -> Self {
         if value.is_request() {
-            ResponseError::BadRequest(BadRequestReturn { detail: vec![] })
+            ResponseError::BadRequest(BadRequestReturn {
+                detail: value.to_string(),
+            })
         } else if value.is_timeout() || value.is_redirect() {
             ResponseError::InternalServer
         } else if value.is_connect() {
