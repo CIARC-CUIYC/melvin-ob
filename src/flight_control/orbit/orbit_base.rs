@@ -1,4 +1,4 @@
-use crate::flight_control::common::math::{gcd_fixed64, lcm_fixed64};
+use crate::flight_control::common::math::{gcd_fixed64, lcm_fixed64, MAX_DEC};
 use crate::flight_control::common::vec2d::MapSize;
 use crate::flight_control::{
     camera_state::CameraAngle,
@@ -49,6 +49,16 @@ impl OrbitBase {
         }
     }
 
+    pub fn new_test(vel: Vec2D<I32F32>, state: FlightState, pos: Vec2D<I32F32>, batt: I32F32) -> Self {
+        Self {
+            init_timestamp: chrono::Utc::now(),
+            init_state: state,
+            init_battery: batt,
+            fp: pos,
+            vel,
+        }
+    }
+
     /// Returns the timestamp when the orbit was initialized.
     ///
     /// # Returns
@@ -65,8 +75,8 @@ impl OrbitBase {
     /// - `None`: If the orbit period cannot be determined.
     #[allow(clippy::cast_possible_truncation)]
     pub fn period(&self) -> Option<(I32F32, I32F32, I32F32)> {
-        let gcd_x = gcd_fixed64(self.vel.x(), Vec2D::map_size().x());
-        let gcd_y = gcd_fixed64(self.vel.y(), Vec2D::map_size().y());
+        let gcd_x = gcd_fixed64(self.vel.x(), Vec2D::map_size().x(), MAX_DEC);
+        let gcd_y = gcd_fixed64(self.vel.y(), Vec2D::map_size().y(), MAX_DEC);
         let t_x = Vec2D::<I32F32>::map_size().x() / gcd_x;
         let t_y = Vec2D::<I32F32>::map_size().y() / gcd_y;
         let tts = lcm_fixed64(t_x, t_y);
@@ -76,9 +86,10 @@ impl OrbitBase {
 
         let mut resulting_point = self.fp + disp;
         resulting_point = resulting_point.wrap_around_map();
-        let resulting_dist = resulting_point - self.fp;
-        if resulting_dist.x().abs() == I32F32::zero() && resulting_dist.y().abs() < I32F32::zero() {
-            Some((tts, t_x, t_y))
+        let resulting_dist = (resulting_point - self.fp).abs();
+        let delta = I32F32::DELTA * tts;
+        if resulting_dist.round() <= delta {
+            Some((tts.round(), t_x.round(), t_y.round()))
         } else {
             None
         }

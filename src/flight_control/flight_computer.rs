@@ -20,6 +20,7 @@ use fixed::types::{I32F32, I64F64};
 use num::{ToPrimitive, Zero};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::RwLock;
+use crate::flight_control::common::math::MAX_DEC;
 
 type TurnsClockCClockTup = (
     Vec<(Vec2D<I32F32>, Vec2D<I32F32>)>,
@@ -79,7 +80,7 @@ impl FlightComputer {
     /// Constant fuel consumption per accelerating second
     pub const FUEL_CONST: I32F32 = I32F32::lit("0.03");
     /// Maximum decimal places that are used in the observation endpoint for velocity
-    pub const VEL_BE_MAX_DECIMAL: u8 = 2;
+    pub const VEL_BE_MAX_DECIMAL: u8 = MAX_DEC;
     /// Constant timeout for the `wait_for_condition`-method
     const DEF_COND_TO: u16 = 3000;
     /// Constant timeout for the `wait_for_condition`-method
@@ -134,6 +135,16 @@ impl FlightComputer {
         let factor_f64 = I64F64::from_num(10f64.powi(i32::from(Self::VEL_BE_MAX_DECIMAL)));
         let trunc_x = (vel.x() * factor).floor() / factor;
         let trunc_y = (vel.y() * factor).floor() / factor;
+        let dev_x = (I64F64::from_num(vel.x()) * factor_f64).frac() / factor_f64;
+        let dev_y = (I64F64::from_num(vel.y()) * factor_f64).frac() / factor_f64;
+        (Vec2D::new(trunc_x, trunc_y), Vec2D::new(dev_x, dev_y))
+    }
+
+    pub fn round_vel(vel: Vec2D<I32F32>) -> (Vec2D<I32F32>, Vec2D<I64F64>) {
+        let factor = I32F32::from_num(10f32.powi(i32::from(Self::VEL_BE_MAX_DECIMAL)));
+        let factor_f64 = I64F64::from_num(10f64.powi(i32::from(Self::VEL_BE_MAX_DECIMAL)));
+        let trunc_x = (vel.x() * factor).round() / factor;
+        let trunc_y = (vel.y() * factor).round() / factor;
         let dev_x = (I64F64::from_num(vel.x()) * factor_f64).frac() / factor_f64;
         let dev_y = (I64F64::from_num(vel.y()) * factor_f64).frac() / factor_f64;
         (Vec2D::new(trunc_x, trunc_y), Vec2D::new(dev_x, dev_y))
@@ -422,7 +433,7 @@ impl FlightComputer {
         locked_self.read().await.set_vel(new_vel).await;
 
         Self::wait_for_duration(vel_change_dt).await;
-        let comp_new_vel = (new_vel * I32F32::lit("100")).round();
+        let (comp_new_vel, _) = Self::round_vel(new_vel);
         let cond = (
             |cont: &FlightComputer| cont.current_vel() == comp_new_vel,
             format!("Vel equals {new_vel}"),
@@ -560,7 +571,7 @@ impl FlightComputer {
     /// # Arguments
     /// - `new_vel`: The new velocity.
     async fn set_vel(&self, new_vel: Vec2D<I32F32>) {
-        let (vel, _) = Self::trunc_vel(new_vel);
+        let (vel, _) = Self::round_vel(new_vel);
         let req = ControlSatelliteRequest {
             vel_x: vel.x().to_f64().unwrap(),
             vel_y: vel.y().to_f64().unwrap(),

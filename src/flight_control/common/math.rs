@@ -1,5 +1,7 @@
 use fixed::types::{I32F32, I64F64};
 
+pub const MAX_DEC: u8 = 2;
+
 /// Helper function to calculate the greatest common divisor (GCD) for fixed-point numbers using `I32F32`.
 ///
 /// # Arguments
@@ -8,15 +10,11 @@ use fixed::types::{I32F32, I64F64};
 ///
 /// # Returns
 /// - An `I32F32` representing the greatest common divisor of `a` and `b`.
-pub fn gcd_fixed64(a: I32F32, b: I32F32) -> I32F32 {
-    let mut x = a.abs();
-    let mut y = b.abs();
-    while y > I32F32::DELTA {
-        let temp = y;
-        y = x % y;
-        x = temp;
-    }
-    x
+pub fn gcd_fixed64(a: I32F32, b: I32F32, dec: u8) -> I32F32 {
+    let scale_factor = I32F32::from_num(10u32.pow(u32::from(dec)));
+    let mut a_int = (a*scale_factor).round().to_num::<i64>();
+    let mut b_int = (b*scale_factor).round().to_num::<i64>();
+    I32F32::from_num(gcd_i64(a_int, b_int)) / scale_factor
 }
 
 /// Helper function to calculate the greatest common divisor (GCD) for fixed-point numbers using `I64F64`.
@@ -27,15 +25,11 @@ pub fn gcd_fixed64(a: I32F32, b: I32F32) -> I32F32 {
 ///
 /// # Returns
 /// - An `I64F64` representing the greatest common divisor of `a` and `b`.
-pub fn gcd_fixed128(a: I64F64, b: I64F64) -> I64F64 {
-    let mut x = a.abs();
-    let mut y = b.abs();
-    while y > I64F64::DELTA {
-        let temp = y;
-        y = x % y;
-        x = temp;
-    }
-    x
+pub fn gcd_fixed128(a: I64F64, b: I64F64, dec: u8) -> I64F64 {
+    let scale_factor = I64F64::from_num(10u32.pow(u32::from(dec)));
+    let a_int = (a*scale_factor).round().to_num::<i64>();
+    let b_int = (b*scale_factor).round().to_num::<i64>();
+    I64F64::from_num(gcd_i64(a_int, b_int)) / scale_factor
 }
 
 /// Helper function to calculate the greatest common divisor (GCD) for signed integers.
@@ -46,7 +40,7 @@ pub fn gcd_fixed128(a: I64F64, b: I64F64) -> I64F64 {
 ///
 /// # Returns
 /// - An `i32` representing the greatest common divisor of `a` and `b`.
-pub fn gcd_i32(a: i32, b: i32) -> i32 {
+pub fn gcd_i64(a: i64, b: i64) -> i64 {
     let mut x = a.abs();
     let mut y = b.abs();
     while y != 0 {
@@ -78,7 +72,7 @@ pub fn fmod_fixed64(a: I32F32, b: I32F32) -> I32F32 {
 /// # Returns
 /// - An `I32F32` representing the least common multiple of `a` and `b`.
 pub fn lcm_fixed64(a: I32F32, b: I32F32) -> I32F32 {
-    (a * b / gcd_fixed64(a, b)).abs()
+    (a * b / gcd_fixed64(a, b, MAX_DEC)).abs()
 }
 
 /// Calculate the least common multiple (LCM) for fixed-point numbers using `I64F64`.
@@ -90,7 +84,7 @@ pub fn lcm_fixed64(a: I32F32, b: I32F32) -> I32F32 {
 /// # Returns
 /// - An `I64F64` representing the least common multiple of `a` and `b`.
 pub fn lcm_fixed128(a: I64F64, b: I64F64) -> I64F64 {
-    (a * b / gcd_fixed128(a, b)).abs()
+    (a * b / gcd_fixed128(a, b, MAX_DEC)).abs()
 }
 
 /// Calculate the least common multiple (LCM) for signed integers.
@@ -101,8 +95,8 @@ pub fn lcm_fixed128(a: I64F64, b: I64F64) -> I64F64 {
 ///
 /// # Returns
 /// - An `i32` representing the least common multiple of `a` and `b`.
-pub fn lcm_i32(a: i32, b: i32) -> i32 {
-    (a / gcd_i32(a, b)) * b
+pub fn lcm_i64(a: i64, b: i64) -> i64 {
+    (a / gcd_i64(a, b)) * b
 }
 
 /// Generalized method to normalize a value within a given range.

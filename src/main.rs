@@ -58,9 +58,9 @@ const DT_0: TimeDelta = TimeDelta::seconds(0);
 const DT_0_STD: std::time::Duration = std::time::Duration::from_secs(0);
 const DETUMBLE_TOL: TimeDelta = DT_MIN;
 
-const STATIC_ORBIT_VEL: (I32F32, I32F32) = (I32F32::lit("6.4"), I32F32::lit("7.4"));
-pub const MIN_BATTERY_THRESHOLD: I32F32 = I32F32::lit("10.0");
-pub const MAX_BATTERY_THRESHOLD: I32F32 = I32F32::lit("100.0");
+const STATIC_ORBIT_VEL: (I32F32, I32F32) = (I32F32::lit("6.40"), I32F32::lit("7.40"));
+pub const MIN_BATTERY_THRESHOLD: I32F32 = I32F32::lit("10.00");
+pub const MAX_BATTERY_THRESHOLD: I32F32 = I32F32::lit("100.00");
 const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 
 #[allow(
@@ -286,6 +286,8 @@ async fn init(
         supervisor_clone.run().await;
     });
 
+    tokio::time::sleep(DT_MIN.to_std().unwrap()).await;
+    
     let c_orbit: ClosedOrbit = {
         let f_cont_lock = init_k.f_cont();
         FlightComputer::set_state_wait(init_k.f_cont(), FlightState::Acquisition).await;
