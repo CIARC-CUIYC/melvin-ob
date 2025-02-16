@@ -289,7 +289,6 @@ async fn init(
 
     let c_orbit: ClosedOrbit = {
         let f_cont_lock = init_k.f_cont();
-        f_cont_lock.write().await.reset().await;
         FlightComputer::set_state_wait(init_k.f_cont(), FlightState::Acquisition).await;
         FlightComputer::set_vel_wait(init_k.f_cont(), STATIC_ORBIT_VEL.into()).await;
         FlightComputer::set_angle_wait(init_k.f_cont(), CONST_ANGLE).await;
