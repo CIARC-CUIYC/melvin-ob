@@ -329,28 +329,28 @@ fn recv_all_obj(
 
         match obj.obj_type() {
             ObjectiveType::Beacon => {
-                beacon_buffer.push(BeaconObjective::new(id, name, start, end));
-                beacon_count += 1;
+                /*beacon_buffer.push(BeaconObjective::new(id, name, start, end));
+                beacon_count += 1;*/
             }
             ObjectiveType::SecretImage {
                 optic_required,
                 coverage_required,
             } => {
-                s_img_buffer.push_front(SecretImgObjective::new(
+                /*s_img_buffer.push_front(SecretImgObjective::new(
                     id,
                     name,
                     start,
                     end,
                     *optic_required,
                     *coverage_required,
-                ));
+                ));*/
             }
             ObjectiveType::KnownImage {
                 zone,
                 optic_required,
                 coverage_required,
             } => {
-                k_img_buffer.push(KnownImgObjective::new(
+                /*k_img_buffer.push(KnownImgObjective::new(
                     id,
                     name,
                     start,
@@ -359,9 +359,10 @@ fn recv_all_obj(
                     *optic_required,
                     *coverage_required,
                 ));
-                k_img_count += 1;
+                k_img_count += 1;*/
             }
         }
+        println!("[INFO] Found new objective: {}!", obj.obj_type());
     }
     (k_img_count, beacon_count)
 }
