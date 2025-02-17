@@ -7,6 +7,7 @@ use bitvec::{
 use fixed::types::I32F32;
 use num::ToPrimitive;
 use strum_macros::Display;
+use crate::flight_control::common::vec2d::Vec2D;
 
 /// Represents a closed orbit with a fixed period, image time information, and completion status.
 pub struct ClosedOrbit {
@@ -72,12 +73,12 @@ impl ClosedOrbit {
         &self,
         shift_start: usize,
         shift_end: usize,
-    ) -> impl Iterator<Item=BitRef> {
+    ) -> Box<dyn Iterator<Item=BitRef> + '_> {
         assert!(
             shift_start < self.done.len() && shift_end <= self.done.len(),
             "[FATAL] Shift is larger than the orbit length"
         );
-        self.done[shift_start..].iter().chain(self.done[..shift_start].iter()).rev().skip(shift_end)
+        Box::new(self.done[shift_start..].iter().chain(self.done[..shift_start].iter()).rev().skip(shift_end))
     }
 
     /// Marks a specified range of orbit segments as completed in the `done` bitvector.

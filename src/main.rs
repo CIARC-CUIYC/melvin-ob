@@ -53,6 +53,11 @@ enum PeriodicImagingEndSignal {
     KillLastImage,
 }
 
+const SAFE_MODE_RATIONALE: &str = "SAFE mode event!";
+const NEW_ZO_RATIONALE: &str = "newly discovered ZO!";
+const NEW_BO_RATIONALE: &str = "newly discovered BO!";
+const TASKS_DONE_RATIONALE: &str = "tasks list done!";
+
 const DT_MIN: TimeDelta = TimeDelta::seconds(5);
 const DT_0: TimeDelta = TimeDelta::seconds(0);
 const DT_0_STD: std::time::Duration = std::time::Duration::from_secs(0);
@@ -106,9 +111,9 @@ async fn main() {
         &mut s_img_buffer,
     );
 
+    let mut phases = 0;
     'outer: loop {
-        let mut phases = 0;
-        println!("[INFO] Starting new phase in {global_mode}!");
+        println!("[INFO] Starting phase {phases} in {global_mode}!");
         let cancel_task = CancellationToken::new();
         if k_img_buffer.is_empty() && beacon_buffer.is_empty() {
             global_mode = GlobalMode::MappingMode;
@@ -145,18 +150,29 @@ async fn main() {
             _ => panic!("[FATAL] Unexpected global mode!"),
         };
 
+        let task = tokio::spawn(fut);
         tokio::select!(
-            () = fut => {
+            _ = task => {
                 k.con().send_tasklist().await;
             },
             () = safe_event_notify.notified() => {
                 cancel_task.cancel();
                 FlightComputer::escape_safe(k.f_cont()).await;
+                orbit_char.finish(
+                    orbit_char.i_entry().new_from_pos(k.f_cont().read().await.current_pos()),
+                    SAFE_MODE_RATIONALE
+                );
+                phases += 1;
                 continue 'outer;
             }
         );
 
-        while let Some(task) = { (*sched).write().await.pop_front() } {
+        while let Some(task) = {
+            let mut sched_lock = sched.write().await;
+            let t = sched_lock.pop_front();
+            drop(sched_lock);
+            t
+        } {
             phases += 1;
             let task_type = task.task_type();
             let due_time = task.dt().time_left();
@@ -168,7 +184,7 @@ async fn main() {
             let current_state = { k.f_cont().read().await.state() };
             let cancel_task = CancellationToken::new();
 
-            let task_fut: Pin<Box<dyn Future<Output = ()>>> = match current_state {
+            let task_fut: Pin<Box<dyn Future<Output = ()> + Send>> = match current_state {
                 FlightState::Acquisition => {
                     if due_time > DT_MIN && global_mode.should_map() {
                         let k_clone = Arc::clone(&k);
@@ -194,14 +210,19 @@ async fn main() {
                     panic!("[FATAL] Illegal state ({current_state})!")
                 }
             };
-
+            let task_handle = tokio::spawn(task_fut);
             tokio::select! {
-                () = task_fut => {},
+                _ = task_handle => {},
                 () = safe_event_notify.notified() => {
                         cancel_task.cancel();
                         FlightComputer::escape_safe(k.f_cont()).await;
                         k.t_cont().clear_schedule().await;
                         // TODO: here it should be checked if we were in objective retrieval
+                        // TODO: the next line should only be executed if in mapping mode like this
+                        orbit_char.finish(
+                            orbit_char.i_entry().new_from_pos(k.f_cont().read().await.current_pos()),
+                            SAFE_MODE_RATIONALE);
+                        phases += 1;
                         continue 'outer;
                 }
             }
@@ -260,7 +281,11 @@ async fn main() {
                 },
             }
         }
-        orbit_char.finish(orbit_char.i_entry().new_from_pos(k.f_cont().read().await.current_pos()));
+        orbit_char.finish(
+            orbit_char.i_entry().new_from_pos(k.f_cont().read().await.current_pos()),
+            TASKS_DONE_RATIONALE,
+        );
+        phases += 1;
     }
     // drop(console_messenger);
 }
@@ -287,7 +312,7 @@ async fn init(
     });
 
     tokio::time::sleep(DT_MIN.to_std().unwrap()).await;
-    
+
     let c_orbit: ClosedOrbit = {
         let f_cont_lock = init_k.f_cont();
         FlightComputer::set_state_wait(init_k.f_cont(), FlightState::Acquisition).await;
@@ -474,13 +499,15 @@ async fn execute_mapping(
             );
             res
         } else {
+            let img_fut = acq_phase.0;
+            tokio::pin!(img_fut);
             tokio::select! {
                 () = cancel_token.cancelled() => {
                     let sig = PeriodicImagingEndSignal::KillNow;
                     acq_phase.1.send(sig).expect("[FATAL] Receiver hung up!");
-                    Vec::new()
+                    img_fut.await.ok().unwrap_or(Vec::new())
                 }
-                res = acq_phase.0 => {
+                res = &mut img_fut => {
                     res.ok().unwrap_or(Vec::new())
                 }
             }

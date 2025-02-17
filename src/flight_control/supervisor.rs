@@ -47,17 +47,28 @@ impl Supervisor {
     /// and monitor position & state deviations.
     #[allow(clippy::cast_precision_loss)]
     pub async fn run(&self) {
+        let start = chrono::Utc::now();
+        let mut next_safe = start + chrono::TimeDelta::seconds(500);
+        
         // TODO: pos monitoring in kalman filter + listening for reset_pos events
         let mut last_pos: Option<Vec2D<I32F32>> = None;
         let mut last_timestamp = chrono::Utc::now();
         let mut last_vel = self.f_cont_lock.read().await.current_vel();
         let mut last_objective_check = chrono::Utc::now() - Self::OBJ_UPDATE_INTERVAL;
         let mut obj_id_list: HashSet<usize> = HashSet::new();
+        
         loop {
             let mut f_cont = self.f_cont_lock.write().await;
             // Update observation and fetch new position
             f_cont.update_observation().await;
-
+            
+            if chrono::Utc::now() > next_safe {
+                let act_state = f_cont.state();
+                f_cont.one_time_safe();
+                next_safe += chrono::TimeDelta::seconds(5000);
+                println!("[INFO] One time safe mode activated Actual State was {act_state}!");
+            }
+            
             let current_pos = f_cont.current_pos();
             let current_vel = f_cont.current_vel();
             let is_safe_trans = {

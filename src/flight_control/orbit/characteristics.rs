@@ -67,10 +67,11 @@ impl OrbitCharacteristics {
     ///
     /// # Arguments
     /// - `now`: The new `IndexedOrbitPosition` representing the current state.
-    pub fn finish(&mut self, now: IndexedOrbitPosition) {
+    pub fn finish(&mut self, now: IndexedOrbitPosition, rationale: &str) {
         println!(
-            "[INFO] Finished Task Schedule after: {}",
-            (now.t() - self.i_entry.t()).num_seconds()
+            "[INFO] Finished Phase after: {}, due to: {}",
+            (now.t() - self.i_entry.t()).num_seconds(),
+            rationale
         );
         self.i_entry = now;
     }

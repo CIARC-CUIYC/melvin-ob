@@ -1,13 +1,17 @@
-use crate::flight_control::objective::known_img_objective::KnownImgObjective;
-use crate::flight_control::task::vel_change_task::VelocityChangeTaskRationale;
 use crate::flight_control::{
     common::{linked_box::LinkedBox, math, pinned_dt::PinnedTimeDelay, vec2d::Vec2D},
     flight_computer::FlightComputer,
     flight_state::FlightState,
+    objective::known_img_objective::KnownImgObjective,
     orbit::{BurnSequence, ClosedOrbit, IndexedOrbitPosition},
     task::{
-        atomic_decision::AtomicDecision, atomic_decision_cube::AtomicDecisionCube, base_task::Task,
+        atomic_decision::AtomicDecision,
+        atomic_decision_cube::AtomicDecisionCube,
+        base_task::Task,
         score_grid::ScoreGrid,
+        vel_change_task::{
+            VelocityChangeTaskRationale, VelocityChangeTaskRationale::OrbitEscapeChange,
+        },
     },
 };
 use crate::{MAX_BATTERY_THRESHOLD, MIN_BATTERY_THRESHOLD};
@@ -20,7 +24,6 @@ use std::{
     sync::{Arc, Condvar},
 };
 use tokio::sync::RwLock;
-use crate::flight_control::task::vel_change_task::VelocityChangeTaskRationale::OrbitEscapeChange;
 
 /// `TaskController` manages and schedules tasks for MELVIN.
 /// It leverages a thread-safe task queue and notifies waiting threads when
@@ -135,6 +138,7 @@ impl TaskController {
                 max_pred_secs
             }
         };
+        println!("[INFO] Calculating optimal orbit schedule for {prediction_secs} seconds");
         // Retrieve a reordered iterator over the orbit's completion bitvector to optimize scheduling.
         let p_t_iter = orbit.get_p_t_reordered(
             p_t_shift,
@@ -163,7 +167,7 @@ impl TaskController {
         // Perform the calculation for the optimal orbit schedule using the prepared variables.
         Self::calculate_optimal_orbit_schedule(
             prediction_secs,
-            Box::new(p_t_iter),
+            p_t_iter,
             score_cube,
             &cov_dt_temp,
             decision_buffer,
@@ -196,7 +200,7 @@ impl TaskController {
         let max_battery = score_grid_default.e_len() - 1;
         for t in (0..pred_dt).rev() {
             let mut cov_dt = score_grid_default.clone();
-            let p_dt = u16::from(!*p_t_it.next().unwrap());
+            let p_dt = i32::from(!*p_t_it.next().unwrap());
             for e in 0..=max_battery {
                 for s in 0..=1 {
                     let de = if s == 0 { 1 } else { -1 };
@@ -208,7 +212,7 @@ impl TaskController {
                             score_cube.front().unwrap().get(new_e.min(max_battery), s)
                         } else if e > 0 {
                             // If in acquisition state, consider score and state.
-                            score_cube.front().unwrap().get(new_e, s) + i32::from(p_dt)
+                            score_cube.front().unwrap().get(new_e, s) + p_dt
                         } else {
                             // If battery is depleted, staying is not possible.
                             i32::MIN
@@ -666,10 +670,8 @@ impl TaskController {
     ) {
         let p_t_shift = scheduling_start_i.index();
         let computation_start = scheduling_start_i.t();
-        println!("[INFO] Calculating optimal orbit schedule...");
         let result = {
             let orbit = orbit_lock.read().await;
-
             Self::init_orbit_sched_calc(&orbit, p_t_shift, None, None)
         };
         let dt_calc = (chrono::Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
@@ -778,7 +780,6 @@ impl TaskController {
                 }
             }
         }
-
         // Return the final number of tasks in the schedule.
         self.task_schedule.read().await.len()
     }
@@ -882,6 +883,7 @@ impl TaskController {
     /// - Notifies all waiting threads if the schedule is cleared.
     pub async fn clear_schedule(&self) {
         let schedule = &*self.task_schedule;
+        println!("[INFO] Clearing task schedule...");
         schedule.write().await.clear();
     }
 }

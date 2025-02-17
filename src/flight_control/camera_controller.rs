@@ -481,9 +481,18 @@ impl CameraController {
             tokio::select! {
                 () = tokio::time::sleep(sleep_time.to_std().unwrap_or(DT_0_STD)) => {},
                 msg = &mut kill_box => {
-                    match msg.ok().unwrap(){
+                    let msg_unwr = msg.unwrap_or_else(
+                        |e| {
+                            println!("[ERROR] Couldn't receive kill signal: {e}");
+                            PeriodicImagingEndSignal::KillNow
+                        });
+                    match msg_unwr{
                         PeriodicImagingEndSignal::KillLastImage => last_image_flag = true,
-                        PeriodicImagingEndSignal::KillNow => return done_ranges
+                        PeriodicImagingEndSignal::KillNow => {
+                            let passed_secs = (chrono::Utc::now() - last_mark.1 + overlap).num_seconds();
+                            done_ranges.push((last_mark.0, last_mark.0 + passed_secs as isize));
+                            return done_ranges
+                        }
                     }
                 }
             }

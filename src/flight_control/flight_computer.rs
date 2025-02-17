@@ -95,6 +95,11 @@ impl FlightComputer {
         FlightState::Charge,
         FlightState::Comms,
     ];
+    
+    pub fn one_time_safe(&mut self) {
+        self.current_state = FlightState::Transition;
+        self.target_state = None;
+    }
 
     /// Initializes a new `FlightComputer` instance.
     ///
@@ -388,7 +393,7 @@ impl FlightComputer {
         let init_state = { locked_self.read().await.current_state };
         if new_state == init_state {
             println!("[LOG] State already set to {new_state}");
-            // return; // TODO: here an error should be returned or logged maybe???
+            return; // TODO: here an error should be returned or logged maybe???
         } else if !Self::LEGAL_TARGET_STATES.contains(&new_state) {
             panic!("[FATAL] State {new_state} is not a legal target state");
             // return; // TODO: here an error should be returned or logged maybe???
