@@ -3,34 +3,43 @@
 
 mod console_communication;
 mod flight_control;
+mod global_mode;
 mod http_handler;
 mod keychain;
 
+use crate::flight_control::objective::beacon_objective::BeaconObjective;
+use crate::flight_control::objective::objective_base::ObjectiveBase;
+use crate::flight_control::objective::objective_type::ObjectiveType;
+use crate::flight_control::objective::secret_img_objective::SecretImgObjective;
 use crate::flight_control::supervisor::Supervisor;
+use crate::flight_control::task::vel_change_task::{
+    VelocityChangeTask, VelocityChangeTaskRationale,
+};
 use crate::flight_control::{
     camera_state::CameraAngle,
     common::pinned_dt::PinnedTimeDelay,
     flight_computer::FlightComputer,
     flight_state::FlightState,
+    objective::known_img_objective::KnownImgObjective,
     orbit::{
         ClosedOrbit, IndexedOrbitPosition, OrbitBase, OrbitCharacteristics, OrbitUsabilityError,
     },
     task::{base_task::BaseTask, TaskController},
 };
-use crate::http_handler::ZonedObjective;
 use crate::keychain::{Keychain, KeychainWithOrbit};
 use crate::MappingModeEnd::{Join, Timestamp};
 use chrono::{DateTime, TimeDelta};
 use fixed::types::I32F32;
+use global_mode::GlobalMode;
+use std::collections::BinaryHeap;
 use std::future::Future;
 use std::pin::Pin;
 use std::{
     collections::VecDeque,
     {env, sync::Arc},
 };
-use strum_macros::Display;
-use tokio::sync::oneshot;
-use tokio::task::JoinHandle;
+use tokio::sync::mpsc::Receiver;
+use tokio::{sync::oneshot, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 
 enum MappingModeEnd {
@@ -44,20 +53,19 @@ enum PeriodicImagingEndSignal {
     KillLastImage,
 }
 
-#[derive(Display)]
-enum GlobalMode {
-    MappingMode,
-    ZonedObjectiveMode(ZonedObjective),
-}
+const SAFE_MODE_RATIONALE: &str = "SAFE mode event!";
+const NEW_ZO_RATIONALE: &str = "newly discovered ZO!";
+const NEW_BO_RATIONALE: &str = "newly discovered BO!";
+const TASKS_DONE_RATIONALE: &str = "tasks list done!";
 
 const DT_MIN: TimeDelta = TimeDelta::seconds(5);
 const DT_0: TimeDelta = TimeDelta::seconds(0);
 const DT_0_STD: std::time::Duration = std::time::Duration::from_secs(0);
 const DETUMBLE_TOL: TimeDelta = DT_MIN;
 
-const STATIC_ORBIT_VEL: (I32F32, I32F32) = (I32F32::lit("6.4"), I32F32::lit("7.4"));
-pub const MIN_BATTERY_THRESHOLD: I32F32 = I32F32::lit("10.0");
-pub const MAX_BATTERY_THRESHOLD: I32F32 = I32F32::lit("100.0");
+const STATIC_ORBIT_VEL: (I32F32, I32F32) = (I32F32::lit("6.40"), I32F32::lit("7.40"));
+pub const MIN_BATTERY_THRESHOLD: I32F32 = I32F32::lit("10.00");
+pub const MAX_BATTERY_THRESHOLD: I32F32 = I32F32::lit("100.00");
 const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 
 #[allow(
@@ -71,59 +79,100 @@ const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 async fn main() {
     let base_url_var = env::var("DRS_BASE_URL");
     let base_url = base_url_var.as_ref().map_or("http://localhost:33000", |v| v.as_str());
-    let (k, mut orbit_char, supervisor) = {
+    let (k, mut orbit_char, supervisor, mut obj_monitor) = {
         let res = init(base_url).await;
-        (Arc::new(res.0), res.1, res.2)
+        (Arc::new(res.0), res.1, res.2, res.3)
     };
-
     let sched = k.t_cont().sched_arc();
 
-    let debug_objective = ZonedObjective::new(
+    let debug_objective = KnownImgObjective::new(
         0,
+        "Test Objective".to_string(),
         chrono::Utc::now(),
         chrono::Utc::now() + TimeDelta::hours(7),
-        "Test Objective".to_string(),
-        0,
-        true,
         [4750, 5300, 5350, 5900],
-        "narrow".to_string(),
-        1.0,
-        "Test Objective".to_string(),
-        "test_objective.png".to_string(),
-        false,
+        "narrow".into(),
+        100.0,
     );
 
-    let mut objective_queue = VecDeque::new();
-    objective_queue.push_back(debug_objective.clone());
-    //schedule_zoned_objective_retrieval(Arc::clone(&k), orbit_char, debug_objective).await;
-    let mut global_mode = GlobalMode::MappingMode;
-    let safe_event_notify = supervisor.safe_mode_notify();
+    // TODO: debug artifact
+    // objective_queue.push_back(ObjectiveType::KnownImage(debug_objective.clone()));
+    let mut k_img_buffer: BinaryHeap<KnownImgObjective> = BinaryHeap::new();
+    let mut beacon_buffer: BinaryHeap<BeaconObjective> = BinaryHeap::new();
+    let mut s_img_buffer: VecDeque<SecretImgObjective> = VecDeque::new();
 
+    let mut global_mode = GlobalMode::MappingMode;
+    let safe_event_notify = supervisor.safe_mode_monitor();
+
+    recv_all_obj(
+        &mut obj_monitor,
+        &mut k_img_buffer,
+        &mut beacon_buffer,
+        &mut s_img_buffer,
+    );
+
+    let mut phases = 0;
     'outer: loop {
-        let mut phases = 0;
-        println!("[INFO] Starting new phase in {global_mode}!");
+        println!("[INFO] Starting phase {phases} in {global_mode}!");
         let cancel_task = CancellationToken::new();
+        if k_img_buffer.is_empty() && beacon_buffer.is_empty() {
+            global_mode = GlobalMode::MappingMode;
+        } else {
+            // TODO: handle multiple tasks at the same time
+            // TODO: handle tasks at all with some kind of "StateResolver"
+            match &global_mode {
+                GlobalMode::MappingMode => {}
+                GlobalMode::BeaconObjectivePassiveScanningMode(obj) => {}
+                GlobalMode::BeaconObjectiveActiveScanningMode(_) => {}
+                GlobalMode::ZonedObjectivePrepMode(obj) => {}
+                GlobalMode::ZonedObjectiveRetrievalMode(_) => {}
+                GlobalMode::ZonedObjectiveReturnMode => {}
+            }
+        }
+
         let fut = match global_mode {
             GlobalMode::MappingMode => {
                 schedule_undisturbed_orbit(Arc::clone(&k), orbit_char, cancel_task.clone())
             }
-            GlobalMode::ZonedObjectiveMode(_) => {
+            GlobalMode::ZonedObjectivePrepMode(obj) => {
+                schedule_zoned_objective_retrieval(
+                    Arc::clone(&k),
+                    orbit_char,
+                    cancel_task.clone(),
+                    obj.clone(),
+                )
+                .await;
                 todo!()
             }
+            GlobalMode::BeaconObjectivePassiveScanningMode(obj) => {
+                todo!()
+            }
+            _ => panic!("[FATAL] Unexpected global mode!"),
         };
 
+        let task = tokio::spawn(fut);
         tokio::select!(
-            () = fut => {
+            _ = task => {
                 k.con().send_tasklist().await;
             },
             () = safe_event_notify.notified() => {
                 cancel_task.cancel();
                 FlightComputer::escape_safe(k.f_cont()).await;
+                orbit_char.finish(
+                    orbit_char.i_entry().new_from_pos(k.f_cont().read().await.current_pos()),
+                    SAFE_MODE_RATIONALE
+                );
+                phases += 1;
                 continue 'outer;
             }
         );
 
-        while let Some(task) = { (*sched).write().await.pop_front() } {
+        while let Some(task) = {
+            let mut sched_lock = sched.write().await;
+            let t = sched_lock.pop_front();
+            drop(sched_lock);
+            t
+        } {
             phases += 1;
             let task_type = task.task_type();
             let due_time = task.dt().time_left();
@@ -134,27 +183,23 @@ async fn main() {
 
             let current_state = { k.f_cont().read().await.state() };
             let cancel_task = CancellationToken::new();
-            let task_fut: Pin<Box<dyn Future<Output = ()>>> = match current_state {
-                FlightState::Acquisition => match global_mode {
-                    GlobalMode::MappingMode => {
-                        if due_time > DT_MIN {
-                            let k_clone = Arc::clone(&k);
-                            Box::pin(execute_mapping(
-                                k_clone,
-                                Timestamp(chrono::Utc::now() + due_time),
-                                orbit_char.img_dt(),
-                                orbit_char.i_entry(),
-                                cancel_task.clone(),
-                            ))
-                        } else {
-                            println!("This never happens, right?");
-                            Box::pin(tokio::time::sleep(due_time.to_std().unwrap_or(DT_0_STD)))
-                        }
+
+            let task_fut: Pin<Box<dyn Future<Output = ()> + Send>> = match current_state {
+                FlightState::Acquisition => {
+                    if due_time > DT_MIN && global_mode.should_map() {
+                        let k_clone = Arc::clone(&k);
+                        Box::pin(execute_mapping(
+                            k_clone,
+                            Timestamp(chrono::Utc::now() + due_time),
+                            orbit_char.img_dt(),
+                            orbit_char.i_entry(),
+                            cancel_task.clone(),
+                        ))
+                    } else {
+                        println!("[LOG] This acquisition mode is not eligible for mapping. Waiting for {} s", due_time.num_seconds());
+                        Box::pin(tokio::time::sleep(due_time.to_std().unwrap_or(DT_0_STD)))
                     }
-                    GlobalMode::ZonedObjectiveMode(_) => {
-                        todo!()
-                    }
-                },
+                }
                 FlightState::Charge => Box::pin(FlightComputer::wait_for_duration(
                     due_time.to_std().unwrap_or(DT_0_STD),
                 )),
@@ -165,13 +210,19 @@ async fn main() {
                     panic!("[FATAL] Illegal state ({current_state})!")
                 }
             };
-
+            let task_handle = tokio::spawn(task_fut);
             tokio::select! {
-                () = task_fut => {},
+                _ = task_handle => {},
                 () = safe_event_notify.notified() => {
                         cancel_task.cancel();
                         FlightComputer::escape_safe(k.f_cont()).await;
+                        k.t_cont().clear_schedule().await;
                         // TODO: here it should be checked if we were in objective retrieval
+                        // TODO: the next line should only be executed if in mapping mode like this
+                        orbit_char.finish(
+                            orbit_char.i_entry().new_from_pos(k.f_cont().read().await.current_pos()),
+                            SAFE_MODE_RATIONALE);
+                        phases += 1;
                         continue 'outer;
                 }
             }
@@ -180,35 +231,20 @@ async fn main() {
                 BaseTask::TakeImage(_) => {
                     todo!()
                 }
-                BaseTask::ChangeVelocity(vel_change) => {
-                    let burn = vel_change.burn();
-                    for vel_change in burn.sequence_vel() {
-                        let st = tokio::time::Instant::now();
-                        let dt = std::time::Duration::from_secs(1);
-                        FlightComputer::set_vel_wait(k.f_cont(), *vel_change).await;
-                        let el = st.elapsed();
-                        if el < dt {
-                            tokio::time::sleep(dt).await;
-                        }
+
+                BaseTask::ChangeVelocity(vel_change) => match vel_change.rationale() {
+                    VelocityChangeTaskRationale::CorrectionalChange => {
+                        todo!();
+                        FlightComputer::execute_burn(k.f_cont(), vel_change.burn()).await;
                     }
-                    let exp_pos = burn.sequence_pos().last().unwrap();
-                    let current_pos = k.f_cont().read().await.current_pos();
-                    let diff = *exp_pos - current_pos;
-                    let detumble_time_delta = TimeDelta::seconds(burn.detumble_dt() as i64);
-                    let detumble_dt = PinnedTimeDelay::new(detumble_time_delta - DETUMBLE_TOL);
-                    println!("[INFO] Velocity change done! Expected position {exp_pos}, Actual Position {current_pos}, Diff {diff}");
-                    let objective = objective_queue.pop_front().unwrap();
-                    // TODO: here we shouldnt use objective.get_imaging_points but something already created,
-                    // TODO: also the mode change to global mode should happen sometime else
-                    let (vel, dev) = FlightComputer::evaluate_burn(
-                        k.f_cont(),
-                        burn,
-                        objective.get_imaging_points()[0],
-                    )
-                    .await;
-                    TaskController::calculate_orbit_correction_burn(vel, dev, detumble_dt);
-                    global_mode = GlobalMode::ZonedObjectiveMode(objective);
-                }
+                    VelocityChangeTaskRationale::OrbitEscapeChange => {
+                        global_mode = handle_orbit_escape(global_mode, vel_change, &k).await;
+                    }
+                    VelocityChangeTaskRationale::OrbitEnterChange => {
+                        todo!();
+                        FlightComputer::execute_burn(k.f_cont(), vel_change.burn()).await;
+                    }
+                },
 
                 BaseTask::SwitchState(switch) => match switch.target_state() {
                     FlightState::Acquisition => {
@@ -226,7 +262,17 @@ async fn main() {
                                 .await
                                 .expect("[WARN] Export failed!");
                         });
+                        let new_obj = recv_all_obj(
+                            &mut obj_monitor,
+                            &mut k_img_buffer,
+                            &mut beacon_buffer,
+                            &mut s_img_buffer,
+                        );
                         join_handle.await;
+                        if new_obj.0 != 0 || new_obj.1 != 0 {
+                            println!("[INFO] New objective detected, exiting phase {phases}!");
+                            continue 'outer;
+                        }
                     }
                     FlightState::Comms => {}
                     _ => {
@@ -235,22 +281,37 @@ async fn main() {
                 },
             }
         }
+        orbit_char.finish(
+            orbit_char.i_entry().new_from_pos(k.f_cont().read().await.current_pos()),
+            TASKS_DONE_RATIONALE,
+        );
         phases += 1;
-        orbit_char.finish(orbit_char.i_entry().new_from_pos(k.f_cont().read().await.current_pos()));
     }
     // drop(console_messenger);
 }
 
 #[allow(clippy::cast_precision_loss)]
-async fn init(url: &str) -> (KeychainWithOrbit, OrbitCharacteristics, Arc<Supervisor>) {
+async fn init(
+    url: &str,
+) -> (
+    KeychainWithOrbit,
+    OrbitCharacteristics,
+    Arc<Supervisor>,
+    Receiver<ObjectiveBase>,
+) {
     let init_k = Keychain::new(url).await;
     init_k.f_cont().write().await.reset().await;
     let init_k_f_cont_clone = init_k.f_cont();
-    let supervisor = Arc::new(Supervisor::new(init_k_f_cont_clone));
+    let (supervisor, obj_rx) = {
+        let (sv, rx) = Supervisor::new(init_k_f_cont_clone);
+        (Arc::new(sv), rx)
+    };
     let supervisor_clone = Arc::clone(&supervisor);
     tokio::spawn(async move {
         supervisor_clone.run().await;
     });
+
+    tokio::time::sleep(DT_MIN.to_std().unwrap()).await;
 
     let c_orbit: ClosedOrbit = {
         let f_cont_lock = init_k.f_cont();
@@ -273,7 +334,62 @@ async fn init(url: &str) -> (KeychainWithOrbit, OrbitCharacteristics, Arc<Superv
         KeychainWithOrbit::new(init_k, c_orbit),
         orbit_char,
         supervisor,
+        obj_rx,
     )
+}
+
+fn recv_all_obj(
+    obj_monitor: &mut Receiver<ObjectiveBase>,
+    k_img_buffer: &mut BinaryHeap<KnownImgObjective>,
+    beacon_buffer: &mut BinaryHeap<BeaconObjective>,
+    s_img_buffer: &mut VecDeque<SecretImgObjective>,
+) -> (usize, usize) {
+    let mut k_img_count = 0;
+    let mut beacon_count = 0;
+    while let Ok(obj) = obj_monitor.try_recv() {
+        let id = obj.id();
+        let name = obj.name().to_string();
+        let start = obj.start();
+        let end = obj.end();
+
+        match obj.obj_type() {
+            ObjectiveType::Beacon => {
+                /*beacon_buffer.push(BeaconObjective::new(id, name, start, end));
+                beacon_count += 1;*/
+            }
+            ObjectiveType::SecretImage {
+                optic_required,
+                coverage_required,
+            } => {
+                /*s_img_buffer.push_front(SecretImgObjective::new(
+                    id,
+                    name,
+                    start,
+                    end,
+                    *optic_required,
+                    *coverage_required,
+                ));*/
+            }
+            ObjectiveType::KnownImage {
+                zone,
+                optic_required,
+                coverage_required,
+            } => {
+                /*k_img_buffer.push(KnownImgObjective::new(
+                    id,
+                    name,
+                    start,
+                    end,
+                    *zone,
+                    *optic_required,
+                    *coverage_required,
+                ));
+                k_img_count += 1;*/
+            }
+        }
+        println!("[INFO] Found new objective: {}!", obj.obj_type());
+    }
+    (k_img_count, beacon_count)
 }
 
 async fn schedule_undisturbed_orbit(
@@ -313,8 +429,8 @@ async fn schedule_undisturbed_orbit(
 async fn schedule_zoned_objective_retrieval(
     k_clone: Arc<KeychainWithOrbit>,
     orbit_char: OrbitCharacteristics,
-    objective: ZonedObjective,
     cancel_token: CancellationToken,
+    objective: KnownImgObjective,
 ) {
     let schedule_join_handle = {
         let k_clone_clone = Arc::clone(&k_clone);
@@ -383,13 +499,15 @@ async fn execute_mapping(
             );
             res
         } else {
+            let img_fut = acq_phase.0;
+            tokio::pin!(img_fut);
             tokio::select! {
                 () = cancel_token.cancelled() => {
                     let sig = PeriodicImagingEndSignal::KillNow;
                     acq_phase.1.send(sig).expect("[FATAL] Receiver hung up!");
-                    Vec::new()
+                    img_fut.await.ok().unwrap_or(Vec::new())
                 }
-                res = acq_phase.0 => {
+                res = &mut img_fut => {
                     res.ok().unwrap_or(Vec::new())
                 }
             }
@@ -410,6 +528,34 @@ async fn execute_mapping(
             c_orbit.mark_done(*start, *end);
         }
     });
+}
+
+async fn handle_orbit_escape(
+    mode: GlobalMode,
+    vel_change: &VelocityChangeTask,
+    k: &Arc<KeychainWithOrbit>,
+) -> GlobalMode {
+    if let GlobalMode::ZonedObjectivePrepMode(obj) = mode.clone() {
+        let burn = vel_change.burn();
+        FlightComputer::execute_burn(k.f_cont(), vel_change.burn()).await;
+        let exp_pos = burn.sequence_pos().last().unwrap();
+        let current_pos = k.f_cont().read().await.current_pos();
+        let diff = *exp_pos - current_pos;
+        let detumble_time_delta = TimeDelta::seconds(burn.detumble_dt() as i64);
+        let detumble_dt = PinnedTimeDelay::new(detumble_time_delta - DETUMBLE_TOL);
+        println!("[INFO] Orbit Escape done! Expected position {exp_pos}, Actual Position {current_pos}, Diff {diff}");
+        // TODO: here we shouldn't use objective.get_imaging_points but something already created,
+        // TODO: also the mode change to global mode should happen sometime else
+        let (vel, dev) =
+            FlightComputer::evaluate_burn(k.f_cont(), burn, obj.get_imaging_points()[0]).await;
+        TaskController::calculate_orbit_correction_burn(vel, dev, detumble_dt);
+        GlobalMode::ZonedObjectiveRetrievalMode(obj)
+    } else {
+        println!(
+            "[ERROR] Orbit escape change requested, global mode illegal. Skipping velocity change!"
+        );
+        GlobalMode::MappingMode
+    }
 }
 
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]

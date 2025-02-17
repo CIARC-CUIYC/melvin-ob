@@ -37,8 +37,7 @@ pub struct Vec2D<T> {
 pub struct Wrapped2D<T, const X: u32, const Y: u32>(Vec2D<T>);
 
 impl<T, const X: u32, const Y: u32> Wrapped2D<T, X, Y>
-where
-    T: Fixed,
+where T: Fixed
 {
     /// Wraps the coordinates of the vector around the bounds defined by `X` and `Y`.
     ///
@@ -60,7 +59,7 @@ where
     /// # Returns
     /// The wrapped coordinate value.
     pub fn wrap_coordinate(value: T, max_value: T) -> T {
-        (value + max_value) % max_value
+        ((value % max_value) + max_value) % max_value
     }
 }
 
@@ -71,14 +70,11 @@ impl<T, const X: u32, const Y: u32> Deref for Wrapped2D<T, X, Y> {
     ///
     /// # Returns
     /// A reference to the inner `Vec2D`.
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+    fn deref(&self) -> &Self::Target { &self.0 }
 }
 
 impl<T> Display for Vec2D<T>
-where
-    T: Display,
+where T: Display
 {
     /// Formats the `Vec2D` as a string in the format `[x, y]`.
     ///
@@ -146,9 +142,7 @@ impl MapSize for u32 {
     ///
     /// # Returns
     /// A `Vec2D` with unsigned 32-bit integer components representing the map dimensions.
-    fn map_size() -> Vec2D<u32> {
-        Vec2D { x: 21600, y: 10800 }
-    }
+    fn map_size() -> Vec2D<u32> { Vec2D { x: 21600, y: 10800 } }
 }
 
 /// Implementation of the `MapSize` trait for the `i32` type.
@@ -159,16 +153,13 @@ impl MapSize for i32 {
     ///
     /// # Returns
     /// A `Vec2D` with signed 32-bit integer components representing the map dimensions.
-    fn map_size() -> Vec2D<i32> {
-        Vec2D { x: 21600, y: 10800 }
-    }
+    fn map_size() -> Vec2D<i32> { Vec2D { x: 21600, y: 10800 } }
 }
 
 /// Implementation of the `MapSize` trait for a `Vec2D` type with components
 /// that also implement the `MapSize` trait.
 impl<T> MapSize for Vec2D<T>
-where
-    T: MapSize<Output=T>,
+where T: MapSize<Output = T>
 {
     type Output = T;
 
@@ -176,9 +167,7 @@ where
     ///
     /// # Returns
     /// A `Vec2D` with components of type `T` representing the map dimensions.
-    fn map_size() -> Vec2D<Self::Output> {
-        T::map_size()
-    }
+    fn map_size() -> Vec2D<Self::Output> { T::map_size() }
 }
 
 impl<T> Vec2D<T>
@@ -239,7 +228,7 @@ where T: FixedSigned + NumAssignOps
     /// * `other` - The target vector to compare directions with.
     ///
     /// # Returns
-    /// A unit `Vec2D` perpendicular to `self` pointing towards `other`. 
+    /// A unit `Vec2D` perpendicular to `self` pointing towards `other`.
     /// Returns a zero vector if `self` and `other` are collinear.
     pub fn perp_unit_to(&self, other: &Vec2D<T>) -> Vec2D<T> {
         match self.is_clockwise_to(other) {
@@ -585,7 +574,5 @@ impl<T: Num> From<Vec2D<T>> for (T, T) {
     ///
     /// # Returns
     /// A new `Vec2D` created from the tuple.
-    fn from(value: Vec2D<T>) -> Self {
-        (value.x, value.y)
-    }
+    fn from(value: Vec2D<T>) -> Self { (value.x, value.y) }
 }

@@ -88,7 +88,7 @@ impl IndexedOrbitPosition {
         let mut mapped_ranges = Vec::new();
         for range in ranges {
             let start = (((range.0 % max) + max) % max) as usize;
-            let end = (((range.0 % max) + max) % max) as usize;
+            let end = (((range.1 % max) + max) % max) as usize;
             if start < end {
                 mapped_ranges.push((start, end));
             } else {

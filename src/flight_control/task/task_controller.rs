@@ -2,13 +2,18 @@ use crate::flight_control::{
     common::{linked_box::LinkedBox, math, pinned_dt::PinnedTimeDelay, vec2d::Vec2D},
     flight_computer::FlightComputer,
     flight_state::FlightState,
+    objective::known_img_objective::KnownImgObjective,
     orbit::{BurnSequence, ClosedOrbit, IndexedOrbitPosition},
     task::{
-        atomic_decision::AtomicDecision, atomic_decision_cube::AtomicDecisionCube, base_task::Task,
+        atomic_decision::AtomicDecision,
+        atomic_decision_cube::AtomicDecisionCube,
+        base_task::Task,
         score_grid::ScoreGrid,
+        vel_change_task::{
+            VelocityChangeTaskRationale, VelocityChangeTaskRationale::OrbitEscapeChange,
+        },
     },
 };
-use crate::http_handler::ZonedObjective;
 use crate::{MAX_BATTERY_THRESHOLD, MIN_BATTERY_THRESHOLD};
 use bitvec::prelude::BitRef;
 use fixed::types::I32F32;
@@ -133,6 +138,7 @@ impl TaskController {
                 max_pred_secs
             }
         };
+        println!("[INFO] Calculating optimal orbit schedule for {prediction_secs} seconds");
         // Retrieve a reordered iterator over the orbit's completion bitvector to optimize scheduling.
         let p_t_iter = orbit.get_p_t_reordered(
             p_t_shift,
@@ -161,7 +167,7 @@ impl TaskController {
         // Perform the calculation for the optimal orbit schedule using the prepared variables.
         Self::calculate_optimal_orbit_schedule(
             prediction_secs,
-            Box::new(p_t_iter),
+            p_t_iter,
             score_cube,
             &cov_dt_temp,
             decision_buffer,
@@ -194,7 +200,7 @@ impl TaskController {
         let max_battery = score_grid_default.e_len() - 1;
         for t in (0..pred_dt).rev() {
             let mut cov_dt = score_grid_default.clone();
-            let p_dt = u16::from(!*p_t_it.next().unwrap());
+            let p_dt = i32::from(!*p_t_it.next().unwrap());
             for e in 0..=max_battery {
                 for s in 0..=1 {
                     let de = if s == 0 { 1 } else { -1 };
@@ -206,7 +212,7 @@ impl TaskController {
                             score_cube.front().unwrap().get(new_e.min(max_battery), s)
                         } else if e > 0 {
                             // If in acquisition state, consider score and state.
-                            score_cube.front().unwrap().get(new_e, s) + i32::from(p_dt)
+                            score_cube.front().unwrap().get(new_e, s) + p_dt
                         } else {
                             // If battery is depleted, staying is not possible.
                             i32::MIN
@@ -513,7 +519,7 @@ impl TaskController {
             );
 
             // Estimate the minimum required battery charge for the sequence
-            let min_charge = FlightComputer::estimate_min_burn_sequence_charge(&burn_sequence);
+            let min_charge = FlightComputer::estimate_min_burn_charge(&burn_sequence);
 
             // Update the best burn sequence if a cheaper and feasible one is found
             if best_burn_sequence.is_none()
@@ -553,7 +559,7 @@ impl TaskController {
         orbit_lock: Arc<RwLock<ClosedOrbit>>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
         scheduling_start_i: IndexedOrbitPosition,
-        objective: ZonedObjective,
+        objective: KnownImgObjective,
     ) {
         let computation_start = chrono::Utc::now();
         println!(
@@ -569,7 +575,7 @@ impl TaskController {
                 target_pos,
                 due,
             )
-                .await
+            .await
         } else {
             // TODO
             panic!("[FATAL] Zoned Objective with multiple images not yet supported");
@@ -618,8 +624,8 @@ impl TaskController {
             dt_shift,
             true,
         )
-            .await;
-        let n_tasks = self.schedule_vel_change(burn_sequence).await;
+        .await;
+        let n_tasks = self.schedule_vel_change(burn_sequence, OrbitEscapeChange).await;
         let dt_tot = (chrono::Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
         println!(
             "[INFO] Number of tasks after scheduling: {n_tasks}. \
@@ -633,7 +639,7 @@ impl TaskController {
             }
         }
     }
-    
+
     /// Calculates and schedules the optimal orbit trajectory based on the current position and state.
     ///
     /// # Arguments
@@ -664,10 +670,8 @@ impl TaskController {
     ) {
         let p_t_shift = scheduling_start_i.index();
         let computation_start = scheduling_start_i.t();
-        println!("[INFO] Calculating optimal orbit schedule...");
         let result = {
             let orbit = orbit_lock.read().await;
-
             Self::init_orbit_sched_calc(&orbit, p_t_shift, None, None)
         };
         let dt_calc = (chrono::Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
@@ -776,7 +780,6 @@ impl TaskController {
                 }
             }
         }
-
         // Return the final number of tasks in the schedule.
         self.task_schedule.read().await.len()
     }
@@ -822,13 +825,17 @@ impl TaskController {
     ///
     /// # Behavior
     /// - If the task schedule is empty before scheduling, all waiting threads are notified.
-    async fn schedule_vel_change(&self, burn: BurnSequence) -> usize {
+    async fn schedule_vel_change(
+        &self,
+        burn: BurnSequence,
+        rationale: VelocityChangeTaskRationale,
+    ) -> usize {
         let mut has_to_notify = false;
         if self.task_schedule.read().await.is_empty() {
             has_to_notify = true;
         }
         let dt = PinnedTimeDelay::from_end(burn.start_i().t());
-        self.enqueue_task(Task::vel_change_task(burn, dt)).await;
+        self.enqueue_task(Task::vel_change_task(burn, rationale, dt)).await;
 
         if has_to_notify {
             self.next_task_notify.notify_all();
@@ -868,9 +875,7 @@ impl TaskController {
     ///
     /// # Behavior
     /// - Appends the given task to the task schedule.
-    async fn enqueue_task(&self, task: Task) {
-        self.task_schedule.write().await.push_back(task);
-    }
+    async fn enqueue_task(&self, task: Task) { self.task_schedule.write().await.push_back(task); }
 
     /// Clears all pending tasks in the schedule.
     ///
@@ -878,6 +883,7 @@ impl TaskController {
     /// - Notifies all waiting threads if the schedule is cleared.
     pub async fn clear_schedule(&self) {
         let schedule = &*self.task_schedule;
+        println!("[INFO] Clearing task schedule...");
         schedule.write().await.clear();
     }
 }

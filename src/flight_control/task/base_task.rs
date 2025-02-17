@@ -9,6 +9,7 @@ use crate::flight_control::{
 };
 use std::fmt::{Display, Formatter};
 use strum_macros::Display;
+use crate::flight_control::task::vel_change_task::VelocityChangeTaskRationale;
 
 /// Represents a task with a specific type and associated time delay.
 /// Tasks can include image capture, state switching, or velocity changes.
@@ -104,9 +105,9 @@ impl Task {
     ///
     /// # Returns
     /// - A new `Task` instance representing the velocity change task.
-    pub fn vel_change_task(burn: BurnSequence, dt: PinnedTimeDelay) -> Self {
+    pub fn vel_change_task(burn: BurnSequence, rationale: VelocityChangeTaskRationale, dt: PinnedTimeDelay) -> Self {
         Self {
-            task_type: BaseTask::ChangeVelocity(VelocityChangeTask::new(burn)),
+            task_type: BaseTask::ChangeVelocity(VelocityChangeTask::new(burn, rationale)),
             dt,
         }
     }

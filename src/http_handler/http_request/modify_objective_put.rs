@@ -1,11 +1,11 @@
 use super::modify_objective;
 use super::request_common::{HTTPRequestMethod, HTTPRequestType, JSONBodyHTTPRequestType};
-use crate::http_handler::common::{BeaconObjective, ZonedObjective};
+use crate::http_handler::common::{BeaconObjective, ImageObjective};
 
 #[derive(serde::Serialize, Debug)]
 #[cfg(debug_assertions)]
 pub struct ModifyObjectiveRequest {
-    pub zoned_objectives: Vec<ZonedObjective>,
+    pub zoned_objectives: Vec<ImageObjective>,
     pub beacon_objectives: Vec<BeaconObjective>,
 }
 

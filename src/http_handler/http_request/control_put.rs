@@ -1,6 +1,5 @@
 use super::control_satellite::ControlSatelliteResponse;
 use super::request_common::{HTTPRequestMethod, HTTPRequestType, JSONBodyHTTPRequestType};
-use fixed::types::I32F32;
 
 #[derive(serde::Serialize, Debug)]
 pub struct ControlSatelliteRequest {
