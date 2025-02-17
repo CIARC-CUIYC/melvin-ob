@@ -7,7 +7,6 @@ use bitvec::{
 use fixed::types::I32F32;
 use num::ToPrimitive;
 use strum_macros::Display;
-use crate::flight_control::common::vec2d::Vec2D;
 
 /// Represents a closed orbit with a fixed period, image time information, and completion status.
 pub struct ClosedOrbit {

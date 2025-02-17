@@ -10,7 +10,6 @@ use crate::flight_control::{
     flight_state::FlightState,
 };
 use fixed::types::I32F32;
-use num::Zero;
 
 /// Struct representing the base properties of an orbit.
 pub struct OrbitBase {

@@ -12,8 +12,8 @@ pub const MAX_DEC: u8 = 2;
 /// - An `I32F32` representing the greatest common divisor of `a` and `b`.
 pub fn gcd_fixed64(a: I32F32, b: I32F32, dec: u8) -> I32F32 {
     let scale_factor = I32F32::from_num(10u32.pow(u32::from(dec)));
-    let mut a_int = (a*scale_factor).round().to_num::<i64>();
-    let mut b_int = (b*scale_factor).round().to_num::<i64>();
+    let a_int = (a*scale_factor).round().to_num::<i64>();
+    let b_int = (b*scale_factor).round().to_num::<i64>();
     I32F32::from_num(gcd_i64(a_int, b_int)) / scale_factor
 }
 

@@ -107,8 +107,7 @@ impl Supervisor {
 
             if last_objective_check + Self::OBJ_UPDATE_INTERVAL < chrono::Utc::now() {
                 let handle = self.f_cont_lock.read().await.client();
-                let objective_list = ObjectiveListRequest {}.send_request(&handle).await;
-                let objective_list = objective_list.unwrap();
+                let objective_list = ObjectiveListRequest {}.send_request(&handle).await.unwrap();
                 for img_obj in objective_list.img_objectives() {
                     let obj_on = img_obj.start() < chrono::Utc::now() && img_obj.end() > chrono::Utc::now();
                     let obj_known = obj_id_list.contains(&img_obj.id());

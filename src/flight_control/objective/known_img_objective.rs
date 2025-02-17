@@ -26,15 +26,7 @@ impl KnownImgObjective {
         optic_required: CameraAngle,
         coverage_required: f32,
     ) -> KnownImgObjective {
-        KnownImgObjective {
-            id,
-            start,
-            end,
-            name,
-            zone,
-            optic_required,
-            coverage_required,
-        }
+        KnownImgObjective { id, name, start, end, zone, optic_required, coverage_required }
     }
 
     pub fn id(&self) -> usize { self.id }

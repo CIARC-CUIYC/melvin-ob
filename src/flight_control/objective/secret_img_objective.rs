@@ -19,13 +19,6 @@ impl SecretImgObjective {
         optic_required: CameraAngle,
         coverage_required: f32,
     ) -> Self {
-        Self {
-            id,
-            start,
-            end,
-            name,
-            optic_required,
-            coverage_required,
-        }
+        Self { id, name, start, end, optic_required, coverage_required }
     }
 }
