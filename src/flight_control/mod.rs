@@ -4,6 +4,6 @@ pub mod common;
 pub mod flight_computer;
 pub mod flight_state;
 pub(super) mod imaging;
-mod kalman_filter;
+pub mod kalman_filter;
 pub mod orbit;
 pub mod task;

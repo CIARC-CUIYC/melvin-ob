@@ -27,7 +27,7 @@ image = { version = "0.25.5", default-features = false, features = ["jpeg", "png
 prost = "0.13"
 num = "0.4.3"
 libc = "0.2.169"
-nalgebra = "0.33.1"
+num-traits = "0.2"
 
 [lints.clippy]
 correctness = "deny"
