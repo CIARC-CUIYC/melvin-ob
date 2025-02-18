@@ -8,6 +8,7 @@ use crate::flight_control::{
     orbit::BurnSequence,
 };
 use std::fmt::{Display, Formatter};
+use chrono::{Date, DateTime, Utc};
 use strum_macros::Display;
 use crate::flight_control::task::vel_change_task::VelocityChangeTaskRationale;
 
@@ -18,7 +19,7 @@ pub struct Task {
     /// The specific type of the task.
     task_type: BaseTask,
     /// The pinned time delay associated with the task's execution.
-    dt: PinnedTimeDelay,
+    dt: DateTime<Utc>,
 }
 
 /// An enumeration representing different types of tasks.
@@ -54,7 +55,7 @@ impl Display for Task {
                 )
             }
         };
-        let end = self.dt.get_end().format("%d %H:%M:%S").to_string();
+        let end = self.dt.format("%d %H:%M:%S").to_string();
         write!(f, "Due: {end}, Task: {task_type_str}")
     }
 }
@@ -71,7 +72,7 @@ impl Task {
     ///
     /// # Panics
     /// Panics if the provided `target_state` is invalid for switching.
-    pub fn switch_target(target_state: FlightState, dt: PinnedTimeDelay) -> Self {
+    pub fn switch_target(target_state: FlightState, dt: DateTime<Utc>) -> Self {
         Self {
             task_type: BaseTask::SwitchState(
                 SwitchStateTask::new(target_state)
@@ -90,7 +91,7 @@ impl Task {
     ///
     /// # Returns
     /// - A new `Task` instance representing the image capture task.
-    pub fn image_task(planned_pos: Vec2D<u32>, lens: CameraAngle, dt: PinnedTimeDelay) -> Self {
+    pub fn image_task(planned_pos: Vec2D<u32>, lens: CameraAngle, dt: DateTime<Utc>) -> Self {
         Self {
             task_type: BaseTask::TakeImage(ImageTask::new(planned_pos, lens)),
             dt,
@@ -105,24 +106,17 @@ impl Task {
     ///
     /// # Returns
     /// - A new `Task` instance representing the velocity change task.
-    pub fn vel_change_task(burn: BurnSequence, rationale: VelocityChangeTaskRationale, dt: PinnedTimeDelay) -> Self {
+    pub fn vel_change_task(burn: BurnSequence, rationale: VelocityChangeTaskRationale, dt: DateTime<Utc>) -> Self {
         Self {
             task_type: BaseTask::ChangeVelocity(VelocityChangeTask::new(burn, rationale)),
             dt,
         }
     }
-
-    /// Returns a mutable reference to the task's time delay.
-    ///
-    /// # Returns
-    /// - A mutable reference to the `PinnedTimeDelay`.
-    pub fn dt_mut(&mut self) -> &mut PinnedTimeDelay { &mut self.dt }
-
     /// Returns an immutable reference to the task's time delay.
     ///
     /// # Returns
     /// - An immutable reference to the `PinnedTimeDelay`.
-    pub fn dt(&self) -> &PinnedTimeDelay { &self.dt }
+    pub fn dt(&self) -> DateTime<Utc> { self.dt }
 
     /// Returns an immutable reference to the task's type.
     ///

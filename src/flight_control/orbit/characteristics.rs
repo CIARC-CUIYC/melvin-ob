@@ -19,6 +19,8 @@ pub struct OrbitCharacteristics {
     orbit_full_period: usize,
     /// The entry position of the orbit indexed in time and position.
     i_entry: IndexedOrbitPosition,
+
+    mode_switches: usize,
 }
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -48,6 +50,7 @@ impl OrbitCharacteristics {
             orbit_s_end,
             orbit_full_period,
             i_entry,
+            mode_switches: 0
         }
     }
 
@@ -60,9 +63,10 @@ impl OrbitCharacteristics {
     /// Retrieves the full orbital period.
     pub fn orbit_full_period(&self) -> usize { self.orbit_full_period }
 
-    /// Retrieves the indexed entry position of the orbit.
+    /// Retrieves the indexed entry position of the current orbit entry.
     pub fn i_entry(&self) -> IndexedOrbitPosition { self.i_entry }
-
+    
+    pub fn mode_switches(&self) -> usize { self.mode_switches }
     /// Marks the end of an orbital task schedule and updates the entry position.
     ///
     /// # Arguments
@@ -74,5 +78,6 @@ impl OrbitCharacteristics {
             rationale
         );
         self.i_entry = now;
+        self.mode_switches += 1;
     }
 }
