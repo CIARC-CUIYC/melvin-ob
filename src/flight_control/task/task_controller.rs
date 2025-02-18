@@ -1,5 +1,5 @@
 use crate::flight_control::{
-    common::{linked_box::LinkedBox, math, pinned_dt::PinnedTimeDelay, vec2d::Vec2D},
+    common::{linked_box::LinkedBox, math, vec2d::Vec2D},
     flight_computer::FlightComputer,
     flight_state::FlightState,
     objective::known_img_objective::KnownImgObjective,
@@ -262,7 +262,7 @@ impl TaskController {
     pub fn calculate_orbit_correction_burn(
         initial_vel: Vec2D<I32F32>,
         deviation: Vec2D<I32F32>,
-        due: PinnedTimeDelay,
+        due: DateTime<Utc>,
     ) -> (Vec<Vec2D<I32F32>>, i64, Vec2D<I32F32>) {
         let is_clockwise = initial_vel.is_clockwise_to(&deviation).unwrap_or(false);
 
@@ -273,7 +273,7 @@ impl TaskController {
         let mut best_vel_hold_dt = 0;
         let mut last_vel = initial_vel;
 
-        while min_burn_sequence_time > due.time_left() {
+        while min_burn_sequence_time > due - Utc::now() {
             let mut res_vel_diff = Vec2D::<I32F32>::zero();
             let mut remaining_deviation = deviation;
             let mut current_burn_sequence = Vec::new();
@@ -292,7 +292,7 @@ impl TaskController {
             let y_vel_hold_dt = (remaining_deviation.y() / res_vel_diff.y()).floor();
             let min_vel_hold_dt = x_vel_hold_dt.min(y_vel_hold_dt).to_i64().unwrap();
 
-            if min_vel_hold_dt + max_acc_secs > due.time_left().num_seconds() {
+            if min_vel_hold_dt + max_acc_secs > (due - Utc::now()).num_seconds() {
                 continue;
             }
 

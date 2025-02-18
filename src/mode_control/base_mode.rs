@@ -43,6 +43,7 @@ impl BaseMode {
     const DEF_MAPPING_ANGLE: CameraAngle = CameraAngle::Narrow;
     const DT_0_STD: std::time::Duration = std::time::Duration::from_secs(0);
 
+    #[allow(clippy::cast_possible_wrap)]
     pub async fn exec_map(context: Arc<StateContext>, end: MappingModeEnd, c_tok: CancellationToken) {
         let end_t = {
             match end {
@@ -56,7 +57,7 @@ impl BaseMode {
             let (tx, rx) = oneshot::channel();
             let i_start = 
                 o_ch_clone.i_entry().new_from_pos(f_cont_lock.read().await.current_pos());
-            let k_clone = Arc::clone(&context.k());
+            let k_clone = Arc::clone(context.k());
             let img_dt = o_ch_clone.img_dt();
             let handle = tokio::spawn(async move {
                 k_clone
@@ -159,7 +160,7 @@ impl BaseMode {
                     FlightComputer::set_state_wait(context.k().f_cont(), FlightState::Charge)
                         .await;
                 };
-                let k_clone = Arc::clone(&context.k());
+                let k_clone = Arc::clone(context.k());
                 tokio::spawn(async move {
                     k_clone
                         .c_cont()

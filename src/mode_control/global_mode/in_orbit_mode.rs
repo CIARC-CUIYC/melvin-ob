@@ -172,7 +172,7 @@ impl GlobalMode for InOrbitMode {
         OpExitSignal::ReInit(Box::new(self.clone()))
     }
 
-    async fn exit_mode(&self, context: Arc<StateContext>) -> Box<dyn GlobalMode> {
+    async fn exit_mode(&self, _: Arc<StateContext>) -> Box<dyn GlobalMode> {
         Box::new(Self{base: self.base.exit_base()})
     }
 }

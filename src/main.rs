@@ -11,13 +11,7 @@ use crate::flight_control::{
     camera_state::CameraAngle,
     flight_computer::FlightComputer,
     flight_state::FlightState,
-    objective::{
-        beacon_objective::BeaconObjective,
-        known_img_objective::KnownImgObjective,
-        objective_base::ObjectiveBase,
-        objective_type::ObjectiveType,
-        secret_img_objective::SecretImgObjective,
-    },
+    objective::known_img_objective::KnownImgObjective,
     orbit::{ClosedOrbit, OrbitBase, OrbitCharacteristics, OrbitUsabilityError},
     supervisor::Supervisor,
 };
@@ -29,11 +23,7 @@ use crate::mode_control::{
 };
 use chrono::TimeDelta;
 use fixed::types::I32F32;
-use std::{
-    collections::{BinaryHeap, VecDeque},
-    {env, sync::Arc},
-};
-use tokio::sync::mpsc::Receiver;
+use std::{env, sync::Arc};
 
 const DT_MIN: TimeDelta = TimeDelta::seconds(5);
 const DT_0: TimeDelta = TimeDelta::seconds(0);
@@ -132,7 +122,8 @@ async fn init(
     let safe_mon = supervisor.safe_mode_monitor();
     StateContext::new(KeychainWithOrbit::new(init_k, c_orbit), orbit_char, obj_rx, safe_mon)
 }
-
+// TODO: translate this into state
+/*
 fn recv_all_obj(
     obj_monitor: &mut Receiver<ObjectiveBase>,
     k_img_buffer: &mut BinaryHeap<KnownImgObjective>,
@@ -187,8 +178,7 @@ fn recv_all_obj(
     (k_img_count, beacon_count)
 }
 
-// TODO: translate this into state
-/*
+
 
 async fn handle_orbit_escape(
     mode: GlobalMode,

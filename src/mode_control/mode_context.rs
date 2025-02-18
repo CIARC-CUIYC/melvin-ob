@@ -40,7 +40,7 @@ impl StateContext {
     }
 
     pub fn k(&self) -> &Arc<KeychainWithOrbit> { &self.k }
-    pub async fn o_ch_clone(&self) -> OrbitCharacteristics { self.o_ch.read().await.clone() }
+    pub async fn o_ch_clone(&self) -> OrbitCharacteristics { *self.o_ch.read().await }
     pub fn o_ch_lock(&self) -> &RwLock<OrbitCharacteristics> { &self.o_ch }
     pub fn obj_mon(&self) -> &Receiver<ObjectiveBase> { &self.obj_mon }
     pub fn safe_mon(&self) -> &Arc<Notify> { &self.safe_mon }

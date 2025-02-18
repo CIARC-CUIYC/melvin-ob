@@ -13,7 +13,6 @@ use crate::{
 };
 use fixed::types::I32F32;
 use tokio::sync::{mpsc, mpsc::Receiver, Notify, RwLock};
-use crate::http_handler::{BeaconObjective, ImageObjective};
 
 pub struct Supervisor {
     f_cont_lock: Arc<RwLock<FlightComputer>>,
