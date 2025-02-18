@@ -4,7 +4,7 @@ use crate::{
         objective::beacon_objective::BeaconObjective, orbit::IndexedOrbitPosition,
         task::switch_state_task::SwitchStateTask,
     },
-    mode_control::mode_context::StateContext,
+    mode_control::mode_context::ModeContext,
 };
 use chrono::{DateTime, TimeDelta};
 use std::{future::Future, pin::Pin, sync::Arc};
@@ -35,7 +35,7 @@ impl BaseMode {
 
     #[allow(clippy::cast_possible_wrap)]
     pub async fn exec_map(
-        context: Arc<StateContext>,
+        context: Arc<ModeContext>,
         end: MappingModeEnd,
         c_tok: CancellationToken,
     ) {
@@ -120,7 +120,7 @@ impl BaseMode {
 
     pub async fn get_wait(
         &self,
-        context: Arc<StateContext>,
+        context: Arc<ModeContext>,
         due_time: TimeDelta,
         c_tok: CancellationToken,
     ) -> JoinHandle<()> {
@@ -145,7 +145,7 @@ impl BaseMode {
         tokio::spawn(task_fut)
     }
 
-    pub async fn get_task(&self, context: Arc<StateContext>, task: SwitchStateTask) {
+    pub async fn get_task(&self, context: Arc<ModeContext>, task: SwitchStateTask) {
         match task.target_state() {
             FlightState::Acquisition => {
                 FlightComputer::set_state_wait(context.k().f_cont(), FlightState::Acquisition)
@@ -173,7 +173,7 @@ impl BaseMode {
         }
     }
 
-    pub(crate) async fn handle_b_o(&self, c: Arc<StateContext>, obj: BeaconObjective) -> Self {
+    pub(crate) async fn handle_b_o(&self, c: Arc<ModeContext>, obj: BeaconObjective) -> Self {
         match self {
             BaseMode::MappingMode => BaseMode::BeaconObjectiveScanningMode(obj),
             BaseMode::BeaconObjectiveScanningMode(curr_obj) => {

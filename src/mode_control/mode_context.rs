@@ -10,7 +10,7 @@ use std::{
 };
 use tokio::sync::{mpsc::Receiver, Mutex, Notify, RwLock};
 
-pub struct StateContext {
+pub struct ModeContext {
     k: Arc<KeychainWithOrbit>,
     o_ch: Arc<RwLock<OrbitCharacteristics>>,
     obj_mon: RwLock<Receiver<ObjectiveBase>>,
@@ -19,7 +19,7 @@ pub struct StateContext {
     b_buffer: Mutex<BinaryHeap<BeaconObjective>>,
 }
 
-impl StateContext {
+impl ModeContext {
     pub fn new(
         key: KeychainWithOrbit,
         o_char: OrbitCharacteristics,

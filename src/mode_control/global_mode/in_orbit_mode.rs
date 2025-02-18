@@ -12,7 +12,7 @@ use crate::flight_control::{
 use crate::mode_control::{
     base_mode::{BaseMode, MappingModeEnd::Join},
     global_mode::global_mode::{ExecExitSignal, GlobalMode, OpExitSignal},
-    mode_context::StateContext,
+    mode_context::ModeContext,
 };
 use async_trait::async_trait;
 use std::{future::Future, pin::Pin, sync::Arc};
@@ -35,7 +35,7 @@ impl InOrbitMode {
         }
     }
 
-    pub async fn sched_and_map(context: Arc<StateContext>, c_tok: CancellationToken) {
+    pub async fn sched_and_map(context: Arc<ModeContext>, c_tok: CancellationToken) {
         let j_handle = {
             // TODO: self.base.get_schedule_handle();
             let k_clone_clone = Arc::clone(context.k());
@@ -63,7 +63,7 @@ impl InOrbitMode {
 impl GlobalMode for InOrbitMode {
     fn type_name(&self) -> &'static str { Self::MODE_NAME }
 
-    async fn init_mode(&self, context: Arc<StateContext>) -> OpExitSignal {
+    async fn init_mode(&self, context: Arc<ModeContext>) -> OpExitSignal {
         let cancel_task = CancellationToken::new();
         let sched_handle = {
             let cancel_clone = cancel_task.clone();
@@ -88,7 +88,7 @@ impl GlobalMode for InOrbitMode {
         OpExitSignal::Continue
     }
 
-    async fn exec_task_queue(&self, context: Arc<StateContext>) -> OpExitSignal {
+    async fn exec_task_queue(&self, context: Arc<ModeContext>) -> OpExitSignal {
         let context_local = Arc::clone(&context);
         while let Some(task) = {
             let sched_arc = context_local.k().t_cont().sched_arc();
@@ -132,7 +132,7 @@ impl GlobalMode for InOrbitMode {
 
     async fn exec_task_wait(
         &self,
-        context: Arc<StateContext>,
+        context: Arc<ModeContext>,
         due_time: chrono::TimeDelta,
     ) -> ExecExitSignal {
         let safe_mon = context.safe_mon();
@@ -165,7 +165,7 @@ impl GlobalMode for InOrbitMode {
         }
     }
 
-    async fn exec_task(&self, context: Arc<StateContext>, task: Task) -> ExecExitSignal {
+    async fn exec_task(&self, context: Arc<ModeContext>, task: Task) -> ExecExitSignal {
         match task.task_type() {
             BaseTask::SwitchState(switch) => self.base.get_task(context, *switch).await,
             _ => {
@@ -179,7 +179,7 @@ impl GlobalMode for InOrbitMode {
         ExecExitSignal::Continue
     }
 
-    async fn safe_handler(&self, context: Arc<StateContext>) -> OpExitSignal {
+    async fn safe_handler(&self, context: Arc<ModeContext>) -> OpExitSignal {
         FlightComputer::escape_safe(context.k().f_cont()).await;
         context.o_ch_lock().write().await.finish(
             context
@@ -194,7 +194,7 @@ impl GlobalMode for InOrbitMode {
 
     async fn objective_handler(
         &self,
-        context: Arc<StateContext>,
+        context: Arc<ModeContext>,
         obj: ObjectiveBase,
     ) -> Option<OpExitSignal> {
         match obj.obj_type() {
@@ -225,7 +225,7 @@ impl GlobalMode for InOrbitMode {
         }
     }
 
-    async fn exit_mode(&self, _: Arc<StateContext>) -> Box<dyn GlobalMode> {
+    async fn exit_mode(&self, _: Arc<ModeContext>) -> Box<dyn GlobalMode> {
         Box::new(Self {
             base: self.base.exit_base(),
         })

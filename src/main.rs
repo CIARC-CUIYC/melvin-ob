@@ -19,7 +19,7 @@ use crate::keychain::{Keychain, KeychainWithOrbit};
 use crate::mode_control::{
     global_mode::global_mode::{GlobalMode, OpExitSignal},
     global_mode::in_orbit_mode::InOrbitMode,
-    mode_context::StateContext,
+    mode_context::ModeContext,
 };
 use chrono::TimeDelta;
 use fixed::types::I32F32;
@@ -87,7 +87,7 @@ async fn main() {
 #[allow(clippy::cast_precision_loss)]
 async fn init(
     url: &str,
-) -> StateContext {
+) -> ModeContext {
     let init_k = Keychain::new(url).await;
     init_k.f_cont().write().await.reset().await;
     let init_k_f_cont_clone = init_k.f_cont();
@@ -120,7 +120,7 @@ async fn init(
 
     let orbit_char = OrbitCharacteristics::new(&c_orbit, &init_k.f_cont()).await;
     let safe_mon = supervisor.safe_mode_monitor();
-    StateContext::new(KeychainWithOrbit::new(init_k, c_orbit), orbit_char, obj_rx, safe_mon)
+    ModeContext::new(KeychainWithOrbit::new(init_k, c_orbit), orbit_char, obj_rx, safe_mon)
 }
 // TODO: translate this into state
 /*
