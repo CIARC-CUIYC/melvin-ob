@@ -48,16 +48,6 @@ async fn main() {
     let base_url = base_url_var.as_ref().map_or("http://localhost:33000", |v| v.as_str());
     let context = Arc::new(init(base_url).await);
 
-    let debug_objective = KnownImgObjective::new(
-        0,
-        "Test Objective".to_string(),
-        chrono::Utc::now(),
-        chrono::Utc::now() + TimeDelta::hours(7),
-        [4750, 5300, 5350, 5900],
-        "narrow".into(),
-        100.0,
-    );
-
     let mut global_mode: Box<dyn GlobalMode> = Box::new(InOrbitMode::new());
     loop {
         let phase = context.o_ch_clone().await.mode_switches();

@@ -13,6 +13,7 @@ use crate::{
 };
 use fixed::types::I32F32;
 use tokio::sync::{mpsc, mpsc::Receiver, Notify, RwLock};
+use crate::flight_control::objective::known_img_objective::KnownImgObjective;
 use crate::http_handler::ZoneType;
 
 pub struct Supervisor {
@@ -51,9 +52,19 @@ impl Supervisor {
     /// and monitor position & state deviations.
     #[allow(clippy::cast_precision_loss)]
     pub async fn run(&self) {
+        // ******** DEBUG INITS        
         let start = Utc::now();
         let mut next_safe = start + TimeDelta::seconds(500);
-        
+        let debug_objective = KnownImgObjective::new(
+            0,
+            "Test Objective".to_string(),
+            chrono::Utc::now(),
+            chrono::Utc::now() + TimeDelta::hours(7),
+            [4750, 5300, 5350, 5900],
+            "narrow".into(),
+            100.0,
+        );
+        // **********
         // TODO: pos monitoring in kalman filter + listening for reset_pos events
         let mut last_pos: Option<Vec2D<I32F32>> = None;
         let mut last_timestamp = Utc::now();
