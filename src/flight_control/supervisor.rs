@@ -66,13 +66,13 @@ impl Supervisor {
             // Update observation and fetch new position
             f_cont.update_observation().await;
             
-            /*
+            
             if Utc::now() > next_safe {
                 let act_state = f_cont.state();
                 f_cont.one_time_safe();
                 next_safe += TimeDelta::seconds(5000);
                 println!("[INFO] One time safe mode activated Actual State was {act_state}!");
-            }*/
+            }
             
             let current_pos = f_cont.current_pos();
             let current_vel = f_cont.current_vel();
