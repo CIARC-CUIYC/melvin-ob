@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use std::sync::Arc;
+use crate::flight_control::objective::objective_base::ObjectiveBase;
 use crate::flight_control::task::base_task::Task;
 use crate::mode_control::mode_context::StateContext;
 
@@ -15,6 +16,7 @@ pub trait GlobalMode {
     async fn exec_task_wait(&self, context: Arc<StateContext>, due_time: chrono::TimeDelta) -> ExecExitSignal;
     async fn exec_task(&self, context: Arc<StateContext>, task: Task) -> ExecExitSignal;
     async fn safe_handler(&self, context: Arc<StateContext>) -> OpExitSignal;
+    async fn objective_handler(&self, context: Arc<StateContext>, obj: ObjectiveBase) -> OpExitSignal;
     async fn exit_mode(&self, context: Arc<StateContext>) -> Box<dyn GlobalMode>;
 }
 
@@ -26,5 +28,6 @@ pub enum OpExitSignal {
 pub enum ExecExitSignal {
     Continue,
     SafeEvent,
+    NewObjectiveEvent(ObjectiveBase),
     
 }

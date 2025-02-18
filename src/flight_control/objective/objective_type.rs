@@ -11,8 +11,4 @@ pub enum ObjectiveType {
         optic_required: CameraAngle,
         coverage_required: f32,
     },
-    SecretImage {
-        optic_required: CameraAngle,
-        coverage_required: f32,
-    },
 }

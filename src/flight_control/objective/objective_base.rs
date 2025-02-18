@@ -27,10 +27,7 @@ impl From<ImageObjective> for ObjectiveBase {
                 optic_required: CameraAngle::from(obj.optic_required()),
                 coverage_required: obj.coverage_required(),
             },
-            ZoneType::SecretZone(_) => ObjectiveType::SecretImage {
-                optic_required: CameraAngle::from(obj.optic_required()),
-                coverage_required: obj.coverage_required(),
-            },
+            ZoneType::SecretZone(_) => unreachable!(),
         };
         Self {
             id: obj.id(),

@@ -13,6 +13,7 @@ use crate::{
 };
 use fixed::types::I32F32;
 use tokio::sync::{mpsc, mpsc::Receiver, Notify, RwLock};
+use crate::http_handler::ZoneType;
 
 pub struct Supervisor {
     f_cont_lock: Arc<RwLock<FlightComputer>>,
@@ -116,7 +117,8 @@ impl Supervisor {
                 
                 for img_obj in objective_list.img_objectives() {
                     let obj_on = img_obj.start() < Utc::now() && img_obj.end() > Utc::now();
-                    if obj_on && !id_list.contains(&img_obj.id()) {
+                    let is_secret = matches!(img_obj.zone_type(), ZoneType::SecretZone(_));
+                    if obj_on && !id_list.contains(&img_obj.id()) && !is_secret {
                         send_objs.push(ObjectiveBase::from(img_obj.clone()));
                     }
                 }

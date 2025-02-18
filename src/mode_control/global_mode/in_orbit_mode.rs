@@ -1,17 +1,25 @@
+use crate::flight_control::objective::beacon_objective::BeaconObjective;
+use crate::flight_control::objective::objective_base::ObjectiveBase;
+use crate::flight_control::objective::objective_type::ObjectiveType;
 use crate::flight_control::{
     flight_computer::FlightComputer,
     flight_state::FlightState,
-    task::{base_task::{BaseTask, Task}, TaskController},
+    task::{
+        base_task::{BaseTask, Task},
+        TaskController,
+    },
 };
 use crate::mode_control::{
     base_mode::{BaseMode, MappingModeEnd::Join},
     global_mode::global_mode::{ExecExitSignal, GlobalMode, OpExitSignal},
     mode_context::StateContext,
 };
-use std::{future::Future, pin::Pin, sync::Arc};
 use async_trait::async_trait;
-use tokio::{task::JoinError};
+use std::{future::Future, pin::Pin, sync::Arc};
+use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
+use crate::flight_control::objective::known_img_objective::KnownImgObjective;
+use crate::flight_control::objective::secret_img_objective::SecretImgObjective;
 
 #[derive(Clone)]
 pub struct InOrbitMode {
@@ -54,9 +62,7 @@ impl InOrbitMode {
 
 #[async_trait]
 impl GlobalMode for InOrbitMode {
-    fn type_name(&self) -> &'static str {
-        Self::MODE_NAME
-    }
+    fn type_name(&self) -> &'static str { Self::MODE_NAME }
 
     async fn init_mode(&self, context: Arc<StateContext>) -> OpExitSignal {
         let cancel_task = CancellationToken::new();
@@ -105,6 +111,9 @@ impl GlobalMode for InOrbitMode {
                 ExecExitSignal::SafeEvent => {
                     return self.safe_handler(context_local).await;
                 }
+                ExecExitSignal::NewObjectiveEvent(obj) => {
+                    return self.objective_handler(context_local, obj).await;
+                }
             }
             let context_clone = Arc::clone(&context);
             match self.exec_task(context_clone, task).await {
@@ -112,8 +121,10 @@ impl GlobalMode for InOrbitMode {
                 ExecExitSignal::SafeEvent => {
                     return self.safe_handler(context_local).await;
                 }
+                _ => {
+                    panic!("[FATAL] Unexpected task exit signal!");
+                }
             }
-            // TODO: handle new objectives?
         }
         OpExitSignal::Continue
     }
@@ -124,6 +135,7 @@ impl GlobalMode for InOrbitMode {
         due_time: chrono::TimeDelta,
     ) -> ExecExitSignal {
         let safe_mon = context.safe_mon();
+        let mut obj_mon = context.obj_mon().write().await;
         let cancel_task = CancellationToken::new();
         let fut: Pin<Box<dyn Future<Output = Result<(), JoinError>> + Send>> = if due_time
             > Self::MAX_WAIT_DURATION
@@ -137,12 +149,17 @@ impl GlobalMode for InOrbitMode {
             })
         };
         tokio::select! {
-            _ = fut => {
-                ExecExitSignal::Continue
-            },
-            () = safe_mon.notified() => {
+                _ = fut => {
+                    ExecExitSignal::Continue
+                },
+                () = safe_mon.notified() => {
+                        cancel_task.cancel();
+                        ExecExitSignal::SafeEvent
+                },
+                obj = obj_mon.recv() => {
                     cancel_task.cancel();
-                    ExecExitSignal::SafeEvent
+                   let unwrapped_obj = obj.expect("[FATAL] Objective monitor hung up!");
+                    ExecExitSignal::NewObjectiveEvent(unwrapped_obj)
             }
         }
     }
@@ -164,15 +181,52 @@ impl GlobalMode for InOrbitMode {
     async fn safe_handler(&self, context: Arc<StateContext>) -> OpExitSignal {
         FlightComputer::escape_safe(context.k().f_cont()).await;
         context.o_ch_lock().write().await.finish(
-            context.o_ch_clone().await.i_entry().new_from_pos(
-                context.k().f_cont().read().await.current_pos()
-            ),
-            self.safe_mode_rationale()
+            context
+                .o_ch_clone()
+                .await
+                .i_entry()
+                .new_from_pos(context.k().f_cont().read().await.current_pos()),
+            self.safe_mode_rationale(),
         );
         OpExitSignal::ReInit(Box::new(self.clone()))
     }
 
+    async fn objective_handler(
+        &self,
+        context: Arc<StateContext>,
+        obj: ObjectiveBase,
+    ) -> OpExitSignal {
+        match obj.obj_type() {
+            ObjectiveType::Beacon { .. } => {
+                let b_obj = BeaconObjective::new(
+                    obj.id(),
+                    String::from(obj.name()),
+                    obj.start(),
+                    obj.end(),
+                );
+                let base = BaseMode::BeaconObjectiveScanningMode(b_obj);
+                OpExitSignal::ReInit(Box::new(Self { base }))
+            }
+            ObjectiveType::KnownImage { zone, optic_required, coverage_required } => {
+                let k_obj = KnownImgObjective::new(
+                    obj.id(),
+                    String::from(obj.name()),
+                    obj.start(),
+                    obj.end(),
+                    *zone,
+                    *optic_required,
+                    *coverage_required
+                );
+                // TODO: return ZonedObjectivePrepMode
+                todo!();
+                //OpExitSignal::ReInit(Box::New())
+            }
+        }
+    }
+
     async fn exit_mode(&self, _: Arc<StateContext>) -> Box<dyn GlobalMode> {
-        Box::new(Self{base: self.base.exit_base()})
+        Box::new(Self {
+            base: self.base.exit_base(),
+        })
     }
 }
