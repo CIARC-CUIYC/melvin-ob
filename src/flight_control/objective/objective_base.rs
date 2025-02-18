@@ -44,7 +44,7 @@ impl From<ImageObjective> for ObjectiveBase {
 
 impl From<BeaconObjective> for ObjectiveBase {
     fn from(obj: BeaconObjective) -> Self {
-        let obj_type = ObjectiveType::Beacon;
+        let obj_type = ObjectiveType::Beacon{attempts_made: obj.attempts_made()};
         Self {
             id: obj.id(),
             name: String::from(obj.name()),

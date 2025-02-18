@@ -353,7 +353,7 @@ fn recv_all_obj(
         let end = obj.end();
 
         match obj.obj_type() {
-            ObjectiveType::Beacon => {
+            ObjectiveType::Beacon { attempts_made } => {
                 /*beacon_buffer.push(BeaconObjective::new(id, name, start, end));
                 beacon_count += 1;*/
             }

@@ -6,6 +6,7 @@ pub struct BeaconObjective {
     name: String,
     start: chrono::DateTime<chrono::Utc>,
     end: chrono::DateTime<chrono::Utc>,
+    attempts_made: usize,
 }
 
 impl BeaconObjective {
@@ -20,6 +21,7 @@ impl BeaconObjective {
             name,
             start,
             end,
+            attempts_made: 0
         }
     }
     pub fn id(&self) -> usize { self.id }
