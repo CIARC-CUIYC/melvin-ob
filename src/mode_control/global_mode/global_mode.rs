@@ -16,7 +16,7 @@ pub trait GlobalMode {
     async fn exec_task_wait(&self, context: Arc<StateContext>, due_time: chrono::TimeDelta) -> ExecExitSignal;
     async fn exec_task(&self, context: Arc<StateContext>, task: Task) -> ExecExitSignal;
     async fn safe_handler(&self, context: Arc<StateContext>) -> OpExitSignal;
-    async fn objective_handler(&self, context: Arc<StateContext>, obj: ObjectiveBase) -> OpExitSignal;
+    async fn objective_handler(&self, context: Arc<StateContext>, obj: ObjectiveBase) -> Option<OpExitSignal>;
     async fn exit_mode(&self, context: Arc<StateContext>) -> Box<dyn GlobalMode>;
 }
 

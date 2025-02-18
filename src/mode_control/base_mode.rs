@@ -1,25 +1,15 @@
-use chrono::{DateTime, TimeDelta};
 use crate::{
     flight_control::{
-        camera_state::CameraAngle,
-        objective::beacon_objective::BeaconObjective,
-        orbit::IndexedOrbitPosition,
-        flight_computer::FlightComputer,
-        flight_state::FlightState,
+        camera_state::CameraAngle, flight_computer::FlightComputer, flight_state::FlightState,
+        objective::beacon_objective::BeaconObjective, orbit::IndexedOrbitPosition,
         task::switch_state_task::SwitchStateTask,
     },
     mode_control::mode_context::StateContext,
 };
-use std::{
-    future::Future,
-    pin::Pin,
-    sync::Arc,
-};
+use chrono::{DateTime, TimeDelta};
+use std::{future::Future, pin::Pin, sync::Arc};
 use strum_macros::Display;
-use tokio::{
-    sync::oneshot,
-    task::JoinHandle,
-};
+use tokio::{sync::oneshot, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 
 pub(crate) enum MappingModeEnd {
@@ -44,7 +34,11 @@ impl BaseMode {
     const DT_0_STD: std::time::Duration = std::time::Duration::from_secs(0);
 
     #[allow(clippy::cast_possible_wrap)]
-    pub async fn exec_map(context: Arc<StateContext>, end: MappingModeEnd, c_tok: CancellationToken) {
+    pub async fn exec_map(
+        context: Arc<StateContext>,
+        end: MappingModeEnd,
+        c_tok: CancellationToken,
+    ) {
         let end_t = {
             match end {
                 MappingModeEnd::Timestamp(dt) => dt,
@@ -55,8 +49,7 @@ impl BaseMode {
         let acq_phase = {
             let f_cont_lock = Arc::clone(&context.k().f_cont());
             let (tx, rx) = oneshot::channel();
-            let i_start = 
-                o_ch_clone.i_entry().new_from_pos(f_cont_lock.read().await.current_pos());
+            let i_start = o_ch_clone.i_entry().new_from_pos(f_cont_lock.read().await.current_pos());
             let k_clone = Arc::clone(context.k());
             let img_dt = o_ch_clone.img_dt();
             let handle = tokio::spawn(async move {
@@ -108,7 +101,7 @@ impl BaseMode {
                 }
             }
         };
-        let fixed_ranges = 
+        let fixed_ranges =
             IndexedOrbitPosition::map_ranges(&ranges, o_ch_clone.i_entry().period() as isize);
         print!("[INFO] Marking done: {} - {}", ranges[0].0, ranges[0].1);
         if let Some(r) = ranges.get(1) {
@@ -124,18 +117,21 @@ impl BaseMode {
             }
         });
     }
-    
-    pub async fn get_wait(&self, context: Arc<StateContext>, due_time: TimeDelta, c_tok: CancellationToken) -> JoinHandle<()> {
+
+    pub async fn get_wait(
+        &self,
+        context: Arc<StateContext>,
+        due_time: TimeDelta,
+        c_tok: CancellationToken,
+    ) -> JoinHandle<()> {
         let current_state = { context.k().f_cont().read().await.state() };
 
         let task_fut: Pin<Box<dyn Future<Output = ()> + Send>> = match current_state {
-            FlightState::Acquisition => {
-                Box::pin(Self::exec_map(
-                    context,
-                    MappingModeEnd::Timestamp(chrono::Utc::now() + due_time),
-                    c_tok,
-                ))
-            }
+            FlightState::Acquisition => Box::pin(Self::exec_map(
+                context,
+                MappingModeEnd::Timestamp(chrono::Utc::now() + due_time),
+                c_tok,
+            )),
             FlightState::Charge => Box::pin(FlightComputer::wait_for_duration(
                 due_time.to_std().unwrap_or(Self::DT_0_STD),
             )),
@@ -148,7 +144,7 @@ impl BaseMode {
         };
         tokio::spawn(task_fut)
     }
-    
+
     pub async fn get_task(&self, context: Arc<StateContext>, task: SwitchStateTask) {
         match task.target_state() {
             FlightState::Acquisition => {
@@ -157,38 +153,39 @@ impl BaseMode {
             }
             FlightState::Charge => {
                 let join_handle = async {
-                    FlightComputer::set_state_wait(context.k().f_cont(), FlightState::Charge)
-                        .await;
+                    FlightComputer::set_state_wait(context.k().f_cont(), FlightState::Charge).await;
                 };
                 let k_clone = Arc::clone(context.k());
                 tokio::spawn(async move {
-                    k_clone
-                        .c_cont()
-                        .create_full_snapshot()
-                        .await
-                        .expect("[WARN] Export failed!");
+                    k_clone.c_cont().create_full_snapshot().await.expect("[WARN] Export failed!");
                 });
                 join_handle.await;
             }
             FlightState::Comms => {}
-            _ => {
-                match self {
-                    BaseMode::MappingMode => {
-                        panic!("[FATAL] Illegal target state!")
-                    },
-                    BaseMode::BeaconObjectiveScanningMode(_) => {
-                        todo!()
-                    }
+            _ => match self {
+                BaseMode::MappingMode => {
+                    panic!("[FATAL] Illegal target state!")
                 }
+                BaseMode::BeaconObjectiveScanningMode(_) => {
+                    todo!()
+                }
+            },
+        }
+    }
+
+    pub(crate) async fn handle_b_o(&self, c: Arc<StateContext>, obj: BeaconObjective) -> Self {
+        match self {
+            BaseMode::MappingMode => BaseMode::BeaconObjectiveScanningMode(obj),
+            BaseMode::BeaconObjectiveScanningMode(curr_obj) => {
+                c.b_buffer().lock().await.push(curr_obj.clone());
+                BaseMode::BeaconObjectiveScanningMode(obj)
             }
         }
     }
 
     pub(crate) fn exit_base(&self) -> BaseMode {
         match self {
-            BaseMode::MappingMode => {
-                BaseMode::MappingMode
-            }
+            BaseMode::MappingMode => BaseMode::MappingMode,
             BaseMode::BeaconObjectiveScanningMode(obj) => {
                 // TODO: check if obj is finished or has good enough guess
                 todo!()

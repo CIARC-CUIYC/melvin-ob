@@ -19,7 +19,6 @@ use std::{future::Future, pin::Pin, sync::Arc};
 use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
 use crate::flight_control::objective::known_img_objective::KnownImgObjective;
-use crate::flight_control::objective::secret_img_objective::SecretImgObjective;
 
 #[derive(Clone)]
 pub struct InOrbitMode {
@@ -112,19 +111,21 @@ impl GlobalMode for InOrbitMode {
                     return self.safe_handler(context_local).await;
                 }
                 ExecExitSignal::NewObjectiveEvent(obj) => {
-                    return self.objective_handler(context_local, obj).await;
+                    let context_clone = Arc::clone(&context);
+                    let ret = self.objective_handler(context_clone, obj).await; 
+                    if let Some(opt) = ret { return opt };
                 }
-            }
+            };
             let context_clone = Arc::clone(&context);
             match self.exec_task(context_clone, task).await {
                 ExecExitSignal::Continue => {}
                 ExecExitSignal::SafeEvent => {
                     return self.safe_handler(context_local).await;
                 }
-                _ => {
+                ExecExitSignal::NewObjectiveEvent(_) => {
                     panic!("[FATAL] Unexpected task exit signal!");
                 }
-            }
+            };
         }
         OpExitSignal::Continue
     }
@@ -195,7 +196,7 @@ impl GlobalMode for InOrbitMode {
         &self,
         context: Arc<StateContext>,
         obj: ObjectiveBase,
-    ) -> OpExitSignal {
+    ) -> Option<OpExitSignal> {
         match obj.obj_type() {
             ObjectiveType::Beacon { .. } => {
                 let b_obj = BeaconObjective::new(
@@ -204,8 +205,8 @@ impl GlobalMode for InOrbitMode {
                     obj.start(),
                     obj.end(),
                 );
-                let base = BaseMode::BeaconObjectiveScanningMode(b_obj);
-                OpExitSignal::ReInit(Box::new(Self { base }))
+                let base = self.base.handle_b_o(context, b_obj).await;
+                Some(OpExitSignal::ReInit(Box::new(Self {base})))
             }
             ObjectiveType::KnownImage { zone, optic_required, coverage_required } => {
                 let k_obj = KnownImgObjective::new(
