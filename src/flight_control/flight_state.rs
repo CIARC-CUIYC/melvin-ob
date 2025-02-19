@@ -92,7 +92,6 @@ impl From<FlightState> for &'static str {
         }
     }
 }
-
 /// A pre-computed lookup table defining the delays needed
 /// for transitioning between different flight states.
 ///
