@@ -75,9 +75,8 @@ impl OrbitCharacteristics {
     pub fn finish(&mut self, now_pos: Vec2D<I32F32>, rationale: &str) {
         let now = self.i_entry.new_from_pos(now_pos);
         println!(
-            "[INFO] Finished Phase after: {}, due to: {}",
-            (now.t() - self.i_entry.t()).num_seconds(),
-            rationale
+            "[INFO] Finished Phase after: {}, due to: {rationale}",
+            (now.t() - self.i_entry.t()).num_seconds()
         );
         self.i_entry = now;
         self.mode_switches += 1;

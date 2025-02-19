@@ -11,7 +11,6 @@ use crate::flight_control::{
     camera_state::CameraAngle,
     flight_computer::FlightComputer,
     flight_state::FlightState,
-    objective::known_img_objective::KnownImgObjective,
     orbit::{ClosedOrbit, OrbitBase, OrbitCharacteristics, OrbitUsabilityError},
     supervisor::Supervisor,
 };
@@ -24,11 +23,6 @@ use crate::mode_control::{
 use chrono::TimeDelta;
 use fixed::types::I32F32;
 use std::{env, sync::Arc};
-use std::time::Duration;
-use futures::StreamExt;
-use reqwest_eventsource::{Event, EventSource};
-use tokio::sync::RwLock;
-use crate::http_handler::http_client::HTTPClient;
 
 const DT_MIN: TimeDelta = TimeDelta::seconds(5);
 const DT_0: TimeDelta = TimeDelta::seconds(0);
@@ -50,23 +44,7 @@ const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {    
     let base_url_var = env::var("DRS_BASE_URL");
-    let base_url = base_url_var.as_ref().map_or("http://localhost:33000", |v| v.as_str());    
-    
-    let base_url_clone = base_url.to_string();
-    tokio::spawn(async move {
-        let mut es = EventSource::get(base_url_clone + "/announcements");
-        while let Some(event) = es.next().await {
-            match event {
-                Ok(Event::Open) => println!("[INFO] EventSource connected!"),
-                Ok(Event::Message(msg)) => println!("[EVENT] {:#?}", msg),
-                Err(err) => {
-                    println!("[ERROR] EventSource error: {}", err);
-                    es.close();
-                },
-            }
-        }
-        println!("[INFO] EventSource disconnected!");
-    });
+    let base_url = base_url_var.as_ref().map_or("http://localhost:33000", |v| v.as_str());
     
     let context = Arc::new(init(base_url).await);
     
@@ -109,7 +87,7 @@ async fn init(
     };
     let supervisor_clone = Arc::clone(&supervisor);
     tokio::spawn(async move {
-        supervisor_clone.run().await;
+        supervisor_clone.run_obs_obj_mon().await;
     });
 
     tokio::time::sleep(DT_MIN.to_std().unwrap()).await;
@@ -128,11 +106,10 @@ async fn init(
         })
     };
 
-    supervisor.reset_pos_monitor().notify_one();
+    supervisor.reset_pos_mon().notify_one();
 
     let orbit_char = OrbitCharacteristics::new(&c_orbit, &init_k.f_cont()).await;
-    let safe_mon = supervisor.safe_mode_monitor();
-    ModeContext::new(KeychainWithOrbit::new(init_k, c_orbit), orbit_char, obj_rx, safe_mon)
+    ModeContext::new(KeychainWithOrbit::new(init_k, c_orbit), orbit_char, obj_rx, supervisor)
 }
 // TODO: translate this into state
 /*

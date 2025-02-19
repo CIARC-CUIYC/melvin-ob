@@ -17,6 +17,8 @@ use crate::mode_control::{
 };
 use async_trait::async_trait;
 use std::{future::Future, pin::Pin, sync::Arc};
+use std::time::Duration;
+use chrono::{DateTime, Utc};
 use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
 
@@ -73,11 +75,12 @@ impl GlobalMode for InOrbitMode {
             })
         };
         tokio::pin!(sched_handle);
+        let safe_mon = context.super_v().safe_mon();
         tokio::select!(
             _ = &mut sched_handle => {
                 context.k().con().send_tasklist().await;
             },
-            () = context.safe_mon().notified() => {
+            () = safe_mon.notified() => {
                 cancel_task.cancel();
                 sched_handle.abort();
 
@@ -105,7 +108,7 @@ impl GlobalMode for InOrbitMode {
                 due_time.num_seconds()
             );
             let context_clone = Arc::clone(&context);
-            match self.exec_task_wait(context_clone, due_time).await {
+            match self.exec_task_wait(context_clone, task.dt()).await {
                 ExecExitSignal::Continue => {}
                 ExecExitSignal::SafeEvent => {
                     return self.safe_handler(context_local).await;
@@ -135,19 +138,19 @@ impl GlobalMode for InOrbitMode {
     async fn exec_task_wait(
         &self,
         context: Arc<ModeContext>,
-        due_time: chrono::TimeDelta,
+        due: DateTime<Utc>,
     ) -> ExecExitSignal {
-        let safe_mon = context.safe_mon();
+        let safe_mon = context.super_v().safe_mon();
         let mut obj_mon = context.obj_mon().write().await;
         let cancel_task = CancellationToken::new();
-        let fut: Pin<Box<dyn Future<Output = Result<(), JoinError>> + Send>> = if due_time
+        let fut: Pin<Box<dyn Future<Output = Result<(), JoinError>> + Send>> = if (due - Utc::now())
             > Self::MAX_WAIT_DURATION
         {
-            Box::pin(self.base.get_wait(Arc::clone(&context), due_time, cancel_task.clone()).await)
+            Box::pin(self.base.get_wait(Arc::clone(&context), due, cancel_task.clone()).await)
         } else {
             println!("[WARN] Task wait time too short. Just waiting!");
             Box::pin(async {
-                tokio::time::sleep(due_time.to_std().unwrap()).await;
+                tokio::time::sleep((due - Utc::now()).to_std().unwrap_or(Duration::from_secs(0))).await;
                 Ok(())
             })
         };

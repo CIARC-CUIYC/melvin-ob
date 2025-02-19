@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use std::sync::Arc;
+use chrono::{DateTime, Utc};
 use crate::flight_control::objective::objective_base::ObjectiveBase;
 use crate::flight_control::task::base_task::Task;
 use crate::mode_control::mode_context::ModeContext;
@@ -13,7 +14,7 @@ pub trait GlobalMode {
     fn type_name(&self) -> &'static str;
     async fn init_mode(&self, context: Arc<ModeContext>) -> OpExitSignal;
     async fn exec_task_queue(&self, context: Arc<ModeContext>) -> OpExitSignal;
-    async fn exec_task_wait(&self, context: Arc<ModeContext>, due_time: chrono::TimeDelta) -> ExecExitSignal;
+    async fn exec_task_wait(&self, context: Arc<ModeContext>, due: DateTime<Utc>) -> ExecExitSignal;
     async fn exec_task(&self, context: Arc<ModeContext>, task: Task) -> ExecExitSignal;
     async fn safe_handler(&self, context: Arc<ModeContext>) -> OpExitSignal;
     async fn objective_handler(&self, context: Arc<ModeContext>, obj: ObjectiveBase) -> Option<OpExitSignal>;

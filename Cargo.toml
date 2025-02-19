@@ -30,6 +30,7 @@ image = { version = "0.25.5", default-features = false, features = ["jpeg", "png
 prost = "0.13"
 num = "0.4.3"
 libc = "0.2.169"
+regex = "1.11.1"
 
 [lints.clippy]
 correctness = "deny"

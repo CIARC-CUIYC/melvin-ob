@@ -1,3 +1,4 @@
+use crate::flight_control::objective::beacon_objective::BeaconMeas;
 use crate::{
     flight_control::{
         camera_state::CameraAngle, flight_computer::FlightComputer, flight_state::FlightState,
@@ -6,14 +7,20 @@ use crate::{
     },
     mode_control::mode_context::ModeContext,
 };
-use chrono::{DateTime, TimeDelta};
+use chrono::{DateTime, TimeDelta, Utc};
+use regex::Regex;
+use std::sync::LazyLock;
 use std::{future::Future, pin::Pin, sync::Arc};
 use strum_macros::Display;
-use tokio::{sync::oneshot, task::JoinHandle};
+use tokio::time::Instant;
+use tokio::{
+    sync::oneshot,
+    task::JoinHandle,
+};
 use tokio_util::sync::CancellationToken;
 
 pub(crate) enum MappingModeEnd {
-    Timestamp(DateTime<chrono::Utc>),
+    Timestamp(DateTime<Utc>),
     Join(JoinHandle<()>),
 }
 
@@ -29,9 +36,29 @@ pub enum BaseMode {
     BeaconObjectiveScanningMode(BeaconObjective),
 }
 
+static BO_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)ID[_, ]?(\d+).*?DISTANCE[_, ]?(([0-9]*[.])?[0-9]+)").unwrap()
+});
+
+fn extract_id_and_d(input: &str) -> Option<(usize, f64)> {
+    // Match the input string
+    if let Some(captures) = BO_REGEX.captures(input) {
+        // Extract beacon_id and d_noisy
+        if let (Some(beacon_id), Some(d_noisy)) = (captures.get(1), captures.get(2)) {
+            let beacon_id: usize = beacon_id.as_str().parse().unwrap();
+            let d_noisy: f64 = d_noisy.as_str().parse().unwrap();
+            return Some((beacon_id, d_noisy));
+        }
+    }
+    None // Return None if values cannot be extracted
+}
+
 impl BaseMode {
-    const DEF_MAPPING_ANGLE: CameraAngle = CameraAngle::Narrow;
     const DT_0_STD: std::time::Duration = std::time::Duration::from_secs(0);
+    const DEF_MAPPING_ANGLE: CameraAngle = CameraAngle::Narrow;
+    const BO_MSG_COMM_PROLONG: std::time::Duration = std::time::Duration::from_secs(60);
+    const MIN_COMM_DT: std::time::Duration = std::time::Duration::from_secs(60);
+    const MAX_COMM_INTERVAL: std::time::Duration = std::time::Duration::from_secs(500);
 
     #[allow(clippy::cast_possible_wrap)]
     pub async fn exec_map(
@@ -53,6 +80,8 @@ impl BaseMode {
             let k_clone = Arc::clone(context.k());
             let img_dt = o_ch_clone.img_dt();
             let handle = tokio::spawn(async move {
+                FlightComputer::set_angle_wait(Arc::clone(&f_cont_lock), Self::DEF_MAPPING_ANGLE)
+                    .await;
                 k_clone
                     .c_cont()
                     .execute_acquisition_cycle(
@@ -118,10 +147,44 @@ impl BaseMode {
         });
     }
 
+    async fn exec_comms(context: Arc<ModeContext>, due: DateTime<Utc>, c_tok: CancellationToken) {
+        let mut event_rx = context.super_v().subscribe_event_hub();
+        let due_secs = (due - Utc::now()).to_std().unwrap_or(Self::DT_0_STD);
+        let mut deadline = Instant::now() + due_secs;
+        loop {
+            tokio::select! {
+                // Wait for a message
+                Ok(()) = event_rx.changed() => {
+                    let val = event_rx.borrow().clone();
+                    if let Some((id, d_noisy)) = extract_id_and_d(val.as_str()) {
+                        let pos = context.k().f_cont().read().await.current_pos();
+                        let meas = BeaconMeas::new(id, pos, d_noisy);
+                        // TODO: search beacon with id and add
+                        deadline = Instant::now() + Self::BO_MSG_COMM_PROLONG; // Reset timeout
+                        println!("[LOG] Received BO message: {id} - {d_noisy}. Prologing by 60s!");
+                    } else {
+                        println!("[INFO] Received random message: {val:#?}");
+                    }
+                },
+                // If the timeout expires, exit
+                _ = tokio::time::sleep_until(deadline) => {
+                    println!("Timeout reached. Stopping listener.");
+                    // TODO: return beac dictionary;
+                    return;
+                },
+                // If the task gets cancelled exit with the updated beacon vector
+                _ = c_tok.cancelled() => {
+                    // TODO: return beac dictionary return beac;
+                    return;
+                }
+            }
+        };
+    }
+
     pub async fn get_wait(
         &self,
         context: Arc<ModeContext>,
-        due_time: TimeDelta,
+        due: DateTime<Utc>,
         c_tok: CancellationToken,
     ) -> JoinHandle<()> {
         let current_state = { context.k().f_cont().read().await.state() };
@@ -129,17 +192,17 @@ impl BaseMode {
         let task_fut: Pin<Box<dyn Future<Output = ()> + Send>> = match current_state {
             FlightState::Acquisition => Box::pin(Self::exec_map(
                 context,
-                MappingModeEnd::Timestamp(chrono::Utc::now() + due_time),
+                MappingModeEnd::Timestamp(due),
                 c_tok,
             )),
             FlightState::Charge => Box::pin(FlightComputer::wait_for_duration(
-                due_time.to_std().unwrap_or(Self::DT_0_STD),
+                (due - Utc::now()).to_std().unwrap_or(Self::DT_0_STD),
             )),
             FlightState::Comms =>
-                // TODO: implement this right
-                Box::pin(FlightComputer::wait_for_duration(
-                    due_time.to_std().unwrap_or(Self::DT_0_STD),
-                )),
+            // TODO: implement this right
+            {
+                Box::pin(Self::exec_comms(context, due, c_tok))
+            }
             _ => {
                 panic!("[FATAL] Illegal state ({current_state})!")
             }
@@ -150,8 +213,7 @@ impl BaseMode {
     pub async fn get_task(&self, context: Arc<ModeContext>, task: SwitchStateTask) {
         match task.target_state() {
             FlightState::Acquisition => {
-                FlightComputer::set_state_wait(context.k().f_cont(), FlightState::Comms)
-                    .await;
+                FlightComputer::set_state_wait(context.k().f_cont(), FlightState::Comms).await;
             }
             FlightState::Charge => {
                 let join_handle = async {
@@ -177,9 +239,7 @@ impl BaseMode {
 
     pub(crate) async fn handle_b_o(&self, c: Arc<ModeContext>, obj: BeaconObjective) -> Self {
         match self {
-            BaseMode::MappingMode => {
-                BaseMode::BeaconObjectiveScanningMode(obj)
-            },
+            BaseMode::MappingMode => BaseMode::BeaconObjectiveScanningMode(obj),
             BaseMode::BeaconObjectiveScanningMode(curr_obj) => {
                 c.b_buffer().lock().await.push(curr_obj.clone());
                 BaseMode::BeaconObjectiveScanningMode(obj)

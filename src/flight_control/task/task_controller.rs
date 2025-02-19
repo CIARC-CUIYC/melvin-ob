@@ -609,9 +609,8 @@ impl TaskController {
             )
         };
         println!(
-            "[INFO] Calculating optimal orbit schedule to be at {min_charge} and in {} in {}s.",
-            <&'static str>::from(FlightState::Acquisition),
-            dt
+            "[INFO] Calculating optimal orbit schedule to be at {min_charge} and in {} in {dt}s.",
+            <&'static str>::from(FlightState::Acquisition)
         );
         let after_sched_calc_i = {
             let pos = f_cont_lock.read().await.current_pos();

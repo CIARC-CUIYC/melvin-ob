@@ -12,15 +12,18 @@ use crate::{
     http_handler::http_request::{objective_list_get::ObjectiveListRequest, request_common::NoBodyHTTPRequestType},
 };
 use fixed::types::I32F32;
-use tokio::sync::{mpsc, mpsc::Receiver, Notify, RwLock};
+use futures::StreamExt;
+use reqwest_eventsource::{Event, EventSource};
+use tokio::sync::{mpsc, mpsc::Receiver, watch, Notify, RwLock};
 use crate::flight_control::objective::known_img_objective::KnownImgObjective;
 use crate::http_handler::ZoneType;
 
 pub struct Supervisor {
     f_cont_lock: Arc<RwLock<FlightComputer>>,
-    safe_mode_monitor: Arc<Notify>,
-    reset_pos_monitor: Arc<Notify>,
-    objective_monitor: mpsc::Sender<ObjectiveBase>,
+    safe_mon: Arc<Notify>,
+    reset_pos_mon: Arc<Notify>,
+    obj_mon: mpsc::Sender<ObjectiveBase>,
+    event_hub: watch::Sender<String>,
 }
 
 impl Supervisor {
@@ -33,26 +36,54 @@ impl Supervisor {
     /// Creates a new instance of `Supervisor`
     pub fn new(f_cont_lock: Arc<RwLock<FlightComputer>>) -> (Supervisor, Receiver<ObjectiveBase>) {
         let (tx, rx) = mpsc::channel(10);
+        let (event_send, _) = watch::channel(String::new());
         (
             Self {
                 f_cont_lock,
-                safe_mode_monitor: Arc::new(Notify::new()),
-                reset_pos_monitor: Arc::new(Notify::new()),
-                objective_monitor: tx,
+                safe_mon: Arc::new(Notify::new()),
+                reset_pos_mon: Arc::new(Notify::new()),
+                obj_mon: tx,
+                event_hub: event_send,
             },
             rx,
         )
     }
 
-    pub fn safe_mode_monitor(&self) -> Arc<Notify> { Arc::clone(&self.safe_mode_monitor) }
+    pub fn safe_mon(&self) -> Arc<Notify> { Arc::clone(&self.safe_mon) }
 
-    pub fn reset_pos_monitor(&self) -> Arc<Notify> { Arc::clone(&self.reset_pos_monitor) }
+    pub fn reset_pos_mon(&self) -> Arc<Notify> { Arc::clone(&self.reset_pos_mon) }
+    
+    pub fn subscribe_event_hub(&self) -> watch::Receiver<String> { self.event_hub.subscribe() }
+
+    pub async fn run_announcement_hub(&self) {
+        let url = {
+            let client = self.f_cont_lock.read().await.client();
+            client.url().to_string()
+        };
+        let mut es = EventSource::get(url + "/announcements");
+        while let Some(event) = es.next().await {
+            match event {
+                Ok(Event::Open) => println!("[INFO] EventSource connected!"),
+                Ok(Event::Message(msg)) => {
+                    let msg_str = format!("{msg:#?}");
+                    self.event_hub.send(msg_str).unwrap_or_else(
+                        |_| println!("[EVENT] No Receiver for: {msg:#?}")
+                    );
+                },
+                Err(err) => {
+                    println!("[ERROR] EventSource error: {err}");
+                    es.close();
+                },
+            }
+        }
+        println!("[FATAL] EventSource disconnected!");
+    }
 
     /// Starts the supervisor loop to periodically call `update_observation`
     /// and monitor position & state deviations.
     #[allow(clippy::cast_precision_loss)]
-    pub async fn run(&self) {
-        // ******** DEBUG INITS        
+    pub async fn run_obs_obj_mon(&self) {
+        // ******** DEBUG INITS
         let start = Utc::now();
         let mut next_safe = start + TimeDelta::seconds(500);
         let debug_objective = KnownImgObjective::new(
@@ -112,7 +143,7 @@ impl Supervisor {
                 // Check flight state and handle safe mode (placeholder for now)
                 if is_safe_trans {
                     println!("[WARN] Unplanned Safe Mode Transition Detected! Notifying!");
-                    self.safe_mode_monitor.notify_one();
+                    self.safe_mon.notify_one();
                     self.f_cont_lock.write().await.safe_detected();
                 }
             }
@@ -141,7 +172,7 @@ impl Supervisor {
                 }
                 for obj in send_objs {
                     id_list.insert(obj.id());
-                    self.objective_monitor.send(obj).await.unwrap();
+                    self.obj_mon.send(obj).await.unwrap();
                 }
                 last_objective_check = Utc::now();
             }
