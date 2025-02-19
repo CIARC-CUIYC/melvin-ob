@@ -25,7 +25,6 @@ pub struct BeaconObjective {
     name: String,
     start: chrono::DateTime<chrono::Utc>,
     end: chrono::DateTime<chrono::Utc>,
-    attempts_made: usize,
     measurements: Option<Vec<BeaconMeas>>
 }
 
@@ -41,7 +40,6 @@ impl BeaconObjective {
             name,
             start,
             end,
-            attempts_made: 0,
             measurements: None,
         }
     }
@@ -50,7 +48,6 @@ impl BeaconObjective {
     pub fn start(&self) -> chrono::DateTime<chrono::Utc> { self.start }
     pub fn end(&self) -> chrono::DateTime<chrono::Utc> { self.end }
     pub fn measurements(&self) -> Option<&Vec<BeaconMeas>> { self.measurements.as_ref() }
-    pub fn attempts_made(&self) -> usize { self.attempts_made }
     pub fn append_measurement(&mut self, meas: BeaconMeas) {
         self.measurements.get_or_insert(Vec::new()).push(meas);
     }

@@ -10,15 +10,18 @@ use crate::flight_control::{
         TaskController,
     },
 };
+use crate::mode_control::base_mode::BaseWaitExitSignal;
+use crate::mode_control::global_mode::global_mode::WaitExitSignal;
 use crate::mode_control::{
     base_mode::{BaseMode, MappingModeEnd::Join},
     global_mode::global_mode::{ExecExitSignal, GlobalMode, OpExitSignal},
     mode_context::ModeContext,
 };
 use async_trait::async_trait;
-use std::{future::Future, pin::Pin, sync::Arc};
-use std::time::Duration;
 use chrono::{DateTime, Utc};
+use std::collections::HashMap;
+use std::time::Duration;
+use std::{future::Future, pin::Pin, sync::Arc};
 use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
 
@@ -109,17 +112,18 @@ impl GlobalMode for InOrbitMode {
             );
             let context_clone = Arc::clone(&context);
             match self.exec_task_wait(context_clone, task.dt()).await {
-                ExecExitSignal::Continue => {}
-                ExecExitSignal::SafeEvent => {
+                WaitExitSignal::Continue => {}
+                WaitExitSignal::SafeEvent => {
                     return self.safe_handler(context_local).await;
                 }
-                ExecExitSignal::NewObjectiveEvent(obj) => {
+                WaitExitSignal::NewObjectiveEvent(obj) => {
                     let context_clone = Arc::clone(&context);
                     let ret = self.objective_handler(context_clone, obj).await;
                     if let Some(opt) = ret {
                         return opt;
                     };
                 }
+                WaitExitSignal::BODoneEvent(b) => return self.b_o_done_handler(b).await,
             };
             let context_clone = Arc::clone(&context);
             match self.exec_task(context_clone, task).await {
@@ -139,33 +143,39 @@ impl GlobalMode for InOrbitMode {
         &self,
         context: Arc<ModeContext>,
         due: DateTime<Utc>,
-    ) -> ExecExitSignal {
+    ) -> WaitExitSignal {
         let safe_mon = context.super_v().safe_mon();
         let mut obj_mon = context.obj_mon().write().await;
         let cancel_task = CancellationToken::new();
-        let fut: Pin<Box<dyn Future<Output = Result<(), JoinError>> + Send>> = if (due - Utc::now())
-            > Self::MAX_WAIT_DURATION
-        {
-            Box::pin(self.base.get_wait(Arc::clone(&context), due, cancel_task.clone()).await)
-        } else {
-            println!("[WARN] Task wait time too short. Just waiting!");
-            Box::pin(async {
-                tokio::time::sleep((due - Utc::now()).to_std().unwrap_or(Duration::from_secs(0))).await;
-                Ok(())
-            })
-        };
+        let fut: Pin<Box<dyn Future<Output = Result<BaseWaitExitSignal, JoinError>> + Send>> =
+            if (due - Utc::now()) > Self::MAX_WAIT_DURATION {
+                Box::pin(self.base.get_wait(Arc::clone(&context), due, cancel_task.clone()).await)
+            } else {
+                println!("[WARN] Task wait time too short. Just waiting!");
+                Box::pin(async {
+                    tokio::time::sleep(
+                        (due - Utc::now()).to_std().unwrap_or(Duration::from_secs(0)),
+                    )
+                    .await;
+                    Ok(BaseWaitExitSignal::Continue)
+                })
+            };
         tokio::select! {
-                _ = fut => {
-                    ExecExitSignal::Continue
+                exit_sig = fut => {
+                    let sig = exit_sig.ok().expect("[FATAL] Task wait hung up!");
+                    match sig {
+                        BaseWaitExitSignal::Continue => WaitExitSignal::Continue,
+                        BaseWaitExitSignal::BODone(b) => WaitExitSignal::BODoneEvent(b),
+                    }
                 },
                 () = safe_mon.notified() => {
                         cancel_task.cancel();
-                        ExecExitSignal::SafeEvent
+                        WaitExitSignal::SafeEvent
                 },
                 obj = obj_mon.recv() => {
                     cancel_task.cancel();
                    let unwrapped_obj = obj.expect("[FATAL] Objective monitor hung up!");
-                    ExecExitSignal::NewObjectiveEvent(unwrapped_obj)
+                    WaitExitSignal::NewObjectiveEvent(unwrapped_obj)
             }
         }
     }
@@ -193,6 +203,17 @@ impl GlobalMode for InOrbitMode {
         OpExitSignal::ReInit(Box::new(self.clone()))
     }
 
+    async fn b_o_done_handler(&self, b: Option<HashMap<usize, BeaconObjective>>) -> OpExitSignal {
+        match b {
+            None => OpExitSignal::ReInit(Box::new(Self {
+                base: BaseMode::MappingMode,
+            })),
+            Some(b_m) => OpExitSignal::ReInit(Box::new(Self {
+                base: BaseMode::BeaconObjectiveScanningMode(b_m),
+            })),
+        }
+    }
+
     async fn objective_handler(
         &self,
         context: Arc<ModeContext>,
@@ -211,7 +232,7 @@ impl GlobalMode for InOrbitMode {
                     obj.end(),
                 );
                 println!("[OBJ] Found new Beacon Objective {}!", obj.id());
-                let base = self.base.handle_b_o(context, b_obj).await;
+                let base = self.base.handle_b_o(&context, b_obj);
                 Some(OpExitSignal::ReInit(Box::new(Self { base })))
             }
             ObjectiveType::KnownImage {
