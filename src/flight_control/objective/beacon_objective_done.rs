@@ -18,5 +18,5 @@ impl BeaconObjectiveDone {
     pub fn end(&self) -> chrono::DateTime<chrono::Utc> { self.end }
     pub fn attempts_made(&self) -> usize { self.attempts_made }
     pub fn measurements(&self) -> &Vec<BeaconMeas> { self.measurements.as_ref() }
-    pub fn guess_max(&self, client: Arc<HTTPClient>) { todo!() }
+    pub async fn guess_max(&self, client: Arc<HTTPClient>) { todo!() }
 }

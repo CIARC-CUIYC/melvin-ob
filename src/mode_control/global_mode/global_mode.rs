@@ -5,6 +5,7 @@ use chrono::{DateTime, Utc};
 use crate::flight_control::objective::objective_base::ObjectiveBase;
 use crate::flight_control::task::base_task::Task;
 use crate::flight_control::objective::beacon_objective::BeaconObjective;
+use crate::mode_control::base_mode::BaseWaitExitSignal;
 use crate::mode_control::mode_context::ModeContext;
 
 #[async_trait]
@@ -20,7 +21,7 @@ pub trait GlobalMode {
     async fn exec_task(&self, context: Arc<ModeContext>, task: Task) -> ExecExitSignal;
     async fn safe_handler(&self, context: Arc<ModeContext>) -> OpExitSignal;
     async fn objective_handler(&self, context: Arc<ModeContext>, obj: ObjectiveBase) -> Option<OpExitSignal>;
-    async fn b_o_done_handler(&self, b: Option<HashMap<usize, BeaconObjective>>) -> OpExitSignal;
+    async fn b_o_done_handler(&self, b_sig: BaseWaitExitSignal) -> OpExitSignal;
     async fn exit_mode(&self, context: Arc<ModeContext>) -> Box<dyn GlobalMode>;
 }
 
@@ -39,5 +40,5 @@ pub enum WaitExitSignal {
     Continue,
     SafeEvent,
     NewObjectiveEvent(ObjectiveBase),
-    BODoneEvent(Option<HashMap<usize, BeaconObjective>>)
+    BODoneEvent(BaseWaitExitSignal)
 }

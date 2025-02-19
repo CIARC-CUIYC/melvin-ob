@@ -1,5 +1,6 @@
 use crate::flight_control::objective::beacon_objective::BeaconMeas;
 use crate::flight_control::objective::beacon_objective_done::BeaconObjectiveDone;
+use crate::http_handler::http_client::HTTPClient;
 use crate::{
     flight_control::{
         camera_state::CameraAngle, flight_computer::FlightComputer, flight_state::FlightState,
@@ -14,6 +15,7 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 use std::{future::Future, pin::Pin, sync::Arc};
 use strum_macros::Display;
+use tokio::sync::Mutex;
 use tokio::time::Instant;
 use tokio::{sync::oneshot, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
@@ -32,19 +34,20 @@ pub enum PeriodicImagingEndSignal {
 #[derive(Display, Clone)]
 pub enum BaseMode {
     MappingMode,
-    BeaconObjectiveScanningMode(HashMap<usize, BeaconObjective>),
+    BeaconObjectiveScanningMode(Arc<Mutex<HashMap<usize, BeaconObjective>>>),
 }
 
 pub enum BaseWaitExitSignal {
     Continue,
-    BODone(Option<HashMap<usize, BeaconObjective>>),
+    ReturnAllDone,
+    ReturnSomeLeft,
 }
 
 impl BaseMode {
     fn start_beacon_scanning(obj: BeaconObjective) -> BaseMode {
         let mut obj_m = HashMap::new();
         obj_m.insert(obj.id(), obj);
-        BaseMode::BeaconObjectiveScanningMode(obj_m)
+        BaseMode::BeaconObjectiveScanningMode(Arc::new(Mutex::new(obj_m)))
     }
 }
 
@@ -199,7 +202,11 @@ impl BaseMode {
         due: DateTime<Utc>,
         c_tok: CancellationToken,
     ) -> JoinHandle<BaseWaitExitSignal> {
-        let current_state = { context.k().f_cont().read().await.state() };
+        let (current_state, handler) = {
+            let f_cont = context.k().f_cont();
+            let lock = f_cont.read().await;
+            (lock.state(), lock.client())
+        };
         let task_fut: Pin<Box<dyn Future<Output = BaseWaitExitSignal> + Send>> = match current_state
         {
             FlightState::Acquisition => Box::pin(async move {
@@ -215,9 +222,11 @@ impl BaseMode {
                 match self {
                     BaseMode::MappingMode => def,
                     BaseMode::BeaconObjectiveScanningMode(obj_m) => {
-                        if let Some(obj) = Self::check_b_o_done(obj_m).await {
-                            let new_b_o = Self::handle_b_o_done(obj_m.clone(), context, obj).await;
-                            Box::pin(async { BaseWaitExitSignal::BODone(new_b_o) })
+                        if let Some(obj) = Self::check_b_o_done(obj_m.clone()).await {
+                            let obj_m_clone = Arc::clone(obj_m);
+                            Box::pin(async move {
+                                Self::handle_b_o_done(obj_m_clone, obj, handler).await
+                            })
                         } else {
                             def
                         }
@@ -264,49 +273,60 @@ impl BaseMode {
         }
     }
 
-    pub(crate) fn handle_b_o(&self, c: &Arc<ModeContext>, obj: BeaconObjective) -> Self {
+    pub(crate) async fn handle_b_o(&self, _: &Arc<ModeContext>, obj: BeaconObjective) -> Self {
         match self {
             BaseMode::MappingMode => BaseMode::start_beacon_scanning(obj),
             BaseMode::BeaconObjectiveScanningMode(curr_obj) => {
-                let mut obj_m = curr_obj.clone();
+                let mut obj_m = curr_obj.lock().await.clone();
                 obj_m.insert(obj.id(), obj);
-                BaseMode::BeaconObjectiveScanningMode(obj_m)
+                BaseMode::BeaconObjectiveScanningMode(Arc::new(Mutex::new(obj_m)))
             }
         }
     }
 
     async fn handle_b_o_done(
-        mut curr: HashMap<usize, BeaconObjective>,
-        c: Arc<ModeContext>,
+        curr: Arc<Mutex<HashMap<usize, BeaconObjective>>>,
         b_o_done: Vec<BeaconObjectiveDone>,
-    ) -> Option<HashMap<usize, BeaconObjective>> {
-        for b_o in b_o_done {
-            let id = b_o.id();
-            curr.remove(&id);
-            b_o.guess_max(c.k().f_cont().read().await.client());
-        }
-        if curr.is_empty() {
-            None
+        cl: Arc<HTTPClient>,
+    ) -> BaseWaitExitSignal {
+        let empty = {
+            let mut curr_lock = curr.lock().await;
+            for b_o in b_o_done {
+                let id = b_o.id();
+                curr_lock.remove(&id);
+                b_o.guess_max(cl.clone()).await;
+            }
+            curr_lock.is_empty()
+        };
+        if empty {
+            BaseWaitExitSignal::ReturnAllDone
         } else {
-            Some(curr)
+            BaseWaitExitSignal::ReturnSomeLeft
         }
-        
     }
 
-    pub(crate) fn exit_base(&self) -> BaseMode {
+    pub(crate) async fn exit_base(&self, handler: Arc<HTTPClient>) -> BaseMode {
         match self {
             BaseMode::MappingMode => BaseMode::MappingMode,
-            BaseMode::BeaconObjectiveScanningMode(obj) => {
-                // TODO: check if obj is finished or has good enough guess
+            BaseMode::BeaconObjectiveScanningMode(b_map) => {
+                if let Some(obj) = Self::check_b_o_done(b_map.clone()).await {
+                    let new_b_o = Self::handle_b_o_done(b_map.clone(), obj, handler).await;
+                    if let BaseWaitExitSignal::ReturnAllDone = new_b_o {
+                        return BaseMode::MappingMode;
+                    }
+                } else {
+                    return self.clone();
+                }
                 todo!()
             }
         }
     }
 
     async fn check_b_o_done(
-        b_o_map: &HashMap<usize, BeaconObjective>,
+        b_o_map: Arc<Mutex<HashMap<usize, BeaconObjective>>>,
     ) -> Option<Vec<BeaconObjectiveDone>> {
-        for (i, obj) in b_o_map {
+        let b_o_map_lock = b_o_map.lock().await;
+        for (i, obj) in b_o_map_lock.iter() {
             // TODO: check if obj is finished
         }
         None

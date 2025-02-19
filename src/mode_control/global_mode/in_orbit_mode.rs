@@ -19,7 +19,6 @@ use crate::mode_control::{
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use std::collections::HashMap;
 use std::time::Duration;
 use std::{future::Future, pin::Pin, sync::Arc};
 use tokio::task::JoinError;
@@ -103,7 +102,7 @@ impl GlobalMode for InOrbitMode {
             drop(sched_lock);
             t
         } {
-            let due_time = task.dt() - chrono::Utc::now();
+            let due_time = task.dt() - Utc::now();
             let phases = context_local.o_ch_clone().await.mode_switches();
             let task_type = task.task_type();
             println!(
@@ -123,7 +122,7 @@ impl GlobalMode for InOrbitMode {
                         return opt;
                     };
                 }
-                WaitExitSignal::BODoneEvent(b) => return self.b_o_done_handler(b).await,
+                WaitExitSignal::BODoneEvent(sig) => return self.b_o_done_handler(sig).await,
             };
             let context_clone = Arc::clone(&context);
             match self.exec_task(context_clone, task).await {
@@ -162,10 +161,10 @@ impl GlobalMode for InOrbitMode {
             };
         tokio::select! {
                 exit_sig = fut => {
-                    let sig = exit_sig.ok().expect("[FATAL] Task wait hung up!");
+                    let sig = exit_sig.expect("[FATAL] Task wait hung up!");
                     match sig {
                         BaseWaitExitSignal::Continue => WaitExitSignal::Continue,
-                        BaseWaitExitSignal::BODone(b) => WaitExitSignal::BODoneEvent(b),
+                        sig => WaitExitSignal::BODoneEvent(sig)
                     }
                 },
                 () = safe_mon.notified() => {
@@ -203,17 +202,6 @@ impl GlobalMode for InOrbitMode {
         OpExitSignal::ReInit(Box::new(self.clone()))
     }
 
-    async fn b_o_done_handler(&self, b: Option<HashMap<usize, BeaconObjective>>) -> OpExitSignal {
-        match b {
-            None => OpExitSignal::ReInit(Box::new(Self {
-                base: BaseMode::MappingMode,
-            })),
-            Some(b_m) => OpExitSignal::ReInit(Box::new(Self {
-                base: BaseMode::BeaconObjectiveScanningMode(b_m),
-            })),
-        }
-    }
-
     async fn objective_handler(
         &self,
         context: Arc<ModeContext>,
@@ -232,7 +220,7 @@ impl GlobalMode for InOrbitMode {
                     obj.end(),
                 );
                 println!("[OBJ] Found new Beacon Objective {}!", obj.id());
-                let base = self.base.handle_b_o(&context, b_obj);
+                let base = self.base.handle_b_o(&context, b_obj).await;
                 Some(OpExitSignal::ReInit(Box::new(Self { base })))
             }
             ObjectiveType::KnownImage {
@@ -257,9 +245,20 @@ impl GlobalMode for InOrbitMode {
         }
     }
 
-    async fn exit_mode(&self, _: Arc<ModeContext>) -> Box<dyn GlobalMode> {
+    async fn b_o_done_handler(&self, b_sig: BaseWaitExitSignal) -> OpExitSignal {
+        match b_sig {
+            BaseWaitExitSignal::Continue => OpExitSignal::Continue,
+            BaseWaitExitSignal::ReturnAllDone => OpExitSignal::ReInit(Box::new(Self {
+                base: BaseMode::MappingMode,
+            })),
+            BaseWaitExitSignal::ReturnSomeLeft => OpExitSignal::ReInit(Box::new(self.clone())),
+        }
+    }
+
+    async fn exit_mode(&self, c: Arc<ModeContext>) -> Box<dyn GlobalMode> {
+        let handler = c.k().f_cont().read().await.client();
         Box::new(Self {
-            base: self.base.exit_base(),
+            base: self.base.exit_base(handler).await,
         })
     }
 }
