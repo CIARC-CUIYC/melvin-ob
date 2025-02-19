@@ -24,6 +24,8 @@ use crate::mode_control::{
 use chrono::TimeDelta;
 use fixed::types::I32F32;
 use std::{env, sync::Arc};
+use futures::StreamExt;
+use reqwest_eventsource::{Event, EventSource};
 
 const DT_MIN: TimeDelta = TimeDelta::seconds(5);
 const DT_0: TimeDelta = TimeDelta::seconds(0);
@@ -46,8 +48,24 @@ const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 async fn main() {
     let base_url_var = env::var("DRS_BASE_URL");
     let base_url = base_url_var.as_ref().map_or("http://localhost:33000", |v| v.as_str());
+    let base_url_clone = base_url.to_string();
+    tokio::spawn(async move {
+        let mut es = EventSource::get(base_url_clone + "/announcements");
+        while let Some(event) = es.next().await {
+            match event {
+                Ok(Event::Open) => println!("[INFO] EventSource connected!"),
+                Ok(Event::Message(msg)) => println!("[EVENT] {:#?}", msg),
+                Err(err) => {
+                    println!("[ERROR] EventSource error: {}", err);
+                    es.close();
+                },
+            }
+        }
+        println!("[INFO] EventSource disconnected!");
+    });
+    
     let context = Arc::new(init(base_url).await);
-
+    
     let mut global_mode: Box<dyn GlobalMode> = Box::new(InOrbitMode::new());
     loop {
         let phase = context.o_ch_clone().await.mode_switches();
