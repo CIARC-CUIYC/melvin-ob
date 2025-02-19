@@ -65,7 +65,7 @@ impl From<&str> for FlightState {
             "transition" => FlightState::Transition,
             "acquisition" => FlightState::Acquisition,
             "charge" => FlightState::Charge,
-            "comms" => FlightState::Comms,
+            "communication" => FlightState::Comms,
             "safe" => FlightState::Safe,
             _ => panic!("Couldn't convert flight_state string"),
         }
@@ -87,7 +87,7 @@ impl From<FlightState> for &'static str {
             FlightState::Transition => "transition",
             FlightState::Acquisition => "acquisition",
             FlightState::Charge => "charge",
-            FlightState::Comms => "comms",
+            FlightState::Comms => "communication",
             FlightState::Safe => "safe",
         }
     }
