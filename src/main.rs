@@ -24,8 +24,11 @@ use crate::mode_control::{
 use chrono::TimeDelta;
 use fixed::types::I32F32;
 use std::{env, sync::Arc};
+use std::time::Duration;
 use futures::StreamExt;
 use reqwest_eventsource::{Event, EventSource};
+use tokio::sync::RwLock;
+use crate::http_handler::http_client::HTTPClient;
 
 const DT_MIN: TimeDelta = TimeDelta::seconds(5);
 const DT_0: TimeDelta = TimeDelta::seconds(0);
@@ -45,9 +48,10 @@ const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
     clippy::too_many_lines
 )]
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
-async fn main() {
+async fn main() {    
     let base_url_var = env::var("DRS_BASE_URL");
-    let base_url = base_url_var.as_ref().map_or("http://localhost:33000", |v| v.as_str());
+    let base_url = base_url_var.as_ref().map_or("http://localhost:33000", |v| v.as_str());    
+    
     let base_url_clone = base_url.to_string();
     tokio::spawn(async move {
         let mut es = EventSource::get(base_url_clone + "/announcements");

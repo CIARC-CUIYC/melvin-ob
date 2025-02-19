@@ -564,8 +564,8 @@ impl FlightComputer {
                     println!("[LOG] State change started to {new_state}");
                     return;
                 }
-                Err(_) => {
-                    println!("[ERROR] Unnoticed HTTP Error in set_state()");
+                Err(e) => {
+                    println!("[ERROR] Unnoticed HTTP Error in set_state() : {e}");
                 }
             }
         }
