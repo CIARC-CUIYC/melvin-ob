@@ -1,4 +1,5 @@
 use crate::flight_control::objective::beacon_objective::BeaconObjective;
+use crate::flight_control::objective::known_img_objective::KnownImgObjective;
 use crate::flight_control::objective::objective_base::ObjectiveBase;
 use crate::flight_control::objective::objective_type::ObjectiveType;
 use crate::flight_control::{
@@ -18,7 +19,6 @@ use async_trait::async_trait;
 use std::{future::Future, pin::Pin, sync::Arc};
 use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
-use crate::flight_control::objective::known_img_objective::KnownImgObjective;
 
 #[derive(Clone)]
 pub struct InOrbitMode {
@@ -112,8 +112,10 @@ impl GlobalMode for InOrbitMode {
                 }
                 ExecExitSignal::NewObjectiveEvent(obj) => {
                     let context_clone = Arc::clone(&context);
-                    let ret = self.objective_handler(context_clone, obj).await; 
-                    if let Some(opt) = ret { return opt };
+                    let ret = self.objective_handler(context_clone, obj).await;
+                    if let Some(opt) = ret {
+                        return opt;
+                    };
                 }
             };
             let context_clone = Arc::clone(&context);
@@ -182,11 +184,7 @@ impl GlobalMode for InOrbitMode {
     async fn safe_handler(&self, context: Arc<ModeContext>) -> OpExitSignal {
         FlightComputer::escape_safe(context.k().f_cont()).await;
         context.o_ch_lock().write().await.finish(
-            context
-                .o_ch_clone()
-                .await
-                .i_entry()
-                .new_from_pos(context.k().f_cont().read().await.current_pos()),
+            context.k().f_cont().read().await.current_pos(),
             self.safe_mode_rationale(),
         );
         OpExitSignal::ReInit(Box::new(self.clone()))
@@ -197,6 +195,10 @@ impl GlobalMode for InOrbitMode {
         context: Arc<ModeContext>,
         obj: ObjectiveBase,
     ) -> Option<OpExitSignal> {
+        context.o_ch_lock().write().await.finish(
+            context.k().f_cont().read().await.current_pos(),
+            self.new_bo_rationale(),
+        );
         match obj.obj_type() {
             ObjectiveType::Beacon { .. } => {
                 let b_obj = BeaconObjective::new(
@@ -205,10 +207,16 @@ impl GlobalMode for InOrbitMode {
                     obj.start(),
                     obj.end(),
                 );
+                println!("[OBJ] Found new Beacon Objective {}!", obj.id());
                 let base = self.base.handle_b_o(context, b_obj).await;
-                Some(OpExitSignal::ReInit(Box::new(Self {base})))
+                Some(OpExitSignal::ReInit(Box::new(Self { base })))
             }
-            ObjectiveType::KnownImage { zone, optic_required, coverage_required } => {
+            ObjectiveType::KnownImage {
+                zone,
+                optic_required,
+                coverage_required,
+            } => {
+                println!("[OBJ] Found new Zoned Objective {}!", obj.id());
                 let k_obj = KnownImgObjective::new(
                     obj.id(),
                     String::from(obj.name()),
@@ -216,7 +224,7 @@ impl GlobalMode for InOrbitMode {
                     obj.end(),
                     *zone,
                     *optic_required,
-                    *coverage_required
+                    *coverage_required,
                 );
                 // TODO: return ZonedObjectivePrepMode
                 todo!();

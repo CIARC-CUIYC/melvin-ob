@@ -135,9 +135,11 @@ impl BaseMode {
             FlightState::Charge => Box::pin(FlightComputer::wait_for_duration(
                 due_time.to_std().unwrap_or(Self::DT_0_STD),
             )),
-            FlightState::Comms => {
-                todo!()
-            }
+            FlightState::Comms =>
+                // TODO: implement this right
+                Box::pin(FlightComputer::wait_for_duration(
+                    due_time.to_std().unwrap_or(Self::DT_0_STD),
+                )),
             _ => {
                 panic!("[FATAL] Illegal state ({current_state})!")
             }
@@ -148,7 +150,7 @@ impl BaseMode {
     pub async fn get_task(&self, context: Arc<ModeContext>, task: SwitchStateTask) {
         match task.target_state() {
             FlightState::Acquisition => {
-                FlightComputer::set_state_wait(context.k().f_cont(), FlightState::Acquisition)
+                FlightComputer::set_state_wait(context.k().f_cont(), FlightState::Comms)
                     .await;
             }
             FlightState::Charge => {
@@ -175,7 +177,9 @@ impl BaseMode {
 
     pub(crate) async fn handle_b_o(&self, c: Arc<ModeContext>, obj: BeaconObjective) -> Self {
         match self {
-            BaseMode::MappingMode => BaseMode::BeaconObjectiveScanningMode(obj),
+            BaseMode::MappingMode => {
+                BaseMode::BeaconObjectiveScanningMode(obj)
+            },
             BaseMode::BeaconObjectiveScanningMode(curr_obj) => {
                 c.b_buffer().lock().await.push(curr_obj.clone());
                 BaseMode::BeaconObjectiveScanningMode(obj)
