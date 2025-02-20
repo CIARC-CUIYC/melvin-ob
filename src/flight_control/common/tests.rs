@@ -32,15 +32,18 @@ fn test_bayesian_filter() {
                 .wrap_around_map()
         })
         .collect();
+    
     let beacon_pos = {
         let mag = rng().random_range(0.0..=2000.0);
-        let angle = rng().random_range(0.0..=f32::PI() / 2.0);
+        let angle: f32 = rng().random_range(0.0..=f32::PI() / 2.0);
         let b = Vec2D::new(
             I32F32::from_num((mag * angle.cos()).floor()),
             I32F32::from_num((mag * angle.sin()).floor()),
         );
         (offset + b).round().wrap_around_map()
     };
+    
+    
     let beacon_pos_i32 = Vec2D::new(beacon_pos.x().to_num::<i32>(), beacon_pos.y().to_num::<i32>());
     println!("Generated beacon Position: {beacon_pos}");
 
@@ -54,8 +57,8 @@ fn test_bayesian_filter() {
     println!("\t Minimum Guesses: {min_guesses}");
     assert!(bayesian_set.is_in_set(beacon_pos_i32));
 
-    for i in 1..measure_positions.len() {
-        let pos = measure_positions[i];
+    let mut meas = 1;
+    for (i, pos) in measure_positions.iter().enumerate().skip(1) {
         let d_true = pos.unwrapped_to(&beacon_pos).abs().to_num::<f32>();
         println!("STEP {i}: {pos}\n\t Distance: {d_true}");
         if d_true > BayesianSet::MAX_DIST {
@@ -64,9 +67,22 @@ fn test_bayesian_filter() {
         };
         let d_noisy = get_d_noisy(d_true);
         println!("\t Distance Noisy: {d_noisy}");
-        bayesian_set.update(pos, I32F32::from_num(d_noisy));
+        bayesian_set.update(*pos, I32F32::from_num(d_noisy));
         let min_guesses = bayesian_set.guess_estimate();
         println!("\t Minimum Guesses: {min_guesses}");
         assert!(bayesian_set.is_in_set(beacon_pos_i32));
+        meas += 1;
     }
+    
+    println!("Got {meas} measurements, passed!");
+    let centers = bayesian_set.pack_perfect_circles();
+    for (i, center) in centers.iter().enumerate() {
+        let c_fix = Vec2D::new(I32F32::from_num(center.x()), I32F32::from_num(center.y()));
+        let hits = c_fix.unwrapped_to(&beacon_pos).abs().to_num::<f32>() < BayesianSet::MAX_RES_UNCERTAINTY_RAD;
+        if hits {
+            println!("\t Hits on {i}. try with center: {center}");
+            break;
+        }
+    }
+    
 }

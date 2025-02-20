@@ -9,6 +9,7 @@ use std::{
     fmt::Display,
     ops::{Add, Deref, Div, Mul, Rem, Sub},
 };
+use fixed::prelude::ToFixed;
 
 /// A 2D vector generic over any numeric type.
 ///
@@ -118,6 +119,20 @@ impl MapSize for I32F32 {
     }
 }
 
+impl MapSize for f64 {
+    type Output = f64;
+    /// Defines the size of the map as a `Vec2D` with dimensions 21600.0 x 10800.0.
+    ///
+    /// # Returns
+    /// A `Vec2D` with floating-point components representing the map dimensions.
+    fn map_size() -> Vec2D<f64> {
+        Vec2D {
+            x: 21600.0,
+            y: 10800.0,
+        }
+    }
+}
+
 /// Implementation of the `MapSize` trait for the `I32F0` fixed-point number type.
 impl MapSize for I32F0 {
     type Output = I32F0;
@@ -179,7 +194,15 @@ where T: FixedSigned + NumAssignOps
     /// The magnitude of the vector as a scalar of type `T`.
     pub fn abs(&self) -> T { (self.x * self.x + self.y * self.y).sqrt() }
 
+    pub fn abs_sq(&self) -> T { self.x * self.x + self.y * self.y }
+
     pub fn round(&self) -> Vec2D<T> { Vec2D::new(self.x.round(), self.y.round()) }
+    
+    pub fn from_real<R>(&other: &Vec2D<R>) -> Self
+    where R: Copy + ToFixed,
+    {
+       Self {x: T::from_num(other.x()), y: T::from_num(other.y())}
+    }
 
     /// Creates a vector pointing from the current vector (`self`) to another vector (`other`).
     ///
@@ -189,7 +212,7 @@ where T: FixedSigned + NumAssignOps
     /// # Returns
     /// A new vector representing the direction from `self` to `other`.
     pub fn to(&self, other: &Vec2D<T>) -> Vec2D<T> {
-        Vec2D::new(self.x - other.x, self.y - other.y)
+        Vec2D::new(other.x - self.x, other.y - self.y)
     }
 
     /// Computes an "unwrapped" vector pointing from the current vector (`self`) to another vector (`other`).
@@ -205,10 +228,8 @@ where T: FixedSigned + NumAssignOps
     /// A `Vec2D` representing the shortest unwrapped direction from `self` to `other`.
     pub fn unwrapped_to(&self, other: &Vec2D<T>) -> Vec2D<T> {
         let mut options = Vec::new();
-        let normal_to_target = self.to(other);
-        options.push((normal_to_target, normal_to_target.abs()));
-        for x_sign in [1, -1] {
-            for y_sign in [1, -1] {
+        for x_sign in [1, 0, -1] {
+            for y_sign in [1, 0, -1] {
                 let target: Vec2D<T> = Vec2D::new(
                     other.x + T::from_num(u32::map_size().x()) * T::from_num(x_sign),
                     other.y + T::from_num(u32::map_size().y()) * T::from_num(y_sign),
@@ -577,4 +598,17 @@ impl<T: Num> From<Vec2D<T>> for (T, T) {
     /// # Returns
     /// A new `Vec2D` created from the tuple.
     fn from(value: Vec2D<T>) -> Self { (value.x, value.y) }
+}
+
+impl<T> From<&[T; 2]> for Vec2D<T> 
+where T: Copy
+{
+    /// Creates a Vec2D` from a slice of (x, y) values.
+    ///
+    /// # Arguments
+    /// * `slice` - A tuple representing the x and y values.
+    ///
+    /// # Returns
+    /// A new `Vec2D` created from the slice.
+    fn from(slice: &[T; 2]) -> Self { Self{x: slice[0], y: slice[1]} }
 }
