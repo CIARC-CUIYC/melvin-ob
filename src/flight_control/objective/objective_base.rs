@@ -27,10 +27,7 @@ impl From<ImageObjective> for ObjectiveBase {
                 optic_required: CameraAngle::from(obj.optic_required()),
                 coverage_required: obj.coverage_required(),
             },
-            ZoneType::SecretZone(_) => ObjectiveType::SecretImage {
-                optic_required: CameraAngle::from(obj.optic_required()),
-                coverage_required: obj.coverage_required(),
-            },
+            ZoneType::SecretZone(_) => unreachable!(),
         };
         Self {
             id: obj.id(),
@@ -44,7 +41,7 @@ impl From<ImageObjective> for ObjectiveBase {
 
 impl From<BeaconObjective> for ObjectiveBase {
     fn from(obj: BeaconObjective) -> Self {
-        let obj_type = ObjectiveType::Beacon;
+        let obj_type = ObjectiveType::Beacon{attempts_made: obj.attempts_made()};
         Self {
             id: obj.id(),
             name: String::from(obj.name()),

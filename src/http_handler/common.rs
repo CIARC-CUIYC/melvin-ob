@@ -39,7 +39,7 @@ impl ImageObjective {
     pub fn is_secret(&self) -> bool { self.secret }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 pub struct BeaconObjective {
     id: usize,
     name: String,

@@ -1,5 +1,5 @@
 use crate::flight_control::{
-    common::{linked_box::LinkedBox, math, pinned_dt::PinnedTimeDelay, vec2d::Vec2D},
+    common::{linked_box::LinkedBox, math, vec2d::Vec2D},
     flight_computer::FlightComputer,
     flight_state::FlightState,
     objective::known_img_objective::KnownImgObjective,
@@ -23,6 +23,7 @@ use std::{
     fmt::Debug,
     sync::{Arc, Condvar},
 };
+use chrono::{DateTime, Utc};
 use tokio::sync::RwLock;
 
 /// `TaskController` manages and schedules tasks for MELVIN.
@@ -261,7 +262,7 @@ impl TaskController {
     pub fn calculate_orbit_correction_burn(
         initial_vel: Vec2D<I32F32>,
         deviation: Vec2D<I32F32>,
-        due: PinnedTimeDelay,
+        due: DateTime<Utc>,
     ) -> (Vec<Vec2D<I32F32>>, i64, Vec2D<I32F32>) {
         let is_clockwise = initial_vel.is_clockwise_to(&deviation).unwrap_or(false);
 
@@ -272,7 +273,7 @@ impl TaskController {
         let mut best_vel_hold_dt = 0;
         let mut last_vel = initial_vel;
 
-        while min_burn_sequence_time > due.time_left() {
+        while min_burn_sequence_time > due - Utc::now() {
             let mut res_vel_diff = Vec2D::<I32F32>::zero();
             let mut remaining_deviation = deviation;
             let mut current_burn_sequence = Vec::new();
@@ -291,7 +292,7 @@ impl TaskController {
             let y_vel_hold_dt = (remaining_deviation.y() / res_vel_diff.y()).floor();
             let min_vel_hold_dt = x_vel_hold_dt.min(y_vel_hold_dt).to_i64().unwrap();
 
-            if min_vel_hold_dt + max_acc_secs > due.time_left().num_seconds() {
+            if min_vel_hold_dt + max_acc_secs > (due - Utc::now()).num_seconds() {
                 continue;
             }
 
@@ -354,12 +355,12 @@ impl TaskController {
         curr_i: IndexedOrbitPosition,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
         target_pos: Vec2D<I32F32>,
-        target_end_time: chrono::DateTime<chrono::Utc>,
+        target_end_time: DateTime<Utc>,
     ) -> (BurnSequence, I32F32) {
         println!("[INFO] Starting to calculate single target burn towards {target_pos}");
 
         // Calculate maximum allowed time delta for the maneuver
-        let time_left = target_end_time - chrono::Utc::now();
+        let time_left = target_end_time - Utc::now();
         let max_dt = {
             let max = usize::try_from(time_left.num_seconds()).unwrap_or(0);
             max - Self::OBJECTIVE_MIN_RETRIEVAL_TOL
@@ -561,7 +562,7 @@ impl TaskController {
         scheduling_start_i: IndexedOrbitPosition,
         objective: KnownImgObjective,
     ) {
-        let computation_start = chrono::Utc::now();
+        let computation_start = Utc::now();
         println!(
             "[INFO] Calculating schedule for Retrieval of Objective {}",
             objective.id()
@@ -580,11 +581,11 @@ impl TaskController {
             // TODO
             panic!("[FATAL] Zoned Objective with multiple images not yet supported");
         };
-        let comp_time = (chrono::Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
+        let comp_time = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
         println!("[INFO] Maneuver calculation completed after {comp_time}s!");
 
         let start =
-            (burn_sequence.start_i().t() - chrono::Utc::now()).num_milliseconds() as f32 / 1000.0;
+            (burn_sequence.start_i().t() - Utc::now()).num_milliseconds() as f32 / 1000.0;
         println!(
             "[INFO] Maneuver will start in {start}s, will take {}s. \
             Detumble time will be roughly {}s!",
@@ -595,7 +596,7 @@ impl TaskController {
             let pos = f_cont_lock.read().await.current_pos();
             scheduling_start_i.new_from_pos(pos)
         };
-        let dt = usize::try_from((burn_sequence.start_i().t() - chrono::Utc::now()).num_seconds())
+        let dt = usize::try_from((burn_sequence.start_i().t() - Utc::now()).num_seconds())
             .unwrap_or(0);
         let result = {
             let orbit = orbit_lock.read().await;
@@ -608,9 +609,8 @@ impl TaskController {
             )
         };
         println!(
-            "[INFO] Calculating optimal orbit schedule to be at {min_charge} and in {} in {}s.",
-            <&'static str>::from(FlightState::Acquisition),
-            dt
+            "[INFO] Calculating optimal orbit schedule to be at {min_charge} and in {} in {dt}s.",
+            <&'static str>::from(FlightState::Acquisition)
         );
         let after_sched_calc_i = {
             let pos = f_cont_lock.read().await.current_pos();
@@ -626,7 +626,7 @@ impl TaskController {
         )
         .await;
         let n_tasks = self.schedule_vel_change(burn_sequence, OrbitEscapeChange).await;
-        let dt_tot = (chrono::Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
+        let dt_tot = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
         println!(
             "[INFO] Number of tasks after scheduling: {n_tasks}. \
             Calculation and processing took {dt_tot:.2}",
@@ -635,7 +635,7 @@ impl TaskController {
         {
             let sched = self.task_schedule.read().await;
             for task in &*sched {
-                println!("[INFO] {task} in {}s.", task.dt().time_left());
+                println!("[INFO] {task} in {}s.", (task.dt() - Utc::now()).num_seconds());
             }
         }
     }
@@ -674,14 +674,14 @@ impl TaskController {
             let orbit = orbit_lock.read().await;
             Self::init_orbit_sched_calc(&orbit, p_t_shift, None, None)
         };
-        let dt_calc = (chrono::Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
+        let dt_calc = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
         println!("[INFO] Optimal Orbit Calculation complete after {dt_calc:.2}");
         let dt_shift = dt_calc.ceil() as usize;
 
         let n_tasks = self
             .schedule_optimal_orbit_result(f_cont_lock, computation_start, result, dt_shift, true)
             .await;
-        let dt_tot = (chrono::Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
+        let dt_tot = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
         println!(
             "[INFO] Number of tasks after scheduling: {n_tasks}. \
             Calculation and processing took {dt_tot:.2}",
@@ -711,7 +711,7 @@ impl TaskController {
     async fn schedule_optimal_orbit_result(
         &self,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
-        base_t: chrono::DateTime<chrono::Utc>,
+        base_t: DateTime<Utc>,
         res: OptimalOrbitResult,
         dt_sh: usize,
         trunc: bool,
@@ -800,18 +800,17 @@ impl TaskController {
     ///
     /// # Arguments
     /// - `target`: The target flight state to switch to.
-    /// - `sched_t`: The scheduled time for the state change as a `chrono::DateTime`.
+    /// - `sched_t`: The scheduled time for the state change as a `DateTime`.
     ///
     /// # Behavior
     /// - If the task schedule is empty, the task is enqueued, and all waiting threads are notified.
     /// - Otherwise, the task is simply enqueued without sending notifications.
-    async fn schedule_switch(&self, target: FlightState, sched_t: chrono::DateTime<chrono::Utc>) {
-        let dt = PinnedTimeDelay::from_end(sched_t);
+    async fn schedule_switch(&self, target: FlightState, sched_t: DateTime<Utc>) {
         if self.task_schedule.read().await.is_empty() {
-            self.enqueue_task(Task::switch_target(target, dt)).await;
+            self.enqueue_task(Task::switch_target(target, sched_t)).await;
             self.next_task_notify.notify_all();
         } else {
-            self.enqueue_task(Task::switch_target(target, dt)).await;
+            self.enqueue_task(Task::switch_target(target, sched_t)).await;
         }
     }
 
@@ -834,8 +833,8 @@ impl TaskController {
         if self.task_schedule.read().await.is_empty() {
             has_to_notify = true;
         }
-        let dt = PinnedTimeDelay::from_end(burn.start_i().t());
-        self.enqueue_task(Task::vel_change_task(burn, rationale, dt)).await;
+        let due = burn.start_i().t();
+        self.enqueue_task(Task::vel_change_task(burn, rationale, due)).await;
 
         if has_to_notify {
             self.next_task_notify.notify_all();
@@ -851,7 +850,7 @@ impl TaskController {
     /// # Behavior
     /// - Removes all tasks occurring after the specified delay.
     /// - Does nothing if the task schedule is empty.
-    pub async fn clear_after_dt(&self, dt: PinnedTimeDelay) {
+    pub async fn clear_after_dt(&self, dt: DateTime<Utc>) {
         let schedule_lock = &*self.task_schedule;
         if !schedule_lock.read().await.is_empty() {
             return;
@@ -860,7 +859,7 @@ impl TaskController {
         let schedule_len = schedule.len();
         let mut first_remove = 0;
         for i in 0..schedule_len {
-            if schedule[i].dt().get_end() > dt.get_end() {
+            if schedule[i].dt() > dt {
                 first_remove = i;
                 break;
             }
