@@ -1,11 +1,11 @@
 #![allow(dead_code)]
 #![warn(clippy::shadow_reuse, clippy::shadow_same, clippy::builtin_type_shadow)]
-
 mod console_communication;
 mod flight_control;
 mod mode_control;
 mod http_handler;
 mod keychain;
+
 
 use crate::flight_control::{
     camera_state::CameraAngle,

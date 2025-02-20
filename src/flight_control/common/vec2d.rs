@@ -205,11 +205,13 @@ where T: FixedSigned + NumAssignOps
     /// A `Vec2D` representing the shortest unwrapped direction from `self` to `other`.
     pub fn unwrapped_to(&self, other: &Vec2D<T>) -> Vec2D<T> {
         let mut options = Vec::new();
+        let normal_to_target = self.to(other);
+        options.push((normal_to_target, normal_to_target.abs()));
         for x_sign in [1, -1] {
             for y_sign in [1, -1] {
                 let target: Vec2D<T> = Vec2D::new(
-                    other.x + T::from_num(u32::map_size().x) * T::from_num(x_sign),
-                    other.y + T::from_num(u32::map_size().y) * T::from_num(y_sign),
+                    other.x + T::from_num(u32::map_size().x()) * T::from_num(x_sign),
+                    other.y + T::from_num(u32::map_size().y()) * T::from_num(y_sign),
                 );
                 let to_target = self.to(&target);
                 let to_target_abs = to_target.abs();
