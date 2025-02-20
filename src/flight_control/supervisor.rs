@@ -60,6 +60,7 @@ impl Supervisor {
             let client = self.f_cont_lock.read().await.client();
             client.url().to_string()
         };
+        println!("[INFO] Starting announcement supervisor loop!");
         let mut es = EventSource::get(url + "/announcements");
         while let Some(event) = es.next().await {
             match event {
@@ -102,7 +103,7 @@ impl Supervisor {
         let mut last_vel = self.f_cont_lock.read().await.current_vel();
         let mut last_objective_check = Utc::now() - Self::OBJ_UPDATE_INTERVAL;
         let mut id_list: HashSet<usize> = HashSet::new();
-        
+        println!("[INFO] Starting obs/obj supervisor loop!");
         loop {
             let mut f_cont = self.f_cont_lock.write().await;
             // Update observation and fetch new position

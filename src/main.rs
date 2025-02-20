@@ -89,6 +89,10 @@ async fn init(
     tokio::spawn(async move {
         supervisor_clone.run_obs_obj_mon().await;
     });
+    let supervisor_clone_clone = Arc::clone(&supervisor);
+    tokio::spawn(async move {
+        supervisor_clone_clone.run_announcement_hub().await;
+    });
 
     tokio::time::sleep(DT_MIN.to_std().unwrap()).await;
 

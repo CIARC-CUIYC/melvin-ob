@@ -248,8 +248,7 @@ impl BaseMode {
     pub async fn get_task(&self, context: Arc<ModeContext>, task: SwitchStateTask) {
         match task.target_state() {
             FlightState::Acquisition => {
-                // TODO: change back to acquisition
-                FlightComputer::set_state_wait(context.k().f_cont(), FlightState::Comms).await;
+                FlightComputer::set_state_wait(context.k().f_cont(), FlightState::Acquisition).await;
             }
             FlightState::Charge => {
                 let join_handle = async {

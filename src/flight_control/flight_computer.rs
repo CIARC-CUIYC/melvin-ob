@@ -3,6 +3,7 @@ use super::{
     common::vec2d::Vec2D,
     flight_state::{FlightState, TRANSITION_DELAY_LOOKUP},
 };
+use crate::flight_control::common::math::MAX_DEC;
 use crate::flight_control::{
     orbit::{BurnSequence, IndexedOrbitPosition},
     task::TaskController,
@@ -20,7 +21,6 @@ use fixed::types::{I32F32, I64F64};
 use num::{ToPrimitive, Zero};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::RwLock;
-use crate::flight_control::common::math::MAX_DEC;
 
 type TurnsClockCClockTup = (
     Vec<(Vec2D<I32F32>, Vec2D<I32F32>)>,
@@ -89,13 +89,15 @@ impl FlightComputer {
     const TO_SAFE_SLEEP: Duration = Duration::from_secs(60);
     /// Minimum battery used in decision-making for after safe transition
     const AFTER_SAFE_MIN_BATT: I32F32 = I32F32::lit("50");
+    /// Constant minimum delay between requests
+    const STD_REQUEST_DELAY: Duration = Duration::from_millis(50);
     /// Legal Target States for State Change
     const LEGAL_TARGET_STATES: [FlightState; 3] = [
         FlightState::Acquisition,
         FlightState::Charge,
         FlightState::Comms,
     ];
-    
+
     pub fn one_time_safe(&mut self) {
         self.current_state = FlightState::Transition;
         self.target_state = None;
@@ -307,7 +309,7 @@ impl FlightComputer {
     pub async fn reset(&self) {
         ResetRequest {}.send_request(&self.request_client).await.expect("ERROR: Failed to reset");
         Self::wait_for_duration(Duration::from_secs(4)).await;
-        println!("[INFO] Reset request complete.");       
+        println!("[INFO] Reset request complete.");
     }
 
     /// Indicates that a `Supervisor` detected a safe mode event
@@ -528,22 +530,21 @@ impl FlightComputer {
     /// Updates the satellite's internal fields with the latest observation data.
     pub async fn update_observation(&mut self) {
         loop {
-            match (ObservationRequest {}.send_request(&self.request_client).await) {
-                Ok(obs) => {
-                    self.current_pos = Vec2D::from((I32F32::from_num(obs.pos_x()), I32F32::from_num(obs.pos_y())));
-                    self.current_vel = Vec2D::from((I32F32::from_num(obs.vel_x()), I32F32::from_num(obs.vel_y())));
-                    self.current_state = FlightState::from(obs.state());
-                    self.current_angle = CameraAngle::from(obs.angle());
-                    self.last_observation_timestamp = obs.timestamp();
-                    self.current_battery = I32F32::from_num(obs.battery());
-                    self.max_battery = I32F32::from_num(obs.max_battery());
-                    self.fuel_left = I32F32::from_num(obs.fuel());
-                    return;
-                }
-                Err(_) => {
-                    println!("[ERROR] Unnoticed HTTP Error in updateObservation()");
-                }
+            if let Ok(obs) = (ObservationRequest {}.send_request(&self.request_client).await) {
+                self.current_pos =
+                    Vec2D::from((I32F32::from_num(obs.pos_x()), I32F32::from_num(obs.pos_y())));
+                self.current_vel =
+                    Vec2D::from((I32F32::from_num(obs.vel_x()), I32F32::from_num(obs.vel_y())));
+                self.current_state = FlightState::from(obs.state());
+                self.current_angle = CameraAngle::from(obs.angle());
+                self.last_observation_timestamp = obs.timestamp();
+                self.current_battery = I32F32::from_num(obs.battery());
+                self.max_battery = I32F32::from_num(obs.max_battery());
+                self.fuel_left = I32F32::from_num(obs.fuel());
+                return;
             }
+            println!("[ERROR] Unnoticed HTTP Error in updateObservation()");
+            tokio::time::sleep(Self::STD_REQUEST_DELAY).await;
         }
     }
 
@@ -559,15 +560,12 @@ impl FlightComputer {
             state: new_state.into(),
         };
         loop {
-            match req.send_request(&self.request_client).await {
-                Ok(_) => {
-                    println!("[LOG] State change started to {new_state}");
-                    return;
-                }
-                Err(e) => {
-                    println!("[ERROR] Unnoticed HTTP Error in set_state() : {e}");
-                }
+            if let Ok(_) = req.send_request(&self.request_client).await {
+                println!("[LOG] State change started to {new_state}");
+                return;
             }
+            println!("[ERROR] Unnoticed HTTP Error in updateObservation()");
+            tokio::time::sleep(Self::STD_REQUEST_DELAY).await;
         }
     }
 
@@ -584,19 +582,16 @@ impl FlightComputer {
             state: self.current_state.into(),
         };
         loop {
-            match req.send_request(&self.request_client).await {
-                Ok(_) => {
-                    println!(
-                        "[LOG] Velocity change commanded to [{}, {}]",
-                        vel.x(),
-                        vel.y()
-                    );
-                    return;
-                }
-                Err(_) => {
-                    println!("[ERROR] Unnoticed HTTP Error in set_vel()");
-                }
+            if let Ok(_) = req.send_request(&self.request_client).await {
+                println!(
+                    "[LOG] Velocity change commanded to [{}, {}]",
+                    vel.x(),
+                    vel.y()
+                );
+                return;
             }
+            println!("[ERROR] Unnoticed HTTP Error in set_vel()");
+            tokio::time::sleep(Self::STD_REQUEST_DELAY).await;
         }
     }
 
@@ -612,15 +607,12 @@ impl FlightComputer {
             state: self.current_state.into(),
         };
         loop {
-            match req.send_request(&self.request_client).await {
-                Ok(_) => {
-                    println!("[LOG] Angle change commanded to {new_angle}");
-                    return;
-                }
-                Err(_) => {
-                    println!("[ERROR] Unnoticed HTTP Error in setAngle()"); /* TODO: log error here */
-                }
+            if let Ok(_) = req.send_request(&self.request_client).await {
+                println!("[LOG] Angle change commanded to {new_angle}");
+                return;
             }
+            println!("[ERROR] Unnoticed HTTP Error in setAngle()"); /* TODO: log error here */
+            tokio::time::sleep(Self::STD_REQUEST_DELAY).await;
         }
     }
 
