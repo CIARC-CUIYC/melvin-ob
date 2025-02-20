@@ -198,6 +198,8 @@ where T: FixedSigned + NumAssignOps
 
     pub fn round(&self) -> Vec2D<T> { Vec2D::new(self.x.round(), self.y.round()) }
     
+    pub fn floor(&self) -> Vec2D<T> { Vec2D::new(self.x.floor(), self.y.floor()) }
+    
     pub fn from_real<R>(&other: &Vec2D<R>) -> Self
     where R: Copy + ToFixed,
     {
@@ -235,12 +237,29 @@ where T: FixedSigned + NumAssignOps
                     other.y + T::from_num(u32::map_size().y()) * T::from_num(y_sign),
                 );
                 let to_target = self.to(&target);
+                let to_target_abs_sq = to_target.abs_sq();
+                options.push((to_target, to_target_abs_sq));
+            }
+        }
+        options.iter().min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Less)).unwrap().0
+    }
+
+    pub fn unwrapped_to_top_left(&self, other: &Vec2D<T>) -> Vec2D<T> {
+        let mut options = Vec::new();
+        for x_sign in [1, 0] {
+            for y_sign in [1, 0] {
+                let target: Vec2D<T> = Vec2D::new(
+                    other.x + T::from_num(u32::map_size().x()) * T::from_num(x_sign),
+                    other.y + T::from_num(u32::map_size().y()) * T::from_num(y_sign),
+                );
+                let to_target = self.to(&target);
                 let to_target_abs = to_target.abs();
                 options.push((to_target, to_target_abs));
             }
         }
         options.iter().min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Less)).unwrap().0
     }
+    
 
     /// Computes a perpendicular unit vector pointing to another vector (`other`).
     ///

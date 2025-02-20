@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use fixed::types::I32F32;
+use crate::flight_control::common::bayesian_set::BayesianSet;
 use crate::flight_control::common::vec2d::Vec2D;
 
 #[derive(Debug, Clone)]
@@ -25,7 +26,7 @@ pub struct BeaconObjective {
     name: String,
     start: chrono::DateTime<chrono::Utc>,
     end: chrono::DateTime<chrono::Utc>,
-    measurements: Option<Vec<BeaconMeas>>
+    measurements: Option<BayesianSet>
 }
 
 impl BeaconObjective {
@@ -47,9 +48,13 @@ impl BeaconObjective {
     pub fn name(&self) -> &str { &self.name }
     pub fn start(&self) -> chrono::DateTime<chrono::Utc> { self.start }
     pub fn end(&self) -> chrono::DateTime<chrono::Utc> { self.end }
-    pub fn measurements(&self) -> Option<&Vec<BeaconMeas>> { self.measurements.as_ref() }
+    pub fn measurements(&self) -> Option<&BayesianSet> { self.measurements.as_ref() }
     pub fn append_measurement(&mut self, meas: BeaconMeas) {
-        self.measurements.get_or_insert(Vec::new()).push(meas);
+        if let Some(meas_set) = &mut self.measurements {
+            meas_set.update(meas);
+        } else {
+            self.measurements = Some(BayesianSet::new(meas));
+        }
     }
 }
 
