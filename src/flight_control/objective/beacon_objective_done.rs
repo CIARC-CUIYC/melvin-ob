@@ -25,6 +25,7 @@ impl BeaconObjectiveDone {
 
     #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
     pub async fn guess_max(&self, client: Arc<HTTPClient>) {
+        obj!("Guessing max for {}: {} guesses...", self.id, self.guesses.len());
         let id_u16 = self.id() as u16;
         'outer: for guess in self.guesses() {
             let width = guess.x().abs().to_num::<u32>();
@@ -34,6 +35,7 @@ impl BeaconObjectiveDone {
                 width,
                 height,
             };
+            obj!("Sending request for beacon {id_u16} with width {width} and height {height}...");
             loop {
                 if let Ok(msg) = req.send_request(&client).await {
                     if msg.is_success() {
