@@ -186,12 +186,10 @@ impl BaseMode {
                 // Wait for a message
                 Ok(()) = event_rx.changed() => {
                     let (t, val) = event_rx.borrow_and_update().clone();
-                    if Utc::now() - t > Self::MAX_MSG_DT {
-                        warn!("BO Message should not be used. Too old.");
-                    }
                     if let Some((id, d_noisy)) = extract_id_and_d(val.as_str()) {
-                        let pos = context.k().f_cont().read().await.current_pos();
-                        let meas = BeaconMeas::new(id, pos, d_noisy);
+                        let mut pos = context.k().f_cont().read().await.current_pos();
+                        let msg_delay = Utc::now() - t;
+                        let meas = BeaconMeas::new(id, pos, d_noisy, msg_delay);
                         obj!("Received BO measurement at {pos} for ID {id} with distance {d_noisy}.");
                         if let Some(obj) = b_o.lock().await.get_mut(&id) {
                             obj!("Updating BO {id} and prolonging!");

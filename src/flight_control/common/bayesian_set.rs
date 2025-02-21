@@ -22,7 +22,11 @@ impl SquareSlice {
     }
 
     pub fn map_right_top(&self, p: Vec2D<I32F32>) -> Vec2D<I32F32> {
-        self.offset + self.offset.unwrapped_to_top_left(&p)
+        self.offset + self.offset.unwrapped_to_top_right(&p)
+    }
+    
+    fn map_right_bottom(&self, p: Vec2D<I32F32>) -> Vec2D<I32F32> {
+        self.offset + self.offset.unwrapped_to_bottom_right(&p)
     }
 
     pub fn intersect(&self, other: &SquareSlice) -> Self {
@@ -133,7 +137,7 @@ pub struct BayesianSet {
 impl BayesianSet {
     const K_FAC_MAX: I32F32 = I32F32::lit("0.9");
     const K_FAC_MIN: I32F32 = I32F32::lit("1.1");
-    pub const STD_DIST_SAFETY: I32F32 = I32F32::lit("1.5");
+    pub const STD_DIST_SAFETY: I32F32 = I32F32::lit("5");
     pub const MAX_DIST: I32F32 = I32F32::lit("2000");
     const MIN_DIST: I32F32 = I32F32::lit("0");
     pub const K_ADD: I32F32 = I32F32::lit("225.1");
@@ -149,7 +153,7 @@ impl BayesianSet {
     pub fn new(meas: BeaconMeas) -> Self {
         let (min_dist, max_dist) = Self::get_dists(I32F32::from_num(meas.rssi()));
         let side_len = I32F32::from_num(max_dist);
-        let pos = *meas.pos();
+        let pos = meas.corr_pos();
         let slice = SquareSlice::new(pos, Vec2D::new(side_len, side_len));
         let set = slice.get_coord_set(pos, min_dist, max_dist);
         Self {
@@ -161,7 +165,8 @@ impl BayesianSet {
 
     pub fn update(&mut self, meas: &BeaconMeas) {
         let (min_dist, max_dist) = Self::get_dists(I32F32::from_num(meas.rssi()));
-        let pos = *meas.pos();
+        println!("min_dist: {min_dist}, max_dist: {max_dist}");
+        let pos = meas.corr_pos();
         let slice =
             self.curr_slice.intersect(&SquareSlice::new(pos, Vec2D::new(max_dist, max_dist)));
         let new_set = slice.get_coord_set(pos, min_dist, max_dist);
