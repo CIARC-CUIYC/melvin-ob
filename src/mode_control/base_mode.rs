@@ -165,7 +165,9 @@ impl BaseMode {
     async fn exec_comms(context: Arc<ModeContext>, due: DateTime<Utc>, c_tok: CancellationToken, b_o: Arc<Mutex<HashMap<usize, BeaconObjective>>>) {
         let mut event_rx = context.super_v().subscribe_event_hub();
         let due_secs = (due - Utc::now()).to_std().unwrap_or(Self::DT_0_STD);
-        let mut deadline = Instant::now() + due_secs;
+        let sleep_fut = tokio::time::sleep_until(Instant::now() + due_secs);
+        tokio::pin!(sleep_fut);
+
         loop {
             tokio::select! {
                 // Wait for a message
@@ -174,26 +176,27 @@ impl BaseMode {
                     if let Some((id, d_noisy)) = extract_id_and_d(val.as_str()) {
                         let pos = context.k().f_cont().read().await.current_pos();
                         let meas = BeaconMeas::new(id, pos, d_noisy);
+                        println!("[INFO] Received message while listening for BO: {val:#?}");
                         if let Some(obj) = b_o.lock().await.get_mut(&id) {
                             println!("[LOG] Updating BO {id} and prolonging!");
                             obj.append_measurement(meas);
-                            deadline = Instant::now() + Self::BO_MSG_COMM_PROLONG; // Reset timeout
+                            sleep_fut.set(tokio::time::sleep_until(Instant::now() + Self::BO_MSG_COMM_PROLONG)); // Reset timeout
                             // TODO: these checks shouldnt be here
                             let o_meas = obj.measurements().unwrap();
                             if o_meas.guess_estimate() < 10 {
                                 println!("{:?}", o_meas.pack_perfect_circles());
                             }
-                            
+
                         } else {
                             println!("[LOG] Received BO message: {id} - {d_noisy}. Unknown BO. Ignoring.");
                         }
                     } else {
-                        println!("[INFO] Received random message: {val:#?}");
+                        println!("[WARN] Message has unknown format. Ignoring.");
                     }
                 },
                 // If the timeout expires, exit
-                _ = tokio::time::sleep_until(deadline) => {
-                    println!("Timeout reached. Stopping listener.");
+                _ = &mut sleep_fut => {
+                    println!("[LOG] Comms Timeout reached. Stopping listener.");
                     return;
                 },
                 // If the task gets cancelled exit with the updated beacon vector
@@ -227,7 +230,7 @@ impl BaseMode {
                 BaseWaitExitSignal::Continue
             }),
             FlightState::Charge => {
-                
+
                 match self {
                     BaseMode::MappingMode => def,
                     BaseMode::BeaconObjectiveScanningMode(obj_m) => {
@@ -249,12 +252,12 @@ impl BaseMode {
                     Box::pin(async move {
                         Self::exec_comms(context, due, c_tok, clone).await;
                         BaseWaitExitSignal::Continue
-                    }) 
+                    })
                 } else {
                     println!("[INFO] No known Beacon Objectives. Waiting!");
                     def
                 }
-                
+
             },
             _ => {
                 panic!("[FATAL] Illegal state ({current_state})!")
@@ -355,7 +358,7 @@ impl BaseMode {
         if done_obj.len() > 0 {
             Some(done_obj)
         } else {
-            None 
+            None
         }
     }
 }
