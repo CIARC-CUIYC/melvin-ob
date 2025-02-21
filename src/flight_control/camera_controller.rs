@@ -14,7 +14,7 @@ use crate::http_handler::{
 use crate::mode_control::base_mode::PeriodicImagingEndSignal;
 use crate::{error, info, DT_0_STD};
 use bitvec::boxed::BitBox;
-use chrono::TimeDelta;
+use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use futures::StreamExt;
 use image::{imageops::Lanczos3, ImageReader, RgbImage};
@@ -25,7 +25,6 @@ use std::{
     {io::Cursor, sync::Arc},
 };
 use tokio::sync::{oneshot, Mutex, RwLock};
-
 use super::imaging::map_image::{
     EncodedImageExtract, FullsizeMapImage, MapImage, ThumbnailMapImage,
 };
@@ -107,8 +106,8 @@ impl CameraController {
                     offset.x() as i32 + additional_offset_x,
                     offset.y() as i32 + additional_offset_y,
                 )
-                .wrap_around_map()
-                .to_unsigned();
+                    .wrap_around_map()
+                    .to_unsigned();
                 let map_image_view = base.vec_view(
                     current_offset,
                     Vec2D::new(decoded_image.width(), decoded_image.height()),
@@ -165,7 +164,7 @@ impl CameraController {
             position.x().round().to_num::<i32>() - i32::from(angle_const),
             position.y().round().to_num::<i32>() - i32::from(angle_const),
         )
-        .wrap_around_map();
+            .wrap_around_map();
 
         let tot_offset_u32 = {
             let mut fullsize_map_image = self.fullsize_map_image.write().await;
@@ -198,8 +197,8 @@ impl CameraController {
             offset.x() as i32 - ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR as i32 * 2,
             offset.y() as i32 - ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR as i32 * 2,
         )
-        .wrap_around_map()
-        .to_unsigned();
+            .wrap_around_map()
+            .to_unsigned();
         let size_scaled = size * 2 + ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR * 4;
         let fullsize_map_image = self.fullsize_map_image.read().await;
         let map_image_view =
@@ -318,13 +317,13 @@ impl CameraController {
     ///
     /// A result indicating the success or failure of the operation.
     pub(crate) async fn create_full_snapshot(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let start_time = chrono::Utc::now();
+        let start_time = Utc::now();
         self.fullsize_map_image
             .read()
             .await
             .create_snapshot(Path::new(&self.base_path).join(SNAPSHOT_FULL_PATH))?;
         info!("Exported Full-View PNG in {}s!",
-            (chrono::Utc::now() - start_time).num_seconds()
+            (Utc::now() - start_time).num_seconds()
         );
         Ok(())
     }
@@ -398,13 +397,20 @@ impl CameraController {
         f_cont_lock: Arc<RwLock<FlightComputer>>,
         console_messenger: Arc<ConsoleMessenger>,
         (end_time, kill): (
-            chrono::DateTime<chrono::Utc>,
+            DateTime<Utc>,
             oneshot::Receiver<PeriodicImagingEndSignal>,
         ),
         image_max_dt: I32F32,
         lens: CameraAngle,
         start_index: usize,
     ) -> Vec<(isize, isize)> {
+        fn get_p_secs(last_pic: Option<DateTime<Utc>>, last_mark: DateTime<Utc>, overlap: TimeDelta) -> i64 {
+            if let Some(last_pic_val) = last_pic {
+                (last_pic_val - last_mark + overlap).num_seconds()
+            } else {
+                0
+            }
+        }        
         let mut kill_box = Box::pin(kill);
         let mut last_image_flag = false;
         let st = start_index as isize;
@@ -417,14 +423,14 @@ impl CameraController {
         };
         let mut last_mark = (
             st - overlap.num_seconds() as isize,
-            chrono::Utc::now() - overlap,
+            Utc::now() - overlap,
         );
-        let mut last_pic = chrono::Utc::now();
+        let mut last_pic = None;
         loop {
             let f_cont_lock_clone = Arc::clone(&f_cont_lock);
             let pic_count_lock_clone = Arc::clone(&pic_count_lock);
             let self_clone = Arc::clone(&self);
-            let img_init_timestamp = chrono::Utc::now();
+            let img_init_timestamp = Utc::now();
             let img_handle = tokio::spawn(async move {
                 match self_clone.shoot_image_to_buffer(Arc::clone(&f_cont_lock_clone), lens).await {
                     Ok(offset) => {
@@ -435,7 +441,7 @@ impl CameraController {
                         };
                         info!("Took {pic_num}. picture in cycle at {}. Processed for {}s. Position was {}",
                             img_init_timestamp.format("%d. %H:%M:%S"),
-                            (chrono::Utc::now() - img_init_timestamp).num_seconds(),
+                            (Utc::now() - img_init_timestamp).num_seconds(),
                             offset
                         );
                         Some(offset)
@@ -449,7 +455,7 @@ impl CameraController {
 
             let mut next_img_due = {
                 let next_max_dt =
-                    chrono::Utc::now() + TimeDelta::seconds(image_max_dt.to_i64().unwrap());
+                    Utc::now() + TimeDelta::seconds(image_max_dt.to_i64().unwrap());
                 if next_max_dt > end_time {
                     last_image_flag = true;
                     end_time
@@ -461,21 +467,22 @@ impl CameraController {
             let offset = img_handle.await;
             if let Some(off) = offset.ok().flatten() {
                 console_messenger.send_thumbnail(off, lens);
-                last_pic = img_init_timestamp;
+                last_pic = Some(img_init_timestamp);
             } else {
-                let passed_secs = (last_pic - last_mark.1 + overlap).num_seconds();
-                done_ranges.push((last_mark.0, last_mark.0 + passed_secs as isize));
+                let p_secs = get_p_secs(last_pic, last_mark.1, overlap);
+                done_ranges.push((last_mark.0, last_mark.0 + p_secs as isize));
                 let tot_passed_secs = (img_init_timestamp - last_mark.1 - overlap).num_seconds();
-                last_mark = (tot_passed_secs as isize, chrono::Utc::now());
-                next_img_due = chrono::Utc::now() + TimeDelta::seconds(1);
+                last_mark = (tot_passed_secs as isize, Utc::now());
+                last_pic = None;
+                next_img_due = Utc::now() + TimeDelta::seconds(1);
             }
 
             if last_image_flag {
-                let passed_secs = (chrono::Utc::now() - last_mark.1 + overlap).num_seconds();
-                done_ranges.push((last_mark.0, last_mark.0 + passed_secs as isize));
+                let p_secs = get_p_secs(last_pic, last_mark.1, overlap);
+                done_ranges.push((last_mark.0, last_mark.0 + p_secs as isize));
                 return done_ranges;
             }
-            let sleep_time = next_img_due - chrono::Utc::now();
+            let sleep_time = next_img_due - Utc::now();
             tokio::select! {
                 () = tokio::time::sleep(sleep_time.to_std().unwrap_or(DT_0_STD)) => {},
                 msg = &mut kill_box => {
@@ -487,8 +494,8 @@ impl CameraController {
                     match msg_unwr{
                         PeriodicImagingEndSignal::KillLastImage => last_image_flag = true,
                         PeriodicImagingEndSignal::KillNow => {
-                            let passed_secs = (chrono::Utc::now() - last_mark.1 + overlap).num_seconds();
-                            done_ranges.push((last_mark.0, last_mark.0 + passed_secs as isize));
+                             let p_secs = get_p_secs(last_pic, last_mark.1, overlap);
+                            done_ranges.push((last_mark.0, last_mark.0 + p_secs as isize));
                             return done_ranges
                         }
                     }

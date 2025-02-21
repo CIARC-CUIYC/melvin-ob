@@ -669,7 +669,7 @@ impl TaskController {
             Self::init_orbit_sched_calc(&orbit, p_t_shift, None, None)
         };
         let dt_calc = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
-        info!("Optimal Orbit Calculation complete after {dt_calc:.2}");
+        info!("Optimal Orbit Calculation complete after {dt_calc:.2}s.");
         let dt_shift = dt_calc.ceil() as usize;
 
         let n_tasks = self
