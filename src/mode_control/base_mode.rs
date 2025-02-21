@@ -184,10 +184,10 @@ impl BaseMode {
         loop {
             tokio::select! {
                 // Wait for a message
-                Ok(()) = event_rx.changed() => {
-                    let (t, val) = event_rx.borrow_and_update().clone();
+                Ok(msg) = event_rx.recv() => {
+                    let (t, val) = msg;
                     if let Some((id, d_noisy)) = extract_id_and_d(val.as_str()) {
-                        let mut pos = context.k().f_cont().read().await.current_pos();
+                        let pos = context.k().f_cont().read().await.current_pos();
                         let msg_delay = Utc::now() - t;
                         let meas = BeaconMeas::new(id, pos, d_noisy, msg_delay);
                         obj!("Received BO measurement at {pos} for ID {id} with distance {d_noisy}.");
