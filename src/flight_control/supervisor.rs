@@ -1,5 +1,6 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, env, sync::Arc};
 use chrono::{TimeDelta, Utc};
+use csv::Writer;
 use crate::{
     flight_control::{
         common::vec2d::Vec2D,
@@ -96,6 +97,16 @@ impl Supervisor {
             "narrow".into(),
             100.0,
         );
+        let mut pos_csv = if env::var("TRACK_MELVIN_POS").is_ok() {
+            Some(Writer::from_writer(std::fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .read(true)
+                .truncate(true)
+                .open("pos.csv").ok().unwrap()))
+        } else {
+            None
+        }; 
         // **********
         // TODO: pos monitoring in kalman filter + listening for reset_pos events
         let mut last_pos: Option<Vec2D<I32F32>> = None;
@@ -136,6 +147,16 @@ impl Supervisor {
                 let expected_pos_wrapped = expected_pos.wrap_around_map();
                 // TODO: this diff value should also consider wrapping (if actual pos wrapped, but expected didnt)
                 let diff = current_pos - expected_pos_wrapped;
+                if let Some(write) = pos_csv.as_mut() {
+                    write.write_record(&[
+                        current_pos.x().to_string(),
+                        current_pos.y().to_string(),
+                        expected_pos_wrapped.x().to_string(),
+                        expected_pos_wrapped.y().to_string(),
+                        diff.x().to_string(),
+                        diff.y().to_string(),
+                    ]).expect("[FATAL] Could not write to csv file!");
+                }
                 /*
                 println!(
                     "[INFO] Position tracking: Current: {current_pos}, \
