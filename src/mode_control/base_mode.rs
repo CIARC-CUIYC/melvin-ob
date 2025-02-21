@@ -163,6 +163,7 @@ impl BaseMode {
     }
 
     async fn exec_comms(context: Arc<ModeContext>, due: DateTime<Utc>, c_tok: CancellationToken, b_o: Arc<Mutex<HashMap<usize, BeaconObjective>>>) {
+        let start = Utc::now();
         let mut event_rx = context.super_v().subscribe_event_hub();
         let due_secs = (due - Utc::now()).to_std().unwrap_or(Self::DT_0_STD);
         let sleep_fut = tokio::time::sleep_until(Instant::now() + due_secs);
@@ -176,7 +177,8 @@ impl BaseMode {
                     if let Some((id, d_noisy)) = extract_id_and_d(val.as_str()) {
                         let pos = context.k().f_cont().read().await.current_pos();
                         let meas = BeaconMeas::new(id, pos, d_noisy);
-                        println!("[INFO] Received message while listening for BO: {val:#?}");
+                        println!("[INFO] Received BO measurement: {val:#?}");
+                        println!("[INFO] Position was: {pos}.");
                         if let Some(obj) = b_o.lock().await.get_mut(&id) {
                             println!("[LOG] Updating BO {id} and prolonging!");
                             obj.append_measurement(meas);
@@ -186,9 +188,6 @@ impl BaseMode {
                             if o_meas.guess_estimate() < 10 {
                                 println!("{:?}", o_meas.pack_perfect_circles());
                             }
-
-                        } else {
-                            println!("[LOG] Received BO message: {id} - {d_noisy}. Unknown BO. Ignoring.");
                         }
                     } else {
                         println!("[WARN] Message has unknown format. Ignoring.");
@@ -196,7 +195,8 @@ impl BaseMode {
                 },
                 // If the timeout expires, exit
                 _ = &mut sleep_fut => {
-                    println!("[LOG] Comms Timeout reached. Stopping listener.");
+                    println!("[LOG] Comms Timeout reached after {}. Stopping listener.",
+                    (Utc::now() - start).num_seconds());
                     return;
                 },
                 // If the task gets cancelled exit with the updated beacon vector
@@ -348,6 +348,7 @@ impl BaseMode {
             if let Some(meas) = obj.1.measurements() {
                 if meas.guess_estimate() < 10 {
                     done_obj.push(BeaconObjectiveDone::from(obj.1));
+                    println!("[INFO] Found finished objective: ID {}", obj.0);
                     continue;
                 }
             }

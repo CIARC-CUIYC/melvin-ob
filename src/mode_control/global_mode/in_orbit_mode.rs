@@ -95,6 +95,7 @@ impl GlobalMode for InOrbitMode {
 
     async fn exec_task_queue(&self, context: Arc<ModeContext>) -> OpExitSignal {
         let context_local = Arc::clone(&context);
+        let mut tasks = 0;
         while let Some(task) = {
             let sched_arc = context_local.k().t_cont().sched_arc();
             let mut sched_lock = sched_arc.write().await;
@@ -103,10 +104,9 @@ impl GlobalMode for InOrbitMode {
             t
         } {
             let due_time = task.dt() - Utc::now();
-            let phases = context_local.o_ch_clone().await.mode_switches();
             let task_type = task.task_type();
             println!(
-                "[INFO] Iteration {phases}: {task_type} in  {}s!",
+                "[INFO] TASK {tasks}: {task_type} in  {}s!",
                 due_time.num_seconds()
             );
             let context_clone = Arc::clone(&context);
@@ -134,6 +134,7 @@ impl GlobalMode for InOrbitMode {
                     panic!("[FATAL] Unexpected task exit signal!");
                 }
             };
+            tasks += 1;
         }
         OpExitSignal::Continue
     }
