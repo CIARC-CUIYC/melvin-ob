@@ -90,7 +90,7 @@ impl FlightComputer {
     /// Minimum battery used in decision-making for after safe transition
     const AFTER_SAFE_MIN_BATT: I32F32 = I32F32::lit("50");
     /// Constant minimum delay between requests
-    const STD_REQUEST_DELAY: Duration = Duration::from_millis(50);
+    pub(crate) const STD_REQUEST_DELAY: Duration = Duration::from_millis(100);
     /// Legal Target States for State Change
     const LEGAL_TARGET_STATES: [FlightState; 3] = [
         FlightState::Acquisition,

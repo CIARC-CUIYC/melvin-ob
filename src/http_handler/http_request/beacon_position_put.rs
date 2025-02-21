@@ -4,9 +4,9 @@ use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct BeaconPositionRequest {
-    pub beacon_id: i8,
-    pub height: i16,
-    pub width: i16,
+    pub beacon_id: u16,
+    pub height: u32,
+    pub width: u32,
 }
 
 impl NoBodyHTTPRequestType for BeaconPositionRequest {}
