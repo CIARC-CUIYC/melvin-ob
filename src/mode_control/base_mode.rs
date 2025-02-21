@@ -175,7 +175,7 @@ impl BaseMode {
                         let pos = context.k().f_cont().read().await.current_pos();
                         let meas = BeaconMeas::new(id, pos, d_noisy);
                         if let Some(obj) = b_o.lock().await.get_mut(&id) {
-                            println!("[LOG] Updating BO {id} and prologing!");
+                            println!("[LOG] Updating BO {id} and prolonging!");
                             obj.append_measurement(meas);
                             deadline = Instant::now() + Self::BO_MSG_COMM_PROLONG; // Reset timeout
                             // TODO: these checks shouldnt be here

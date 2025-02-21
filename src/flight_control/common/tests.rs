@@ -37,7 +37,7 @@ fn test_bayesian_filter() {
 
         let beacon_pos = {
             let mag = rng().random_range(0.0..=2000.0);
-            let angle: f32 = rng().random_range(0.0..=f32::PI() * 2.0);
+            let angle: f32 = rng().random_range(0.0..=f32::PI() / 2.0);
             let b = Vec2D::new(
                 I32F32::from_num((mag * angle.cos()).floor()),
                 I32F32::from_num((mag * angle.sin()).floor()),

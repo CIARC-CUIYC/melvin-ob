@@ -239,7 +239,7 @@ impl GlobalMode for InOrbitMode {
                     *coverage_required,
                 );
                 // TODO: return ZonedObjectivePrepMode
-                todo!();
+                None
                 //OpExitSignal::ReInit(Box::New())
             }
         }
