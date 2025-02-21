@@ -165,7 +165,6 @@ impl BayesianSet {
 
     pub fn update(&mut self, meas: &BeaconMeas) {
         let (min_dist, max_dist) = Self::get_dists(I32F32::from_num(meas.rssi()));
-        println!("min_dist: {min_dist}, max_dist: {max_dist}");
         let pos = meas.corr_pos();
         let slice =
             self.curr_slice.intersect(&SquareSlice::new(pos, Vec2D::new(max_dist, max_dist)));
