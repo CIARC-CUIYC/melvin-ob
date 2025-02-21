@@ -44,6 +44,8 @@ pub enum BaseWaitExitSignal {
 }
 
 impl BaseMode {
+    const BEACON_OBJ_RETURN_MIN_DELAY: TimeDelta = TimeDelta::minutes(10);
+    
     fn start_beacon_scanning(obj: BeaconObjective) -> BaseMode {
         let mut obj_m = HashMap::new();
         obj_m.insert(obj.id(), obj);
@@ -174,7 +176,6 @@ impl BaseMode {
                 // Wait for a message
                 Ok(()) = event_rx.changed() => {
                     let val = event_rx.borrow_and_update().clone();
-                    
                     if let Some((id, d_noisy)) = extract_id_and_d(val.as_str()) {
                         let pos = context.k().f_cont().read().await.current_pos();
                         let meas = BeaconMeas::new(id, pos, d_noisy);
@@ -346,21 +347,30 @@ impl BaseMode {
         let mut not_done_obj_m = HashMap::new();
         let mut b_o_map_lock = b_o_map.lock().await;
         for obj in b_o_map_lock.drain() {
-            if let Some(meas) = obj.1.measurements() {
+            if obj.1.end() > Utc::now() + Self:: BEACON_OBJ_RETURN_MIN_DELAY{
+                let beac_done = BeaconObjectiveDone::from(obj.1);
+                if beac_done.guesses().is_empty() {
+                    println!("[INFO] Found almost ending Beacon objective: ID {}. No guesses :(", obj.0);
+                }else {
+                    done_obj.push(beac_done);
+                    println!("[INFO] Found almost ending Beacon objective: ID {}. Submitting this soon!", obj.0);
+                }
+                
+            } else if let Some(meas) = obj.1.measurements() {
                 if meas.guess_estimate() < 10 {
                     done_obj.push(BeaconObjectiveDone::from(obj.1));
-                    println!("[INFO] Found finished objective: ID {}", obj.0);
-                    continue;
+                    println!("[INFO] Found finished Beacon objective: ID {}", obj.0);
                 }
+            } else {
+                not_done_obj_m.insert(obj.0, obj.1);
             }
-            not_done_obj_m.insert(obj.0, obj.1);
         }
         *b_o_map_lock = not_done_obj_m;
         drop(b_o_map_lock);
-        if done_obj.len() > 0 {
-            Some(done_obj)
-        } else {
+        if done_obj.is_empty() {
             None
+        } else {
+            Some(done_obj)
         }
     }
 }
