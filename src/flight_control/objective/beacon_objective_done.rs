@@ -27,7 +27,7 @@ impl BeaconObjectiveDone {
     pub async fn guess_max(&self, client: Arc<HTTPClient>) {
         obj!("Guessing max for {}: {} guesses...", self.id, self.guesses.len());
         let id_u16 = self.id() as u16;
-        'outer: for guess in self.guesses() {
+        'outer: for (i, guess) in self.guesses().iter().enumerate() {
             let width = guess.x().abs().to_num::<u32>();
             let height = guess.y().abs().to_num::<u32>();
             let req = BeaconPositionRequest {
@@ -42,7 +42,7 @@ impl BeaconObjectiveDone {
                         obj!("Found beacon {id_u16} at {guess}!");
                         return;
                     } else if msg.is_last() {
-                        obj!("Could not find beacon {id_u16}!");
+                        obj!("Could not find beacon {id_u16} after {i} tries!");
                         return;
                     } else if msg.is_unknown() {
                         obj!("Beacon {id_u16} is unknown!");

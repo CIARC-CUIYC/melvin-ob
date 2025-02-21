@@ -77,7 +77,8 @@ impl BaseMode {
     const DT_0_STD: std::time::Duration = std::time::Duration::from_secs(0);
     const MAX_MSG_DT: chrono::Duration = chrono::Duration::milliseconds(300);
     const DEF_MAPPING_ANGLE: CameraAngle = CameraAngle::Narrow;
-    const BO_MSG_COMM_PROLONG: std::time::Duration = std::time::Duration::from_secs(60);
+    const BO_MSG_COMM_PROLONG_STD: std::time::Duration = std::time::Duration::from_secs(60);
+    const BO_MSG_COMM_PROLONG: TimeDelta = TimeDelta::seconds(60);
     const MIN_COMM_DT: std::time::Duration = std::time::Duration::from_secs(60);
     const MAX_COMM_INTERVAL: std::time::Duration = std::time::Duration::from_secs(500);
 
@@ -194,7 +195,10 @@ impl BaseMode {
                         if let Some(obj) = b_o.lock().await.get_mut(&id) {
                             obj!("Updating BO {id} and prolonging!");
                             obj.append_measurement(meas);
-                            sleep_fut.set(tokio::time::sleep_until(Instant::now() + Self::BO_MSG_COMM_PROLONG)); // Reset timeout
+                            let new_end = Utc::now() + Self::BO_MSG_COMM_PROLONG;
+                            if new_end > due {
+                                sleep_fut.set(tokio::time::sleep_until(Instant::now() + Self::BO_MSG_COMM_PROLONG_STD));
+                            }
                         } else {
                             warn!("Unknown BO ID {id}. Ignoring!");
                         }

@@ -34,13 +34,6 @@ pub const MIN_BATTERY_THRESHOLD: I32F32 = I32F32::lit("10.00");
 pub const MAX_BATTERY_THRESHOLD: I32F32 = I32F32::lit("100.00");
 const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::cast_precision_loss,
-    clippy::too_many_lines
-)]
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {    
     let base_url_var = env::var("DRS_BASE_URL");
@@ -117,62 +110,6 @@ async fn init(
 }
 // TODO: translate this into state
 /*
-fn recv_all_obj(
-    obj_monitor: &mut Receiver<ObjectiveBase>,
-    k_img_buffer: &mut BinaryHeap<KnownImgObjective>,
-    beacon_buffer: &mut BinaryHeap<BeaconObjective>,
-    s_img_buffer: &mut VecDeque<SecretImgObjective>,
-) -> (usize, usize) {
-    let mut k_img_count = 0;
-    let mut beacon_count = 0;
-    while let Ok(obj) = obj_monitor.try_recv() {
-        let id = obj.id();
-        let name = obj.name().to_string();
-        let start = obj.start();
-        let end = obj.end();
-
-        match obj.obj_type() {
-            ObjectiveType::Beacon { attempts_made } => {
-                /*beacon_buffer.push(BeaconObjective::new(id, name, start, end));
-                beacon_count += 1;*/
-            }
-            ObjectiveType::SecretImage {
-                optic_required,
-                coverage_required,
-            } => {
-                /*s_img_buffer.push_front(SecretImgObjective::new(
-                    id,
-                    name,
-                    start,
-                    end,
-                    *optic_required,
-                    *coverage_required,
-                ));*/
-            }
-            ObjectiveType::KnownImage {
-                zone,
-                optic_required,
-                coverage_required,
-            } => {
-                /*k_img_buffer.push(KnownImgObjective::new(
-                    id,
-                    name,
-                    start,
-                    end,
-                    *zone,
-                    *optic_required,
-                    *coverage_required,
-                ));
-                k_img_count += 1;*/
-            }
-        }
-        obj!("Found new objective: {}!", obj.obj_type());
-    }
-    (k_img_count, beacon_count)
-}
-
-
-
 async fn handle_orbit_escape(
     mode: GlobalMode,
     vel_change: &VelocityChangeTask,
@@ -198,37 +135,5 @@ async fn handle_orbit_escape(
         );
         GlobalMode::MappingMode
     }
-}
-
-#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-async fn start_periodic_imaging(
-    k_clone: Arc<KeychainWithOrbit>,
-    end_time: DateTime<chrono::Utc>,
-    img_dt: I32F32,
-    angle: CameraAngle,
-    i_shift: IndexedOrbitPosition,
-) -> (
-    JoinHandle<Vec<(isize, isize)>>,
-    oneshot::Sender<PeriodicImagingEndSignal>,
-) {
-    let f_cont_lock = Arc::clone(&k_clone.f_cont());
-    let (tx, rx) = oneshot::channel();
-
-    let i_start = i_shift.new_from_pos(f_cont_lock.read().await.current_pos());
-
-    let handle = tokio::spawn(async move {
-        k_clone
-            .c_cont()
-            .execute_acquisition_cycle(
-                f_cont_lock,
-                k_clone.con(),
-                (end_time, rx),
-                img_dt,
-                angle,
-                i_start.index(),
-            )
-            .await
-    });
-    (handle, tx)
 }
  */
