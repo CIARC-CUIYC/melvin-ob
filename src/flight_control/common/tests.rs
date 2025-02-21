@@ -54,7 +54,7 @@ fn test_bayesian_filter() {
         //println!("STEP 0: {pos}\n\t Distance: {d_true}");
         let d_noisy = get_d_noisy(d_true);
         //println!("\t Distance Noisy: {d_noisy}");
-        let meas = BeaconMeas::new(0, pos, d_noisy as f64);
+        let meas = BeaconMeas::new(0, pos, f64::from(d_noisy));
         let mut bayesian_set = BayesianSet::new(meas);
         let min_guesses = bayesian_set.guess_estimate();
         //println!("\t Minimum Guesses: {min_guesses}");
@@ -70,8 +70,8 @@ fn test_bayesian_filter() {
             };
             let d_noisy = get_d_noisy(d_true);
             //println!("\t Distance Noisy: {d_noisy}");
-            let b_meas = BeaconMeas::new(0, *pos, d_noisy as f64);
-            bayesian_set.update(b_meas);
+            let b_meas = BeaconMeas::new(0, *pos, f64::from(d_noisy));
+            bayesian_set.update(&b_meas);
             let min_guesses = bayesian_set.guess_estimate();
             //println!("\t Minimum Guesses: {min_guesses}");
             assert!(bayesian_set.is_in_set(beacon_pos_i32));

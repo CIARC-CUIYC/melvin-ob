@@ -10,7 +10,7 @@ use crate::flight_control::{
         base_task::Task,
         score_grid::ScoreGrid,
         vel_change_task::{
-            VelocityChangeTaskRationale, VelocityChangeTaskRationale::OrbitEscapeChange,
+            VelocityChangeTaskRationale, VelocityChangeTaskRationale::OrbitEscape
         },
     },
 };
@@ -625,7 +625,7 @@ impl TaskController {
             true,
         )
         .await;
-        let n_tasks = self.schedule_vel_change(burn_sequence, OrbitEscapeChange).await;
+        let n_tasks = self.schedule_vel_change(burn_sequence, OrbitEscape).await;
         let dt_tot = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
         println!(
             "[INFO] Number of tasks after scheduling: {n_tasks}. \

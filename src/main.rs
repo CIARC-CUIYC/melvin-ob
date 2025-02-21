@@ -5,7 +5,7 @@ mod flight_control;
 mod mode_control;
 mod http_handler;
 mod keychain;
-
+mod logger;
 
 use crate::flight_control::{
     camera_state::CameraAngle,
@@ -16,8 +16,8 @@ use crate::flight_control::{
 };
 use crate::keychain::{Keychain, KeychainWithOrbit};
 use crate::mode_control::{
-    global_mode::global_mode::{GlobalMode, OpExitSignal},
-    global_mode::in_orbit_mode::InOrbitMode,
+    mode::global_mode::{GlobalMode, OpExitSignal},
+    mode::in_orbit_mode::InOrbitMode,
     mode_context::ModeContext,
 };
 use chrono::TimeDelta;

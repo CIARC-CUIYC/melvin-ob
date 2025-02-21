@@ -62,9 +62,9 @@ fn extract_id_and_d(input: &str) -> Option<(usize, f64)> {
     if let Some(captures) = BO_REGEX.captures(input) {
         // Extract beacon_id and d_noisy
         if let (Some(beacon_id), Some(d_noisy)) = (captures.get(1), captures.get(2)) {
-            let beacon_id: usize = beacon_id.as_str().parse().unwrap();
-            let d_noisy: f64 = d_noisy.as_str().parse().unwrap();
-            return Some((beacon_id, d_noisy));
+            let id: usize = beacon_id.as_str().parse().unwrap();
+            let d_n: f64 = d_noisy.as_str().parse().unwrap();
+            return Some((id, d_n));
         }
     }
     None // Return None if values cannot be extracted
@@ -196,13 +196,13 @@ impl BaseMode {
                     }
                 },
                 // If the timeout expires, exit
-                _ = &mut sleep_fut => {
+                () = &mut sleep_fut => {
                     println!("[LOG] Comms Timeout reached after {}. Stopping listener.",
                     (Utc::now() - start).num_seconds());
                     return;
                 },
                 // If the task gets cancelled exit with the updated beacon vector
-                _ = c_tok.cancelled() => {
+                () = c_tok.cancelled() => {
                     return;
                 }
             }

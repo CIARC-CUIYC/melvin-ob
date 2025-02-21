@@ -149,7 +149,7 @@ impl BayesianSet {
     pub fn new(meas: BeaconMeas) -> Self {
         let (min_dist, max_dist) = Self::get_dists(I32F32::from_num(meas.rssi()));
         let side_len = I32F32::from_num(max_dist);
-        let pos = meas.pos().clone();
+        let pos = *meas.pos();
         let slice = SquareSlice::new(pos, Vec2D::new(side_len, side_len));
         let set = slice.get_coord_set(pos, min_dist, max_dist);
         Self {
@@ -159,9 +159,9 @@ impl BayesianSet {
         }
     }
 
-    pub fn update(&mut self, meas: BeaconMeas) {
+    pub fn update(&mut self, meas: &BeaconMeas) {
         let (min_dist, max_dist) = Self::get_dists(I32F32::from_num(meas.rssi()));
-        let pos = meas.pos().clone();
+        let pos = *meas.pos();
         let slice =
             self.curr_slice.intersect(&SquareSlice::new(pos, Vec2D::new(max_dist, max_dist)));
         let new_set = slice.get_coord_set(pos, min_dist, max_dist);

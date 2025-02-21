@@ -11,10 +11,10 @@ use crate::flight_control::{
     },
 };
 use crate::mode_control::base_mode::BaseWaitExitSignal;
-use crate::mode_control::global_mode::global_mode::WaitExitSignal;
+use crate::mode_control::mode::global_mode::WaitExitSignal;
 use crate::mode_control::{
     base_mode::{BaseMode, MappingModeEnd::Join},
-    global_mode::global_mode::{ExecExitSignal, GlobalMode, OpExitSignal},
+    mode::global_mode::{ExecExitSignal, GlobalMode, OpExitSignal},
     mode_context::ModeContext,
 };
 use async_trait::async_trait;

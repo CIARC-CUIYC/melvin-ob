@@ -91,13 +91,14 @@ impl Supervisor {
         let debug_objective = KnownImgObjective::new(
             0,
             "Test Objective".to_string(),
-            chrono::Utc::now(),
-            chrono::Utc::now() + TimeDelta::hours(7),
+            Utc::now(),
+            Utc::now() + TimeDelta::hours(7),
             [4750, 5300, 5350, 5900],
             "narrow".into(),
             100.0,
         );
         let mut pos_csv = if env::var("TRACK_MELVIN_POS").is_ok() {
+            println!("[LOG] Activated position tracking!");
             Some(Writer::from_writer(std::fs::OpenOptions::new()
                 .create(true)
                 .write(true)

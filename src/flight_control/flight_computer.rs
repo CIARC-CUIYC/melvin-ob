@@ -560,7 +560,7 @@ impl FlightComputer {
             state: new_state.into(),
         };
         loop {
-            if let Ok(_) = req.send_request(&self.request_client).await {
+            if req.send_request(&self.request_client).await.is_ok() {
                 println!("[LOG] State change started to {new_state}");
                 return;
             }
@@ -582,7 +582,7 @@ impl FlightComputer {
             state: self.current_state.into(),
         };
         loop {
-            if let Ok(_) = req.send_request(&self.request_client).await {
+            if req.send_request(&self.request_client).await.is_ok() {
                 println!(
                     "[LOG] Velocity change commanded to [{}, {}]",
                     vel.x(),
@@ -607,7 +607,7 @@ impl FlightComputer {
             state: self.current_state.into(),
         };
         loop {
-            if let Ok(_) = req.send_request(&self.request_client).await {
+            if req.send_request(&self.request_client).await.is_ok() {
                 println!("[LOG] Angle change commanded to {new_angle}");
                 return;
             }

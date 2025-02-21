@@ -51,7 +51,7 @@ impl BeaconObjective {
     pub fn measurements(&self) -> Option<&BayesianSet> { self.measurements.as_ref() }
     pub fn append_measurement(&mut self, meas: BeaconMeas) {
         if let Some(meas_set) = &mut self.measurements {
-            meas_set.update(meas);
+            meas_set.update(&meas);
         } else {
             self.measurements = Some(BayesianSet::new(meas));
         }

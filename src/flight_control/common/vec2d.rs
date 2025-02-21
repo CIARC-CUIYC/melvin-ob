@@ -622,7 +622,7 @@ impl<T: Num> From<Vec2D<T>> for (T, T) {
 impl<T> From<&[T; 2]> for Vec2D<T> 
 where T: Copy
 {
-    /// Creates a Vec2D` from a slice of (x, y) values.
+    /// Creates a `Vec2D` from a slice of (x, y) values.
     ///
     /// # Arguments
     /// * `slice` - A tuple representing the x and y values.

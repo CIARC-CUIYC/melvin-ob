@@ -22,6 +22,7 @@ impl BeaconObjectiveDone {
     pub fn end(&self) -> chrono::DateTime<chrono::Utc> { self.end }
     pub fn guesses(&self) -> &Vec<Vec2D<I32F32>> { &self.guesses }
 
+    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
     pub async fn guess_max(&self, client: Arc<HTTPClient>) {
         let id_u16 = self.id() as u16;
         'outer: for guess in self.guesses() {
