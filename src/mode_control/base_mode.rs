@@ -173,7 +173,7 @@ impl BaseMode {
             tokio::select! {
                 // Wait for a message
                 Ok(()) = event_rx.changed() => {
-                    let val = event_rx.borrow().clone();
+                    let val = event_rx.borrow_and_update().clone();
                     if let Some((id, d_noisy)) = extract_id_and_d(val.as_str()) {
                         let pos = context.k().f_cont().read().await.current_pos();
                         let meas = BeaconMeas::new(id, pos, d_noisy);
