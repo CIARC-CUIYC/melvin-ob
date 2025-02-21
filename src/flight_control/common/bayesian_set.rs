@@ -135,6 +135,7 @@ pub struct BayesianSet {
 }
 
 impl BayesianSet {
+    
     const K_FAC_MAX: I32F32 = I32F32::lit("0.9");
     const K_FAC_MIN: I32F32 = I32F32::lit("1.1");
     pub const STD_DIST_SAFETY: I32F32 = I32F32::lit("5");
