@@ -349,6 +349,7 @@ impl BaseMode {
         for obj in b_o_map_lock.drain() {
             if obj.1.end() > Utc::now() + Self:: BEACON_OBJ_RETURN_MIN_DELAY{
                 let beac_done = BeaconObjectiveDone::from(obj.1);
+                
                 if beac_done.guesses().is_empty() {
                     println!("[INFO] Found almost ending Beacon objective: ID {}. No guesses :(", obj.0);
                 }else {
