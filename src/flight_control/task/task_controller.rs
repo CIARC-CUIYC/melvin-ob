@@ -9,13 +9,12 @@ use crate::flight_control::{
         atomic_decision_cube::AtomicDecisionCube,
         base_task::Task,
         score_grid::ScoreGrid,
-        vel_change_task::{
-            VelocityChangeTaskRationale, VelocityChangeTaskRationale::OrbitEscape
-        },
+        vel_change_task::{VelocityChangeTaskRationale, VelocityChangeTaskRationale::OrbitEscape},
     },
 };
-use crate::{MAX_BATTERY_THRESHOLD, MIN_BATTERY_THRESHOLD};
+use crate::{fatal, info, log, MAX_BATTERY_THRESHOLD, MIN_BATTERY_THRESHOLD};
 use bitvec::prelude::BitRef;
+use chrono::{DateTime, Utc};
 use fixed::types::I32F32;
 use num::{ToPrimitive, Zero};
 use std::{
@@ -23,7 +22,6 @@ use std::{
     fmt::Debug,
     sync::{Arc, Condvar},
 };
-use chrono::{DateTime, Utc};
 use tokio::sync::RwLock;
 
 /// `TaskController` manages and schedules tasks for MELVIN.
@@ -139,7 +137,7 @@ impl TaskController {
                 max_pred_secs
             }
         };
-        println!("[INFO] Calculating optimal orbit schedule for {prediction_secs} seconds");
+        info!("Calculating optimal orbit schedule for {prediction_secs} seconds");
         // Retrieve a reordered iterator over the orbit's completion bitvector to optimize scheduling.
         let p_t_iter = orbit.get_p_t_reordered(
             p_t_shift,
@@ -357,7 +355,7 @@ impl TaskController {
         target_pos: Vec2D<I32F32>,
         target_end_time: DateTime<Utc>,
     ) -> (BurnSequence, I32F32) {
-        println!("[INFO] Starting to calculate single target burn towards {target_pos}");
+        info!("Starting to calculate single target burn towards {target_pos}");
 
         // Calculate maximum allowed time delta for the maneuver
         let time_left = target_end_time - Utc::now();
@@ -392,9 +390,7 @@ impl TaskController {
                 break;
             }
         }
-        println!(
-            "[INFO] Done skipping impossible start times. Last possible dt: {last_possible_dt}"
-        );
+        info!("Done skipping impossible start times. Last possible dt: {last_possible_dt}");
 
         // Define range for evaluation and initialize best burn sequence tracker
         let remaining_range = Self::OBJECTIVE_SCHEDULE_MIN_DT..=last_possible_dt;
@@ -563,8 +559,7 @@ impl TaskController {
         objective: KnownImgObjective,
     ) {
         let computation_start = Utc::now();
-        println!(
-            "[INFO] Calculating schedule for Retrieval of Objective {}",
+        info!("Calculating schedule for Retrieval of Objective {}",
             objective.id()
         );
         let (burn_sequence, min_charge) = if objective.min_images() == 1 {
@@ -579,15 +574,14 @@ impl TaskController {
             .await
         } else {
             // TODO
-            panic!("[FATAL] Zoned Objective with multiple images not yet supported");
+            fatal!("Zoned Objective with multiple images not yet supported");
         };
         let comp_time = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
-        println!("[INFO] Maneuver calculation completed after {comp_time}s!");
+        info!("Maneuver calculation completed after {comp_time}s!");
 
-        let start =
-            (burn_sequence.start_i().t() - Utc::now()).num_milliseconds() as f32 / 1000.0;
-        println!(
-            "[INFO] Maneuver will start in {start}s, will take {}s. \
+        let start = (burn_sequence.start_i().t() - Utc::now()).num_milliseconds() as f32 / 1000.0;
+        log!(
+            "Maneuver will start in {start}s, will take {}s. \
             Detumble time will be roughly {}s!",
             burn_sequence.acc_dt(),
             burn_sequence.detumble_dt()
@@ -596,8 +590,8 @@ impl TaskController {
             let pos = f_cont_lock.read().await.current_pos();
             scheduling_start_i.new_from_pos(pos)
         };
-        let dt = usize::try_from((burn_sequence.start_i().t() - Utc::now()).num_seconds())
-            .unwrap_or(0);
+        let dt =
+            usize::try_from((burn_sequence.start_i().t() - Utc::now()).num_seconds()).unwrap_or(0);
         let result = {
             let orbit = orbit_lock.read().await;
 
@@ -608,8 +602,7 @@ impl TaskController {
                 Some((FlightState::Acquisition, min_charge)),
             )
         };
-        println!(
-            "[INFO] Calculating optimal orbit schedule to be at {min_charge} and in {} in {dt}s.",
+        info!("Calculating optimal orbit schedule to be at {min_charge} and in {} in {dt}s.",
             <&'static str>::from(FlightState::Acquisition)
         );
         let after_sched_calc_i = {
@@ -627,15 +620,16 @@ impl TaskController {
         .await;
         let n_tasks = self.schedule_vel_change(burn_sequence, OrbitEscape).await;
         let dt_tot = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
-        println!(
-            "[INFO] Number of tasks after scheduling: {n_tasks}. \
+        info!("Number of tasks after scheduling: {n_tasks}. \
             Calculation and processing took {dt_tot:.2}",
         );
 
         {
             let sched = self.task_schedule.read().await;
             for task in &*sched {
-                println!("[INFO] {task} in {}s.", (task.dt() - Utc::now()).num_seconds());
+                log!("{task} in {}s.",
+                    (task.dt() - Utc::now()).num_seconds()
+                );
             }
         }
     }
@@ -675,15 +669,14 @@ impl TaskController {
             Self::init_orbit_sched_calc(&orbit, p_t_shift, None, None)
         };
         let dt_calc = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
-        println!("[INFO] Optimal Orbit Calculation complete after {dt_calc:.2}");
+        info!("Optimal Orbit Calculation complete after {dt_calc:.2}");
         let dt_shift = dt_calc.ceil() as usize;
 
         let n_tasks = self
             .schedule_optimal_orbit_result(f_cont_lock, computation_start, result, dt_shift, true)
             .await;
         let dt_tot = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
-        println!(
-            "[INFO] Number of tasks after scheduling: {n_tasks}. \
+        info!("Number of tasks after scheduling: {n_tasks}. \
             Calculation and processing took {dt_tot:.2}",
         );
     }
@@ -716,7 +709,7 @@ impl TaskController {
         dt_sh: usize,
         trunc: bool,
     ) -> usize {
-        println!("[INFO] Scheduling optimal orbit result...");
+        info!("Scheduling optimal orbit result...");
         if trunc {
             // Clear the existing schedule if truncation is requested.
             self.clear_schedule().await;
@@ -729,7 +722,7 @@ impl TaskController {
             let st: usize = match f_cont.state() {
                 FlightState::Acquisition => 1,
                 FlightState::Charge => 0,
-                state => panic!("[FATAL] Unexpected flight state: {state}"),
+                state => fatal!("Unexpected flight state: {state}"),
             };
             (batt, st)
         };
@@ -882,7 +875,7 @@ impl TaskController {
     /// - Notifies all waiting threads if the schedule is cleared.
     pub async fn clear_schedule(&self) {
         let schedule = &*self.task_schedule;
-        println!("[INFO] Clearing task schedule...");
+        log!("Clearing task schedule...");
         schedule.write().await.clear();
     }
 }

@@ -17,6 +17,7 @@ use crate::mode_control::{
     mode::global_mode::{ExecExitSignal, GlobalMode, OpExitSignal},
     mode_context::ModeContext,
 };
+use crate::{fatal, info, obj, warn};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use std::time::Duration;
@@ -105,10 +106,7 @@ impl GlobalMode for InOrbitMode {
         } {
             let due_time = task.dt() - Utc::now();
             let task_type = task.task_type();
-            println!(
-                "[INFO] TASK {tasks}: {task_type} in  {}s!",
-                due_time.num_seconds()
-            );
+            info!("ASK {tasks}: {task_type} in  {}s!", due_time.num_seconds());
             let context_clone = Arc::clone(&context);
             match self.exec_task_wait(context_clone, task.dt()).await {
                 WaitExitSignal::Continue => {}
@@ -131,7 +129,7 @@ impl GlobalMode for InOrbitMode {
                     return self.safe_handler(context_local).await;
                 }
                 ExecExitSignal::NewObjectiveEvent(_) => {
-                    panic!("[FATAL] Unexpected task exit signal!");
+                    fatal!("Unexpected task exit signal!");
                 }
             };
             tasks += 1;
@@ -151,7 +149,7 @@ impl GlobalMode for InOrbitMode {
             if (due - Utc::now()) > Self::MAX_WAIT_DURATION {
                 Box::pin(self.base.get_wait(Arc::clone(&context), due, cancel_task.clone()).await)
             } else {
-                println!("[WARN] Task wait time too short. Just waiting!");
+                warn!("Task wait time too short. Just waiting!");
                 Box::pin(async {
                     tokio::time::sleep(
                         (due - Utc::now()).to_std().unwrap_or(Duration::from_secs(0)),
@@ -184,8 +182,8 @@ impl GlobalMode for InOrbitMode {
         match task.task_type() {
             BaseTask::SwitchState(switch) => self.base.get_task(context, *switch).await,
             _ => {
-                panic!(
-                    "[FATAL] Illegal task type {} for state {}!",
+                fatal!(
+                    "Illegal task type {} for state {}!",
                     task.task_type(),
                     Self::MODE_NAME
                 )
@@ -220,7 +218,7 @@ impl GlobalMode for InOrbitMode {
                     obj.start(),
                     obj.end(),
                 );
-                println!("[OBJ] Found new Beacon Objective {}!", obj.id());
+                obj!("Found new Beacon Objective {}!", obj.id());
                 let base = self.base.handle_b_o(&context, b_obj).await;
                 Some(OpExitSignal::ReInit(Box::new(Self { base })))
             }
@@ -229,7 +227,7 @@ impl GlobalMode for InOrbitMode {
                 optic_required,
                 coverage_required,
             } => {
-                println!("[OBJ] Found new Zoned Objective {}!", obj.id());
+                obj!("Found new Zoned Objective {}!", obj.id());
                 let k_obj = KnownImgObjective::new(
                     obj.id(),
                     String::from(obj.name()),

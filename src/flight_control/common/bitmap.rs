@@ -268,6 +268,6 @@ impl Bitmap {
         }
 
         // Save the image to a file
-        img.save(output_path).expect("[ERROR] Failed to save the image");
+        img.save(output_path).expect("Failed to save the image");
     }
 }

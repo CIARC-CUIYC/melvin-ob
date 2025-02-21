@@ -12,7 +12,7 @@ use crate::http_handler::{
     },
 };
 use crate::mode_control::base_mode::PeriodicImagingEndSignal;
-use crate::DT_0_STD;
+use crate::{error, info, DT_0_STD};
 use bitvec::boxed::BitBox;
 use chrono::TimeDelta;
 use fixed::types::I32F32;
@@ -318,14 +318,12 @@ impl CameraController {
     ///
     /// A result indicating the success or failure of the operation.
     pub(crate) async fn create_full_snapshot(&self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("[INFO] Exporting Full-View PNG...");
         let start_time = chrono::Utc::now();
         self.fullsize_map_image
             .read()
             .await
             .create_snapshot(Path::new(&self.base_path).join(SNAPSHOT_FULL_PATH))?;
-        println!(
-            "[INFO] Exported Full-View PNG in {}s!",
+        info!("Exported Full-View PNG in {}s!",
             (chrono::Utc::now() - start_time).num_seconds()
         );
         Ok(())
@@ -435,8 +433,7 @@ impl CameraController {
                             *lock += 1;
                             *lock
                         };
-                        println!(
-                            "[INFO] Took {pic_num}. picture in cycle at {}. Processed for {}s. Position was {}",
+                        info!("Took {pic_num}. picture in cycle at {}. Processed for {}s. Position was {}",
                             img_init_timestamp.format("%d. %H:%M:%S"),
                             (chrono::Utc::now() - img_init_timestamp).num_seconds(),
                             offset
@@ -444,7 +441,7 @@ impl CameraController {
                         Some(offset)
                     }
                     Err(e) => {
-                        println!("[ERROR] Couldn't take picture: {e}");
+                        error!("Couldn't take picture: {e}");
                         None
                     }
                 }
@@ -484,7 +481,7 @@ impl CameraController {
                 msg = &mut kill_box => {
                     let msg_unwr = msg.unwrap_or_else(
                         |e| {
-                            println!("[ERROR] Couldn't receive kill signal: {e}");
+                            error!("Couldn't receive kill signal: {e}");
                             PeriodicImagingEndSignal::KillNow
                         });
                     match msg_unwr{

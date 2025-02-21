@@ -51,7 +51,7 @@ async fn main() {
     let mut global_mode: Box<dyn GlobalMode> = Box::new(InOrbitMode::new());
     loop {
         let phase = context.o_ch_clone().await.mode_switches();
-        println!("[INFO] Starting phase {phase} in {}!", global_mode.type_name());
+        info!("Starting phase {phase} in {}!", global_mode.type_name());
         match global_mode.init_mode(Arc::clone(&context)).await{
             OpExitSignal::ReInit(mode) => {
                 global_mode = mode;
@@ -103,9 +103,9 @@ async fn init(
         FlightComputer::set_angle_wait(init_k.f_cont(), CONST_ANGLE).await;
         let f_cont = f_cont_lock.read().await;
         ClosedOrbit::new(OrbitBase::new(&f_cont), CameraAngle::Wide).unwrap_or_else(|e| match e {
-            OrbitUsabilityError::OrbitNotClosed => panic!("[FATAL] Static orbit is not closed"),
+            OrbitUsabilityError::OrbitNotClosed => fatal!("Static orbit is not closed"),
             OrbitUsabilityError::OrbitNotEnoughOverlap => {
-                panic!("[FATAL] Static orbit is not overlapping enough")
+                fatal!("Static orbit is not overlapping enough")
             }
         })
     };
@@ -166,7 +166,7 @@ fn recv_all_obj(
                 k_img_count += 1;*/
             }
         }
-        println!("[INFO] Found new objective: {}!", obj.obj_type());
+        obj!("Found new objective: {}!", obj.obj_type());
     }
     (k_img_count, beacon_count)
 }
@@ -186,7 +186,7 @@ async fn handle_orbit_escape(
         let diff = *exp_pos - current_pos;
         let detumble_time_delta = TimeDelta::seconds(burn.detumble_dt() as i64);
         let detumble_dt = PinnedTimeDelay::new(detumble_time_delta - DETUMBLE_TOL);
-        println!("[INFO] Orbit Escape done! Expected position {exp_pos}, Actual Position {current_pos}, Diff {diff}");
+        log!("Orbit Escape done! Expected position {exp_pos}, Actual Position {current_pos}, Diff {diff}");
         // TODO: here we shouldn't use objective.get_imaging_points but something already created,
         // TODO: also the mode change to global mode should happen sometime else
         let (vel, dev) =
@@ -194,8 +194,7 @@ async fn handle_orbit_escape(
         TaskController::calculate_orbit_correction_burn(vel, dev, detumble_dt);
         GlobalMode::ZonedObjectiveRetrievalMode(obj)
     } else {
-        println!(
-            "[ERROR] Orbit escape change requested, global mode illegal. Skipping velocity change!"
+        error!("Orbit escape change requested, global mode illegal. Skipping velocity change!"
         );
         GlobalMode::MappingMode
     }

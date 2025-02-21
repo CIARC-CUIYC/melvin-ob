@@ -6,6 +6,7 @@ use crate::http_handler::http_request::beacon_position_put::BeaconPositionReques
 use crate::http_handler::http_request::request_common::NoBodyHTTPRequestType;
 use fixed::types::I32F32;
 use std::sync::Arc;
+use crate::{error, obj};
 
 pub struct BeaconObjectiveDone {
     id: usize,
@@ -36,21 +37,21 @@ impl BeaconObjectiveDone {
             loop {
                 if let Ok(msg) = req.send_request(&client).await {
                     if msg.is_success() {
-                        println!("[OBJ] Found beacon {id_u16} at {guess}!");
+                        obj!("Found beacon {id_u16} at {guess}!");
                         return;
                     } else if msg.is_last() {
-                        println!("[OBJ] Could not find beacon {id_u16}!");
+                        obj!("Could not find beacon {id_u16}!");
                         return;
                     } else if msg.is_unknown() {
-                        println!("[OBJ] Beacon {id_u16} is unknown!");
+                        obj!("Beacon {id_u16} is unknown!");
                         return;
                     } else if msg.is_fail() {
                         continue 'outer;
                     }
-                    println!("[OBJ] Uknown Message: {}! Returning!", msg.msg());
+                    obj!("Uknown Message: {}! Returning!", msg.msg());
                     return;
                 }
-                println!("[ERROR] Unnoticed HTTP Error in updateObservation()");
+                error!("Unnoticed HTTP Error in updateObservation()");
                 tokio::time::sleep(FlightComputer::STD_REQUEST_DELAY).await;
             }
         }

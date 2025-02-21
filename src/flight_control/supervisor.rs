@@ -1,17 +1,14 @@
 use std::{collections::HashSet, env, sync::Arc};
 use chrono::{TimeDelta, Utc};
 use csv::Writer;
-use crate::{
-    flight_control::{
-        common::vec2d::Vec2D,
-        flight_computer::FlightComputer,
-        flight_state::FlightState,
-        objective::{
-            objective_base::ObjectiveBase,
-        },
+use crate::{error, event, fatal, flight_control::{
+    common::vec2d::Vec2D,
+    flight_computer::FlightComputer,
+    flight_state::FlightState,
+    objective::{
+        objective_base::ObjectiveBase,
     },
-    http_handler::http_request::{objective_list_get::ObjectiveListRequest, request_common::NoBodyHTTPRequestType},
-};
+}, http_handler::http_request::{objective_list_get::ObjectiveListRequest, request_common::NoBodyHTTPRequestType}, info, log, warn};
 use fixed::types::I32F32;
 use futures::StreamExt;
 use reqwest_eventsource::{Event, EventSource};
@@ -61,24 +58,23 @@ impl Supervisor {
             let client = self.f_cont_lock.read().await.client();
             client.url().to_string()
         };
-        println!("[INFO] Starting announcement supervisor loop!");
         let mut es = EventSource::get(url + "/announcements");
         while let Some(event) = es.next().await {
             match event {
-                Ok(Event::Open) => println!("[INFO] EventSource connected!"),
+                Ok(Event::Open) => info!("EventSource connected!"),
                 Ok(Event::Message(msg)) => {
                     let msg_str = format!("{msg:#?}");
                     self.event_hub.send(msg_str).unwrap_or_else(
-                        |_| println!("[EVENT] No Receiver for: {msg:#?}")
+                        |_| event!("No Receiver for: {msg:#?}")
                     );
                 },
                 Err(err) => {
-                    println!("[ERROR] EventSource error: {err}");
+                    error!("EventSource error: {err}");
                     es.close();
                 },
             }
         }
-        println!("[FATAL] EventSource disconnected!");
+        fatal!("EventSource disconnected!");
     }
 
     /// Starts the supervisor loop to periodically call `update_observation`
@@ -98,7 +94,7 @@ impl Supervisor {
             100.0,
         );
         let mut pos_csv = if env::var("TRACK_MELVIN_POS").is_ok() {
-            println!("[LOG] Activated position tracking!");
+            log!("Activated position tracking!");
             Some(Writer::from_writer(std::fs::OpenOptions::new()
                 .create(true)
                 .write(true)
@@ -115,7 +111,7 @@ impl Supervisor {
         let mut last_vel = self.f_cont_lock.read().await.current_vel();
         let mut last_objective_check = Utc::now() - Self::OBJ_UPDATE_INTERVAL;
         let mut id_list: HashSet<usize> = HashSet::new();
-        println!("[INFO] Starting obs/obj supervisor loop!");
+        log!("Starting obs/obj supervisor loop!");
         loop {
             let mut f_cont = self.f_cont_lock.write().await;
             // Update observation and fetch new position
@@ -126,7 +122,7 @@ impl Supervisor {
                 let act_state = f_cont.state();
                 f_cont.one_time_safe();
                 next_safe += TimeDelta::seconds(5000);
-                println!("[INFO] One time safe mode activated Actual State was {act_state}!");
+                log!("One time safe mode activated Actual State was {act_state}!");
             }*/
             
             let current_pos = f_cont.current_pos();
@@ -159,13 +155,12 @@ impl Supervisor {
                     ]).expect("[FATAL] Could not write to csv file!");
                 }
                 /*
-                println!(
-                    "[INFO] Position tracking: Current: {current_pos}, \
+                info!("Position tracking: Current: {current_pos}, \
                     Expected: {expected_pos_wrapped}, Diff: {diff}");
                     */
                 // Check flight state and handle safe mode (placeholder for now)
                 if is_safe_trans {
-                    println!("[WARN] Unplanned Safe Mode Transition Detected! Notifying!");
+                    warn!("Unplanned Safe Mode Transition Detected! Notifying!");
                     self.safe_mon.notify_one();
                     self.f_cont_lock.write().await.safe_detected();
                 }

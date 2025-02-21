@@ -1,14 +1,11 @@
 use crate::flight_control::objective::beacon_objective::BeaconMeas;
 use crate::flight_control::objective::beacon_objective_done::BeaconObjectiveDone;
 use crate::http_handler::http_client::HTTPClient;
-use crate::{
-    flight_control::{
-        camera_state::CameraAngle, flight_computer::FlightComputer, flight_state::FlightState,
-        objective::beacon_objective::BeaconObjective, orbit::IndexedOrbitPosition,
-        task::switch_state_task::SwitchStateTask,
-    },
-    mode_control::mode_context::ModeContext,
-};
+use crate::{event, fatal, flight_control::{
+    camera_state::CameraAngle, flight_computer::FlightComputer, flight_state::FlightState,
+    objective::beacon_objective::BeaconObjective, orbit::IndexedOrbitPosition,
+    task::switch_state_task::SwitchStateTask,
+}, log, mode_control::mode_context::ModeContext, obj, warn};
 use chrono::{DateTime, TimeDelta, Utc};
 use regex::Regex;
 use std::collections::HashMap;
@@ -149,11 +146,10 @@ impl BaseMode {
         };
         let fixed_ranges =
             IndexedOrbitPosition::map_ranges(&ranges, o_ch_clone.i_entry().period() as isize);
-        print!("[INFO] Marking done: {} - {}", ranges[0].0, ranges[0].1);
-        if let Some(r) = ranges.get(1) {
-            print!(" and {} - {}", r.0, r.1);
-        }
-        println!();
+        let and = if let Some(r) = ranges.get(1) {
+            format!(" and {} - {}", r.0, r.1)
+        } else {String::new()};
+        log!("Marking done: {} - {}{and}", ranges[0].0, ranges[0].1);
         let k_loc = Arc::clone(context.k());
         tokio::spawn(async move {
             let c_orbit_lock = k_loc.c_orbit();
@@ -179,10 +175,10 @@ impl BaseMode {
                     if let Some((id, d_noisy)) = extract_id_and_d(val.as_str()) {
                         let pos = context.k().f_cont().read().await.current_pos();
                         let meas = BeaconMeas::new(id, pos, d_noisy);
-                        println!("[INFO] Received BO measurement: {val:#?}");
-                        println!("[INFO] Position was: {pos}.");
+                        obj!("Received BO measurement: {val:#?}");
+                        obj!("Position was: {pos}.");
                         if let Some(obj) = b_o.lock().await.get_mut(&id) {
-                            println!("[LOG] Updating BO {id} and prolonging!");
+                            obj!("Updating BO {id} and prolonging!");
                             obj.append_measurement(meas);
                             sleep_fut.set(tokio::time::sleep_until(Instant::now() + Self::BO_MSG_COMM_PROLONG)); // Reset timeout
                             // TODO: these checks shouldnt be here
@@ -192,12 +188,12 @@ impl BaseMode {
                             }
                         }
                     } else {
-                        println!("[WARN] Message has unknown format. Ignoring.");
+                        event!("Message has unknown format. Ignoring.");
                     }
                 },
                 // If the timeout expires, exit
                 () = &mut sleep_fut => {
-                    println!("[LOG] Comms Timeout reached after {}. Stopping listener.",
+                    log!("Comms Timeout reached after {}. Stopping listener.",
                     (Utc::now() - start).num_seconds());
                     return;
                 },
@@ -256,13 +252,13 @@ impl BaseMode {
                         BaseWaitExitSignal::Continue
                     })
                 } else {
-                    println!("[INFO] No known Beacon Objectives. Waiting!");
+                    warn!("No known Beacon Objectives. Waiting!");
                     def
                 }
 
             },
             _ => {
-                panic!("[FATAL] Illegal state ({current_state})!")
+                fatal!("Illegal state ({current_state})!")
             }
         };
         tokio::spawn(task_fut)
@@ -279,14 +275,14 @@ impl BaseMode {
                 };
                 let k_clone = Arc::clone(context.k());
                 tokio::spawn(async move {
-                    k_clone.c_cont().create_full_snapshot().await.expect("[WARN] Export failed!");
+                    k_clone.c_cont().create_full_snapshot().await.expect("Export failed!");
                 });
                 join_handle.await;
             }
             FlightState::Comms => {}
             _ => match self {
                 BaseMode::MappingMode => {
-                    panic!("[FATAL] Illegal target state!")
+                    fatal!("Illegal target state!")
                 }
                 BaseMode::BeaconObjectiveScanningMode(_) => {
                     FlightComputer::set_state_wait(context.k().f_cont(), FlightState::Comms).await;
@@ -347,20 +343,18 @@ impl BaseMode {
         let mut not_done_obj_m = HashMap::new();
         let mut b_o_map_lock = b_o_map.lock().await;
         for obj in b_o_map_lock.drain() {
-            if obj.1.end() > Utc::now() + Self:: BEACON_OBJ_RETURN_MIN_DELAY{
+            if obj.1.end() < Utc::now() + Self:: BEACON_OBJ_RETURN_MIN_DELAY{
                 let beac_done = BeaconObjectiveDone::from(obj.1);
-                
                 if beac_done.guesses().is_empty() {
-                    println!("[INFO] Found almost ending Beacon objective: ID {}. No guesses :(", obj.0);
+                    obj!("Found almost ending Beacon objective: ID {}. No guesses :(", obj.0);
                 }else {
                     done_obj.push(beac_done);
-                    println!("[INFO] Found almost ending Beacon objective: ID {}. Submitting this soon!", obj.0);
+                    obj!("Found almost ending Beacon objective: ID {}. Submitting this soon!", obj.0);
                 }
-                
             } else if let Some(meas) = obj.1.measurements() {
                 if meas.guess_estimate() < 10 {
                     done_obj.push(BeaconObjectiveDone::from(obj.1));
-                    println!("[INFO] Found finished Beacon objective: ID {}", obj.0);
+                    obj!("Found finished Beacon objective: ID {}", obj.0);
                 }
             } else {
                 not_done_obj_m.insert(obj.0, obj.1);

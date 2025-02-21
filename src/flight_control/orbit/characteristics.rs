@@ -6,6 +6,7 @@ use fixed::types::I32F32;
 use num::ToPrimitive;
 use tokio::sync::RwLock;
 use crate::flight_control::common::vec2d::Vec2D;
+use crate::info;
 
 /// Represents the characteristics of an orbital path including imaging frequency,
 /// orbital period, and the entry position. This struct provides utilities to initialize
@@ -74,8 +75,7 @@ impl OrbitCharacteristics {
     /// - `now`: The new `IndexedOrbitPosition` representing the current state.
     pub fn finish(&mut self, now_pos: Vec2D<I32F32>, rationale: &str) {
         let now = self.i_entry.new_from_pos(now_pos);
-        println!(
-            "[INFO] Finished Phase after: {}, due to: {rationale}",
+        info!("Finished Phase after: {}, due to: {rationale}",
             (now.t() - self.i_entry.t()).num_seconds()
         );
         self.i_entry = now;
