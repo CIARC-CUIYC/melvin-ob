@@ -48,7 +48,7 @@ impl BeaconObjectiveDone {
                     } else if msg.is_fail() {
                         continue 'outer;
                     }
-                    obj!("Uknown Message: {}! Returning!", msg.msg());
+                    obj!("Unknown Message: {}! Returning!", msg.msg());
                     return;
                 }
                 error!("Unnoticed HTTP Error in updateObservation()");

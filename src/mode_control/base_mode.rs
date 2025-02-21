@@ -5,7 +5,7 @@ use crate::{event, fatal, flight_control::{
     camera_state::CameraAngle, flight_computer::FlightComputer, flight_state::FlightState,
     objective::beacon_objective::BeaconObjective, orbit::IndexedOrbitPosition,
     task::switch_state_task::SwitchStateTask,
-}, log, mode_control::mode_context::ModeContext, obj, warn};
+}, info, log, mode_control::mode_context::ModeContext, obj, warn};
 use chrono::{DateTime, TimeDelta, Utc};
 use regex::Regex;
 use std::collections::HashMap;
@@ -313,6 +313,7 @@ impl BaseMode {
         cl: Arc<HTTPClient>,
     ) -> BaseWaitExitSignal {
         for b_o in b_o_done {
+            obj!("Submitting Beacon Objective: {}", b_o.id());
             b_o.guess_max(cl.clone()).await;
         }
         let empty = {
@@ -320,8 +321,10 @@ impl BaseMode {
             curr_lock.is_empty()
         };
         if empty {
+            info!("All Beacon Objectives done! Switching to Mapping Mode.");
             BaseWaitExitSignal::ReturnAllDone
         } else {
+            info!("There are still Beacon Objectives left. Waiting for them to finish!");
             BaseWaitExitSignal::ReturnSomeLeft
         }
     }
@@ -357,7 +360,9 @@ impl BaseMode {
                     obj!("Found almost ending Beacon objective: ID {}. Submitting this soon!", obj.0);
                 }
             } else if let Some(meas) = obj.1.measurements() {
-                if meas.guess_estimate() < 10 {
+                let min_guesses = meas.guess_estimate();
+                obj!("Beacon objective: ID {} has {} guesses.", obj.0, min_guesses);
+                if min_guesses < 10 {
                     done_obj.push(BeaconObjectiveDone::from(obj.1));
                     obj!("Found finished Beacon objective: ID {}", obj.0);
                 }
