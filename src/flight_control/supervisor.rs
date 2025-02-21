@@ -1,5 +1,5 @@
 use std::{collections::HashSet, env, sync::Arc};
-use chrono::{TimeDelta, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use csv::Writer;
 use crate::{error, event, fatal, flight_control::{
     common::vec2d::Vec2D,
@@ -21,7 +21,7 @@ pub struct Supervisor {
     safe_mon: Arc<Notify>,
     reset_pos_mon: Arc<Notify>,
     obj_mon: mpsc::Sender<ObjectiveBase>,
-    event_hub: watch::Sender<String>,
+    event_hub: watch::Sender<(DateTime<Utc>, String)>,
 }
 
 impl Supervisor {
@@ -34,7 +34,7 @@ impl Supervisor {
     /// Creates a new instance of `Supervisor`
     pub fn new(f_cont_lock: Arc<RwLock<FlightComputer>>) -> (Supervisor, Receiver<ObjectiveBase>) {
         let (tx, rx) = mpsc::channel(10);
-        let (event_send, _) = watch::channel(String::new());
+        let (event_send, _) = watch::channel((Utc::now(), String::new()));
         (
             Self {
                 f_cont_lock,
@@ -51,7 +51,7 @@ impl Supervisor {
 
     pub fn reset_pos_mon(&self) -> Arc<Notify> { Arc::clone(&self.reset_pos_mon) }
     
-    pub fn subscribe_event_hub(&self) -> watch::Receiver<String> { self.event_hub.subscribe() }
+    pub fn subscribe_event_hub(&self) -> watch::Receiver<(DateTime<Utc>, String)> { self.event_hub.subscribe() }
 
     pub async fn run_announcement_hub(&self) {
         let url = {
@@ -64,7 +64,7 @@ impl Supervisor {
                 Ok(Event::Open) => log!("EventSource connected!"),
                 Ok(Event::Message(msg)) => {
                     let msg_str = format!("{msg:#?}");
-                    self.event_hub.send(msg_str).unwrap_or_else(
+                    self.event_hub.send((Utc::now(), msg_str)).unwrap_or_else(
                         |_| event!("No Receiver for: {msg:#?}")
                     );
                 },
@@ -103,7 +103,7 @@ impl Supervisor {
                 .open("pos.csv").ok().unwrap()))
         } else {
             None
-        }; 
+        };
         // **********
         // TODO: pos monitoring in kalman filter + listening for reset_pos events
         let mut last_pos: Option<Vec2D<I32F32>> = None;

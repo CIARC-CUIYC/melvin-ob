@@ -1,21 +1,21 @@
 #[macro_export]
 macro_rules! info {
     ($($arg:tt)*) => {
-        println!("\x1b[32m[INFO]\x1b[0m {}", format!($($arg)*))
+        println!("\x1b[32m[INFO] \x1b[0m {}", format!($($arg)*))
     }
 }
 
 #[macro_export]
 macro_rules! log {
     ($($arg:tt)*) => {
-        println!("\x1b[33m[LOG]\x1b[0m {}", format!($($arg)*))
+        println!("\x1b[33m[LOG]  \x1b[0m {}", format!($($arg)*))
     }
 }
 
 #[macro_export]
 macro_rules! warn {
     ($($arg:tt)*) => {
-        println!("\x1b[35m[WARN]\x1b[0m {}", format!($($arg)*))
+        println!("\x1b[35m[WARN] \x1b[0m {}", format!($($arg)*))
     }
 }
 
@@ -36,7 +36,7 @@ macro_rules! fatal {
 #[macro_export]
 macro_rules! obj {
     ($($arg:tt)*) => {
-        println!("\x1b[1;34m[OBJ]\x1b[0m {}", format!($($arg)*))
+        println!("\x1b[1;34m[OBJ]  \x1b[0m {}", format!($($arg)*))
     }
 }
 

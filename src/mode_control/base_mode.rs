@@ -69,6 +69,7 @@ fn extract_id_and_d(input: &str) -> Option<(usize, f64)> {
 
 impl BaseMode {
     const DT_0_STD: std::time::Duration = std::time::Duration::from_secs(0);
+    const MAX_MSG_DT: chrono::Duration = chrono::Duration::milliseconds(300);
     const DEF_MAPPING_ANGLE: CameraAngle = CameraAngle::Narrow;
     const BO_MSG_COMM_PROLONG: std::time::Duration = std::time::Duration::from_secs(60);
     const MIN_COMM_DT: std::time::Duration = std::time::Duration::from_secs(60);
@@ -171,12 +172,14 @@ impl BaseMode {
             tokio::select! {
                 // Wait for a message
                 Ok(()) = event_rx.changed() => {
-                    let val = event_rx.borrow_and_update().clone();
+                    let (t, val) = event_rx.borrow_and_update().clone();
+                    if Utc::now() - t > Self::MAX_MSG_DT {
+                        warn!("BO Message should not be used. Too old.");
+                    }
                     if let Some((id, d_noisy)) = extract_id_and_d(val.as_str()) {
                         let pos = context.k().f_cont().read().await.current_pos();
                         let meas = BeaconMeas::new(id, pos, d_noisy);
-                        obj!("Received BO measurement: {val:#?}");
-                        obj!("Position was: {pos}.");
+                        obj!("Received BO measurement at {pos} for ID {id} with distance {d_noisy}.");
                         if let Some(obj) = b_o.lock().await.get_mut(&id) {
                             obj!("Updating BO {id} and prolonging!");
                             obj.append_measurement(meas);
@@ -186,9 +189,11 @@ impl BaseMode {
                             if o_meas.guess_estimate() < 10 {
                                 println!("{:?}", o_meas.pack_perfect_circles());
                             }
+                        } else {
+                            warn!("Unknown BO ID {id}. Ignoring!");
                         }
                     } else {
-                        event!("Message has unknown format. Ignoring.");
+                        event!("Message has unknown format {val:#?}. Ignoring.");
                     }
                 },
                 // If the timeout expires, exit

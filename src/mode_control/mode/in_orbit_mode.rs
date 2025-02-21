@@ -106,7 +106,7 @@ impl GlobalMode for InOrbitMode {
         } {
             let due_time = task.dt() - Utc::now();
             let task_type = task.task_type();
-            info!("ASK {tasks}: {task_type} in  {}s!", due_time.num_seconds());
+            info!("TASK {tasks}: {task_type} in  {}s!", due_time.num_seconds());
             let context_clone = Arc::clone(&context);
             match self.exec_task_wait(context_clone, task.dt()).await {
                 WaitExitSignal::Continue => {}
