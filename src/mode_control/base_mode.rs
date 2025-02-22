@@ -271,14 +271,18 @@ impl BaseMode {
             FlightState::Comms => {
                 if let Self::BeaconObjectiveScanningMode(b_o_arc) = self {
                     let clone = Arc::clone(b_o_arc);
-                    Box::pin(async move {
-                        Self::exec_comms(context, due, c_tok, clone).await;
-                        if Utc::now() > due + Self::MAX_COMM_PROLONG_RESCHEDULE {
-                            BaseWaitExitSignal::ReturnSomeLeft
-                        } else {
-                            BaseWaitExitSignal::Continue
-                        }
-                    })
+                    if let Some(obj) = Self::check_b_o_done(b_o_arc.clone()).await {
+                        Box::pin(async move { Self::handle_b_o_done(clone, obj, handler).await })
+                    } else {
+                        Box::pin(async move {
+                                Self::exec_comms(context, due, c_tok, clone).await;
+                                if Utc::now() > due + Self::MAX_COMM_PROLONG_RESCHEDULE {
+                                    BaseWaitExitSignal::ReturnSomeLeft
+                                } else {
+                                    BaseWaitExitSignal::Continue
+                                }
+                        })
+                    }
                 } else {
                     warn!("No known Beacon Objectives. Waiting!");
                     def
@@ -390,7 +394,8 @@ impl BaseMode {
                 continue;
             } else if let Some(meas) = obj.1.measurements() {
                 let min_guesses = meas.guess_estimate();
-                if min_guesses < 10 {
+                obj!("ID {} has {} min guesses.", obj.0, min_guesses);
+                if min_guesses < 15 {
                     let beac_done = BeaconObjectiveDone::from(obj.1);
                     obj!(
                         "Finished Beacon objective: ID {} has {} guesses.",
