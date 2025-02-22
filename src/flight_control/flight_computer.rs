@@ -21,6 +21,8 @@ use crate::{error, fatal, info, log};
 use fixed::types::{I32F32, I64F64};
 use num::{ToPrimitive, Zero};
 use std::{sync::Arc, time::Duration};
+use std::time::Instant;
+use chrono::{DateTime, TimeDelta, Utc};
 use tokio::sync::RwLock;
 
 type TurnsClockCClockTup = (
@@ -70,7 +72,7 @@ pub struct FlightComputer {
     /// Remaining fuel level for the satellite operations.
     fuel_left: I32F32,
     /// Timestamp marking the last observation update from the satellite.
-    last_observation_timestamp: chrono::DateTime<chrono::Utc>,
+    last_observation_timestamp: DateTime<Utc>,
     /// HTTP client for sending requests for satellite operations.
     request_client: Arc<http_client::HTTPClient>,
 }
@@ -122,7 +124,7 @@ impl FlightComputer {
             current_battery: I32F32::zero(),
             max_battery: I32F32::zero(),
             fuel_left: I32F32::zero(),
-            last_observation_timestamp: chrono::Utc::now(),
+            last_observation_timestamp: Utc::now(),
             request_client,
         };
         return_controller.update_observation().await;
@@ -187,7 +189,7 @@ impl FlightComputer {
         let y_const_x_change: Vec<(Vec2D<I32F32>, Vec2D<I32F32>)> = {
             let mut x_pos_vel = Vec::new();
             let step = Vec2D::new(step_x, I32F32::zero());
-            let i_last = (start_x / step_x).ceil().abs().to_i32().unwrap();
+            let i_last = (start_x / step_x).ceil().abs().to_num::<i32>();
             let mut next_pos = Vec2D::new(I32F32::zero(), I32F32::zero());
             let mut next_vel = init_vel + step;
             x_pos_vel.push((next_pos, next_vel));
@@ -207,7 +209,7 @@ impl FlightComputer {
         let x_const_y_change: Vec<(Vec2D<I32F32>, Vec2D<I32F32>)> = {
             let mut y_pos_vel = Vec::new();
             let step = Vec2D::new(I32F32::zero(), step_y);
-            let i_last = (start_y / step_y).ceil().abs().to_i32().unwrap();
+            let i_last = (start_y / step_y).ceil().abs().to_num::<i32>();
             let mut next_pos = Vec2D::new(I32F32::zero(), I32F32::zero());
             let mut next_vel = init_vel + step;
             y_pos_vel.push((next_pos, next_vel));
@@ -353,7 +355,7 @@ impl FlightComputer {
         F: Fn(&Self) -> bool,
     {
         log!("Waiting for condition: {rationale}");
-        let start_time = std::time::Instant::now();
+        let start_time = Instant::now();
         while start_time.elapsed().as_millis() < u128::from(timeout_millis) {
             let cond = { condition(&*locked_self.read().await) };
             if cond {
@@ -404,13 +406,11 @@ impl FlightComputer {
         let init_state = { locked_self.read().await.current_state };
         if new_state == init_state {
             log!("State already set to {new_state}");
-            return; // TODO: here an error should be returned or logged maybe???
+            return;
         } else if !Self::LEGAL_TARGET_STATES.contains(&new_state) {
             fatal!("State {new_state} is not a legal target state");
-            // return; // TODO: here an error should be returned or logged maybe???
         } else if init_state == FlightState::Transition {
             fatal!(" State cant be changed when in {init_state}");
-            // return; // TODO: here an error should be returned or logged or sth.
         }
         locked_self.write().await.target_state = Some(new_state);
         locked_self.read().await.set_state(new_state).await;
@@ -443,7 +443,7 @@ impl FlightComputer {
             fatal!("Velocity cant be changed in state {current_state}");
         }
         let vel_change_dt = Duration::from_secs_f32(
-            (new_vel.to(&current_vel).abs() / Self::ACC_CONST).to_f32().unwrap(),
+            (new_vel.to(&current_vel).abs() / Self::ACC_CONST).to_num::<f32>(),
         );
         locked_self.read().await.set_vel(new_vel).await;
 
@@ -474,7 +474,7 @@ impl FlightComputer {
         };
         if current_angle == new_angle {
             log!("Angle already set to {new_angle}");
-            return; // TODO: here an error should be logged or returned
+            return;
         }
         if current_state != FlightState::Acquisition {
             fatal!("Angle cant be changed in state {current_state}");
@@ -616,7 +616,7 @@ impl FlightComputer {
                 info!("Angle change commanded to {new_angle}");
                 return;
             }
-            error!("Unnoticed HTTP Error in setAngle()"); /* TODO: log error here */
+            error!("Unnoticed HTTP Error in setAngle()");
             tokio::time::sleep(Self::STD_REQUEST_DELAY).await;
         }
     }
@@ -680,7 +680,7 @@ impl FlightComputer {
     pub fn pos_in_dt(
         &self,
         now: IndexedOrbitPosition,
-        dt: chrono::TimeDelta,
+        dt: TimeDelta,
     ) -> IndexedOrbitPosition {
         let pos = self.current_pos
             + (self.current_vel * I32F32::from_num(dt.num_seconds())).wrap_around_map();
@@ -689,7 +689,7 @@ impl FlightComputer {
 
     pub fn batt_in_dt(
         &self,
-        dt: chrono::TimeDelta,
+        dt: TimeDelta,
     ) -> I32F32 {
         self.current_battery + (self.current_state.get_charge_rate() * I32F32::from_num(dt.num_seconds()))
     }

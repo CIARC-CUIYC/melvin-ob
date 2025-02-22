@@ -23,13 +23,11 @@ use crate::mode_control::{
 use chrono::TimeDelta;
 use fixed::types::I32F32;
 use std::{env, sync::Arc};
-use tokio::time::Instant;
 use std::time::Duration;
-use crate::http_handler::http_client::HTTPClient;
 
 const DT_MIN: TimeDelta = TimeDelta::seconds(5);
 const DT_0: TimeDelta = TimeDelta::seconds(0);
-const DT_0_STD: std::time::Duration = std::time::Duration::from_secs(0);
+const DT_0_STD: Duration = Duration::from_secs(0);
 const DETUMBLE_TOL: TimeDelta = DT_MIN;
 
 const STATIC_ORBIT_VEL: (I32F32, I32F32) = (I32F32::lit("6.40"), I32F32::lit("7.40"));
@@ -125,7 +123,6 @@ async fn handle_orbit_escape(
         let detumble_dt = PinnedTimeDelay::new(detumble_time_delta - DETUMBLE_TOL);
         log!("Orbit Escape done! Expected position {exp_pos}, Actual Position {current_pos}, Diff {diff}");
         // TODO: here we shouldn't use objective.get_imaging_points but something already created,
-        // TODO: also the mode change to global mode should happen sometime else
         let (vel, dev) =
             FlightComputer::evaluate_burn(k.f_cont(), burn, obj.get_imaging_points()[0]).await;
         TaskController::calculate_orbit_correction_burn(vel, dev, detumble_dt);

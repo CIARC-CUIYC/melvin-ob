@@ -1,3 +1,4 @@
+use chrono::{DateTime, TimeDelta, Utc};
 use crate::flight_control::common::vec2d::Vec2D;
 use fixed::types::I32F32;
 
@@ -5,7 +6,7 @@ use fixed::types::I32F32;
 #[derive(Debug, Copy, Clone)]
 pub struct IndexedOrbitPosition {
     /// The timestamp representing the current time of this position.
-    t: chrono::DateTime<chrono::Utc>,
+    t: DateTime<Utc>,
     /// The index representing the current index in the orbits `done`-box.
     index: usize,
     /// The 2D positional vector of this point in the orbit.
@@ -26,7 +27,7 @@ impl IndexedOrbitPosition {
     /// A new `IndexedOrbitPosition` instance with the current UTC time.
     pub fn new(index: usize, period: usize, pos: Vec2D<I32F32>) -> Self {
         Self {
-            t: chrono::Utc::now(),
+            t: Utc::now(),
             index,
             pos,
             period,
@@ -34,7 +35,7 @@ impl IndexedOrbitPosition {
     }
 
     /// Returns the timestamp of the position.
-    pub fn t(&self) -> chrono::DateTime<chrono::Utc> {
+    pub fn t(&self) -> DateTime<Utc> {
         self.t
     }
 
@@ -108,7 +109,7 @@ impl IndexedOrbitPosition {
     /// A new `IndexedOrbitPosition` instance with updated position and time.
     pub fn new_from_pos(&self, pos: Vec2D<I32F32>) -> Self {
         Self {
-            t: chrono::Utc::now(),
+            t: Utc::now(),
             index: self.index_now(),
             pos,
             period: self.period,
@@ -123,7 +124,7 @@ impl IndexedOrbitPosition {
     ///
     /// # Returns
     /// A new `IndexedOrbitPosition` instance with updated position and future timestamp.
-    pub fn new_from_future_pos(&self, pos: Vec2D<I32F32>, dt: chrono::TimeDelta) -> Self {
+    pub fn new_from_future_pos(&self, pos: Vec2D<I32F32>, dt: TimeDelta) -> Self {
         Self {
             t: self.t + dt,
             index: self.index_then(dt),
@@ -138,7 +139,7 @@ impl IndexedOrbitPosition {
     /// The current index in the orbit.
     #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
     fn index_now(&self) -> usize {
-        (self.index + (chrono::Utc::now() - self.t).num_seconds() as usize) % self.period
+        (self.index + (Utc::now() - self.t).num_seconds() as usize) % self.period
     }
 
     /// Calculates the index in the orbit for a given time offset.
@@ -149,7 +150,7 @@ impl IndexedOrbitPosition {
     /// # Returns
     /// The future index in the orbit.
     #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-    fn index_then(&self, dt: chrono::TimeDelta) -> usize {
+    fn index_then(&self, dt: TimeDelta) -> usize {
         (self.index + dt.num_seconds() as usize) % self.period
     }
 }

@@ -14,14 +14,14 @@ use crate::flight_control::{
 };
 use crate::{fatal, info, log};
 use bitvec::prelude::BitRef;
-use chrono::{DateTime, Utc};
 use fixed::types::I32F32;
-use num::{ToPrimitive, Zero};
+use num::Zero;
 use std::{
     collections::VecDeque,
     fmt::Debug,
     sync::{Arc, Condvar},
 };
+use chrono::{DateTime, TimeDelta, Utc};
 use tokio::sync::RwLock;
 
 /// `TaskController` manages and schedules tasks for MELVIN.
@@ -128,11 +128,11 @@ impl TaskController {
         let usable_batt_range = Self::MAX_BATTERY_THRESHOLD - Self::MIN_BATTERY_THRESHOLD;
         // Determine the maximum number of battery levels that can be represented.
         let max_battery =
-            (usable_batt_range / Self::BATTERY_RESOLUTION).round().to_usize().unwrap();
+            (usable_batt_range / Self::BATTERY_RESOLUTION).round().to_num::<usize>();
         // Determine the prediction duration in seconds, constrained by the orbit period or `dt` if provided.
         let prediction_secs = {
             let max_pred_secs =
-                Self::MAX_ORBIT_PREDICTION_SECS.min(orbit.period().0.to_u32().unwrap()) as usize;
+                Self::MAX_ORBIT_PREDICTION_SECS.min(orbit.period().0.to_num::<u32>()) as usize;
             if let Some(pred_secs) = dt {
                 // Ensure the prediction duration does not exceed the maximum prediction length or the provided duration.
                 max_pred_secs.min(pred_secs)
@@ -144,7 +144,7 @@ impl TaskController {
         // Retrieve a reordered iterator over the orbit's completion bitvector to optimize scheduling.
         let p_t_iter = orbit.get_p_t_reordered(
             p_t_shift,
-            orbit.period().0.to_usize().unwrap() - prediction_secs,
+            orbit.period().0.to_num::<usize>() - prediction_secs,
         );
         // Create a blank decision buffer and score grid for the orbit schedule calculation.
         let decision_buffer =
@@ -155,7 +155,7 @@ impl TaskController {
             if let Some(end) = end_status {
                 let end_batt_clamp = end.1.clamp(Self::MIN_BATTERY_THRESHOLD, Self::MAX_BATTERY_THRESHOLD);
                 let end_batt =
-                    (end_batt_clamp / Self::BATTERY_RESOLUTION).round().to_usize().unwrap();
+                    (end_batt_clamp / Self::BATTERY_RESOLUTION).round().to_num::<usize>();
                 let end_state = end.0 as usize;
                 let end_cast = (end_state, end_batt);
                 ScoreGrid::new_from_condition(max_battery + 1, states.len(), end_cast)
@@ -267,7 +267,7 @@ impl TaskController {
     ) -> (Vec<Vec2D<I32F32>>, i64, Vec2D<I32F32>) {
         let is_clockwise = initial_vel.is_clockwise_to(&deviation).unwrap_or(false);
 
-        let min_burn_sequence_time = chrono::TimeDelta::seconds(Self::DEF_MAX_BURN_SEQUENCE_TIME);
+        let min_burn_sequence_time = TimeDelta::seconds(Self::DEF_MAX_BURN_SEQUENCE_TIME);
         let mut max_acc_secs = 1;
         let mut best_burn_sequence = Vec::new();
         let mut best_min_dev = Vec2D::new(I32F32::MAX, I32F32::MAX);
@@ -291,7 +291,7 @@ impl TaskController {
 
             let x_vel_hold_dt = (remaining_deviation.x() / res_vel_diff.x()).floor();
             let y_vel_hold_dt = (remaining_deviation.y() / res_vel_diff.y()).floor();
-            let min_vel_hold_dt = x_vel_hold_dt.min(y_vel_hold_dt).to_i64().unwrap();
+            let min_vel_hold_dt = x_vel_hold_dt.min(y_vel_hold_dt).to_num::<i64>();
 
             if min_vel_hold_dt + max_acc_secs > (due - Utc::now()).num_seconds() {
                 continue;
@@ -307,7 +307,7 @@ impl TaskController {
                 max_y_dev.into(),
             );
             let res_dev_vec = Vec2D::from(res_dev);
-            let min_t_i64 = min_t.floor().to_i64().unwrap();
+            let min_t_i64 = min_t.floor().to_num::<i64>();
 
             if best_min_dev.abs() > res_dev_vec.abs() {
                 best_min_dev = res_dev_vec;
@@ -386,7 +386,7 @@ impl TaskController {
         for dt in (Self::OBJECTIVE_SCHEDULE_MIN_DT..max_dt).rev() {
             let pos = (curr_i.pos() + orbit_vel * I32F32::from_num(dt)).wrap_around_map();
             let to_target = pos.unwrapped_to(&target_pos);
-            let min_dt = (to_target.abs() / orbit_vel_abs).abs().round().to_usize().unwrap();
+            let min_dt = (to_target.abs() / orbit_vel_abs).abs().round().to_num::<usize>();
 
             if min_dt + dt < max_dt {
                 last_possible_dt = dt;
@@ -412,7 +412,7 @@ impl TaskController {
             // Calculate the next position and initialize the burn sequence
             let mut next_pos = (curr_i.pos() + orbit_vel * I32F32::from_num(dt)).wrap_around_map();
             let burn_sequence_i =
-                curr_i.new_from_future_pos(next_pos, chrono::TimeDelta::seconds(dt as i64));
+                curr_i.new_from_future_pos(next_pos, TimeDelta::seconds(dt as i64));
             let direction_vec = next_pos.unwrapped_to(&target_pos);
 
             // Skip iterations where the current velocity is too far off-target
@@ -444,7 +444,7 @@ impl TaskController {
 
                 let next_to_target = next_pos.unwrapped_to(&target_pos);
                 let min_dt =
-                    (next_to_target.abs() / next_vel.abs()).abs().round().to_usize().unwrap();
+                    (next_to_target.abs() / next_vel.abs()).abs().round().to_num::<usize>();
 
                 // Check if the maneuver exceeds the maximum allowed time
                 if min_dt + dt + add_dt > max_dt {
@@ -736,11 +736,10 @@ impl TaskController {
         let max_mapped = (max_batt / Self::BATTERY_RESOLUTION
             - min_batt / Self::BATTERY_RESOLUTION)
             .round()
-            .to_i32()
-            .unwrap();
+            .to_num::<i32>();
 
         // Map the current battery level into a discrete range.
-        let mut batt = ((batt_f32 - min_batt) / Self::BATTERY_RESOLUTION).to_usize().unwrap();
+        let mut batt = ((batt_f32 - min_batt) / Self::BATTERY_RESOLUTION).to_num::<usize>();
         let pred_secs = res.decisions.dt_len();
         let decisions = &res.decisions;
 
@@ -763,14 +762,14 @@ impl TaskController {
                 }
                 AtomicDecision::SwitchToCharge => {
                     // Schedule a state change to "Charge" with an appropriate time delay.
-                    let sched_t = base_t + chrono::TimeDelta::seconds(dt as i64);
+                    let sched_t = base_t + TimeDelta::seconds(dt as i64);
                     self.schedule_switch(FlightState::Charge, sched_t).await;
                     state = 0;
                     dt = (dt + 180).min(pred_secs); // Add a delay for the transition.
                 }
                 AtomicDecision::SwitchToAcquisition => {
                     // Schedule a state change to "Acquisition" with an appropriate time delay.
-                    let sched_t = base_t + chrono::TimeDelta::seconds(dt as i64);
+                    let sched_t = base_t + TimeDelta::seconds(dt as i64);
                     self.schedule_switch(FlightState::Acquisition, sched_t).await;
                     state = 1;
                     dt = (dt + 180).min(pred_secs); // Add a delay for the transition.

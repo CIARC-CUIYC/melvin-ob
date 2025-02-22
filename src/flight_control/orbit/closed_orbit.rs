@@ -5,7 +5,6 @@ use bitvec::{
     prelude::{BitBox, BitRef},
 };
 use fixed::types::I32F32;
-use num::ToPrimitive;
 use strum_macros::Display;
 
 /// Represents a closed orbit with a fixed period, image time information, and completion status.
@@ -51,7 +50,7 @@ impl ClosedOrbit {
                     base_orbit: try_orbit,
                     period,
                     max_image_dt,
-                    done: bitbox![usize, Lsb0; 0; period.0.to_usize().unwrap()],
+                    done: bitbox![usize, Lsb0; 0; period.0.to_num::<usize>()],
                 }),
             },
         }

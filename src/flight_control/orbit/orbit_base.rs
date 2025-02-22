@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use crate::flight_control::common::math::{gcd_fixed64, lcm_fixed64, MAX_DEC};
 use crate::flight_control::common::vec2d::MapSize;
 use crate::flight_control::{
@@ -14,7 +15,7 @@ use fixed::types::I32F32;
 /// Struct representing the base properties of an orbit.
 pub struct OrbitBase {
     /// The timestamp of the orbit initialization.
-    init_timestamp: chrono::DateTime<chrono::Utc>,
+    init_timestamp: DateTime<Utc>,
     /// The initial state of the flight.
     init_state: FlightState,
     /// The initial battery level of the flight computer.
@@ -40,20 +41,10 @@ impl OrbitBase {
     pub fn new(cont: &FlightComputer) -> Self {
         let vel = cont.current_vel();
         Self {
-            init_timestamp: chrono::Utc::now(),
+            init_timestamp: Utc::now(),
             init_state: cont.state(),
             init_battery: cont.current_battery(),
             fp: cont.current_pos(),
-            vel,
-        }
-    }
-
-    pub fn new_test(vel: Vec2D<I32F32>, state: FlightState, pos: Vec2D<I32F32>, batt: I32F32) -> Self {
-        Self {
-            init_timestamp: chrono::Utc::now(),
-            init_state: state,
-            init_battery: batt,
-            fp: pos,
             vel,
         }
     }
@@ -62,7 +53,7 @@ impl OrbitBase {
     ///
     /// # Returns
     /// - A `chrono::DateTime` with the UTC initialization timestamp.
-    pub fn start_timestamp(&self) -> chrono::DateTime<chrono::Utc> {
+    pub fn start_timestamp(&self) -> DateTime<Utc> {
         self.init_timestamp
     }
 

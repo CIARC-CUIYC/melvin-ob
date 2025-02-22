@@ -19,7 +19,7 @@ use crate::mode_control::{
 };
 use crate::{fatal, info, obj, warn};
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use std::time::Duration;
 use std::{future::Future, pin::Pin, sync::Arc};
 use tokio::task::JoinError;
@@ -32,7 +32,7 @@ pub struct InOrbitMode {
 
 impl InOrbitMode {
     const MODE_NAME: &'static str = "InOrbitMode";
-    const MAX_WAIT_DURATION: chrono::TimeDelta = chrono::TimeDelta::seconds(10);
+    const MAX_WAIT_TIMEDELTA: TimeDelta = TimeDelta::seconds(10);
 
     pub fn new() -> Self {
         Self {
@@ -146,7 +146,7 @@ impl GlobalMode for InOrbitMode {
         let mut obj_mon = context.obj_mon().write().await;
         let cancel_task = CancellationToken::new();
         let fut: Pin<Box<dyn Future<Output = Result<BaseWaitExitSignal, JoinError>> + Send>> =
-            if (due - Utc::now()) > Self::MAX_WAIT_DURATION {
+            if (due - Utc::now()) > Self::MAX_WAIT_TIMEDELTA {
                 Box::pin(self.base.get_wait(Arc::clone(&context), due, cancel_task.clone()).await)
             } else {
                 warn!("Task wait time too short. Just waiting!");

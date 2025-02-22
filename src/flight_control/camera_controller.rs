@@ -19,7 +19,6 @@ use fixed::types::I32F32;
 use futures::StreamExt;
 use image::{imageops::Lanczos3, ImageReader, RgbImage};
 use image::{GenericImageView, Pixel};
-use num::ToPrimitive;
 use std::{
     path::Path,
     {io::Cursor, sync::Arc},
@@ -152,7 +151,6 @@ impl CameraController {
         angle: CameraAngle,
     ) -> Result<Vec2D<u32>, Box<dyn std::error::Error + Send + Sync>> {
         let (position, collected_png) = {
-            // TODO: it should be tested if this could be a read lock as well (by not calling update_observation, but current_pos())
             let mut f_cont = f_cont_locked.write().await;
             let ((), collected_png) =
                 tokio::join!(f_cont.update_observation(), self.fetch_image_data());
@@ -418,7 +416,7 @@ impl CameraController {
         let pic_count_lock = Arc::new(Mutex::new(pic_count));
         let mut done_ranges: Vec<(isize, isize)> = Vec::new();
         let overlap = {
-            let overlap_dt = (image_max_dt.floor() / I32F32::lit("2.0")).to_isize().unwrap();
+            let overlap_dt = (image_max_dt.floor() / I32F32::lit("2.0")).to_num::<isize>();
             TimeDelta::seconds(overlap_dt as i64)
         };
         let mut last_mark = (
@@ -455,7 +453,7 @@ impl CameraController {
 
             let mut next_img_due = {
                 let next_max_dt =
-                    Utc::now() + TimeDelta::seconds(image_max_dt.to_i64().unwrap());
+                    Utc::now() + TimeDelta::seconds(image_max_dt.to_num::<i64>());
                 if next_max_dt > end_time {
                     last_image_flag = true;
                     end_time

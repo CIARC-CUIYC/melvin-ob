@@ -9,7 +9,7 @@ use crate::{
     http_handler::http_request::{
         objective_list_get::ObjectiveListRequest, request_common::NoBodyHTTPRequestType,
     },
-    info, log, warn,
+    log, warn,
 };
 use chrono::{DateTime, TimeDelta, Utc};
 use csv::Writer;
@@ -17,6 +17,7 @@ use fixed::types::I32F32;
 use futures::StreamExt;
 use reqwest_eventsource::{Event, EventSource};
 use std::{collections::HashSet, env, sync::Arc};
+use std::time::Duration;
 use tokio::sync::{broadcast, mpsc, mpsc::Receiver, Notify, RwLock};
 use tokio::time::Instant;
 
@@ -30,7 +31,7 @@ pub struct Supervisor {
 
 impl Supervisor {
     /// Constant update interval for observation updates in the `run()` method
-    const OBS_UPDATE_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+    const OBS_UPDATE_INTERVAL: Duration = Duration::from_millis(500);
     /// Constant update interval for objective updates in the `run()` method
     const OBJ_UPDATE_INTERVAL: TimeDelta = TimeDelta::seconds(300);
     /// Constant minimum time delta to the objective start for sending the objective to `main`

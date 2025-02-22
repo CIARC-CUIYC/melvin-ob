@@ -6,21 +6,22 @@ use crate::http_handler::http_request::beacon_position_put::BeaconPositionReques
 use crate::http_handler::http_request::request_common::NoBodyHTTPRequestType;
 use fixed::types::I32F32;
 use std::sync::Arc;
+use chrono::{DateTime, Utc};
 use crate::{error, obj};
 
 pub struct BeaconObjectiveDone {
     id: usize,
     name: String,
-    start: chrono::DateTime<chrono::Utc>,
-    end: chrono::DateTime<chrono::Utc>,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
     guesses: Vec<Vec2D<I32F32>>,
 }
 
 impl BeaconObjectiveDone {
     pub fn id(&self) -> usize { self.id }
     pub fn name(&self) -> &str { &self.name }
-    pub fn start(&self) -> chrono::DateTime<chrono::Utc> { self.start }
-    pub fn end(&self) -> chrono::DateTime<chrono::Utc> { self.end }
+    pub fn start(&self) -> DateTime<Utc> { self.start }
+    pub fn end(&self) -> DateTime<Utc> { self.end }
     pub fn guesses(&self) -> &Vec<Vec2D<I32F32>> { &self.guesses }
 
     #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]

@@ -17,6 +17,7 @@ use regex::Regex;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 use std::{future::Future, pin::Pin, sync::Arc};
+use std::time::Duration;
 use strum_macros::Display;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
@@ -75,14 +76,14 @@ fn extract_id_and_d(input: &str) -> Option<(usize, f64)> {
 }
 
 impl BaseMode {
-    const DT_0_STD: std::time::Duration = std::time::Duration::from_secs(0);
-    const MAX_MSG_DT: chrono::Duration = chrono::Duration::milliseconds(300);
+    const DT_0_STD: Duration = Duration::from_secs(0);
+    const MAX_MSG_DT: TimeDelta = TimeDelta::milliseconds(300);
     const DEF_MAPPING_ANGLE: CameraAngle = CameraAngle::Narrow;
-    const BO_MSG_COMM_PROLONG_STD: std::time::Duration = std::time::Duration::from_secs(60);
+    const BO_MSG_COMM_PROLONG_STD: Duration = Duration::from_secs(60);
     const BO_MSG_COMM_PROLONG: TimeDelta = TimeDelta::seconds(60);
-    const MIN_COMM_DT: std::time::Duration = std::time::Duration::from_secs(60);
-    const MAX_COMM_INTERVAL: std::time::Duration = std::time::Duration::from_secs(500);
-    const MAX_COMM_PROLONG_RESCHEDULE: chrono::TimeDelta = chrono::Duration::seconds(2);
+    const MIN_COMM_DT: Duration = Duration::from_secs(60);
+    const MAX_COMM_INTERVAL: Duration = Duration::from_secs(500);
+    const MAX_COMM_PROLONG_RESCHEDULE: TimeDelta = TimeDelta::seconds(2);
     
     #[allow(clippy::cast_possible_wrap)]
     pub async fn exec_map(
@@ -193,7 +194,7 @@ impl BaseMode {
                         let (pos, res_batt) = {
                             let f_cont = context.k().f_cont();
                             let lock = f_cont.read().await;
-                            (lock.current_pos().clone(), lock.batt_in_dt(Self::BO_MSG_COMM_PROLONG))
+                            (lock.current_pos(), lock.batt_in_dt(Self::BO_MSG_COMM_PROLONG))
                         };
                         let msg_delay = Utc::now() - t;
                         let meas = BeaconMeas::new(id, pos, d_noisy, msg_delay);

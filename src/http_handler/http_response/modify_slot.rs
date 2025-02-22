@@ -1,10 +1,11 @@
+use chrono::{DateTime, Utc};
 use crate::http_handler::http_response::response_common::SerdeJSONBodyHTTPResponseType;
 
 #[derive(serde::Deserialize, Debug)]
 pub struct ModifySlotResponse {
     id: usize,
-    start: chrono::DateTime<chrono::Utc>,
-    end: chrono::DateTime<chrono::Utc>,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
     enabled: bool,
 }
 

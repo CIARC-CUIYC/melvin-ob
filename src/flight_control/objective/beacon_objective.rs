@@ -1,7 +1,7 @@
 use crate::flight_control::common::bayesian_set::BayesianSet;
 use crate::flight_control::common::vec2d::Vec2D;
 use crate::STATIC_ORBIT_VEL;
-use chrono::TimeDelta;
+use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use std::cmp::Ordering;
 
@@ -37,8 +37,8 @@ impl BeaconMeas {
 pub struct BeaconObjective {
     id: usize,
     name: String,
-    start: chrono::DateTime<chrono::Utc>,
-    end: chrono::DateTime<chrono::Utc>,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
     measurements: Option<BayesianSet>,
 }
 
@@ -46,8 +46,8 @@ impl BeaconObjective {
     pub fn new(
         id: usize,
         name: String,
-        start: chrono::DateTime<chrono::Utc>,
-        end: chrono::DateTime<chrono::Utc>,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
     ) -> Self {
         Self {
             id,
@@ -59,8 +59,8 @@ impl BeaconObjective {
     }
     pub fn id(&self) -> usize { self.id }
     pub fn name(&self) -> &str { &self.name }
-    pub fn start(&self) -> chrono::DateTime<chrono::Utc> { self.start }
-    pub fn end(&self) -> chrono::DateTime<chrono::Utc> { self.end }
+    pub fn start(&self) -> DateTime<Utc> { self.start }
+    pub fn end(&self) -> DateTime<Utc> { self.end }
     pub fn measurements(&self) -> Option<&BayesianSet> { self.measurements.as_ref() }
     pub fn append_measurement(&mut self, meas: BeaconMeas) {
         if let Some(meas_set) = &mut self.measurements {

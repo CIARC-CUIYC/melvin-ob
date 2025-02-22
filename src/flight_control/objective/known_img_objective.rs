@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use chrono::{DateTime, Utc};
 use crate::flight_control::camera_state::CameraAngle;
 use crate::flight_control::common::vec2d::Vec2D;
 use crate::http_handler::{ImageObjective, ZoneType};
@@ -9,8 +10,8 @@ use num::ToPrimitive;
 pub struct KnownImgObjective {
     id: usize,
     name: String,
-    start: chrono::DateTime<chrono::Utc>,
-    end: chrono::DateTime<chrono::Utc>,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
     zone: [i32; 4],
     optic_required: CameraAngle,
     coverage_required: f32,
@@ -20,8 +21,8 @@ impl KnownImgObjective {
     pub fn new(
         id: usize,
         name: String,
-        start: chrono::DateTime<chrono::Utc>,
-        end: chrono::DateTime<chrono::Utc>,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
         zone: [i32; 4],
         optic_required: CameraAngle,
         coverage_required: f32,
@@ -30,7 +31,7 @@ impl KnownImgObjective {
     }
 
     pub fn id(&self) -> usize { self.id }
-    pub fn end(&self) -> chrono::DateTime<chrono::Utc> { self.end }
+    pub fn end(&self) -> DateTime<Utc> { self.end }
     pub fn name(&self) -> &str { &self.name }
     pub fn zone(&self) -> [i32; 4] { self.zone }
     pub fn optic_required(&self) -> CameraAngle { self.optic_required }

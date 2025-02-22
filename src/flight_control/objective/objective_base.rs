@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use crate::flight_control::camera_state::CameraAngle;
 use crate::flight_control::objective::objective_type::ObjectiveType;
 use crate::http_handler::{BeaconObjective, ImageObjective, ZoneType};
@@ -6,16 +7,16 @@ use crate::http_handler::{BeaconObjective, ImageObjective, ZoneType};
 pub struct ObjectiveBase {
     id: usize,
     name: String,
-    start: chrono::DateTime<chrono::Utc>,
-    end: chrono::DateTime<chrono::Utc>,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
     obj_type: ObjectiveType,
 }
 
 impl ObjectiveBase {
     pub fn id(&self) -> usize { self.id }
     pub fn name(&self) -> &str { &self.name }
-    pub fn start(&self) -> chrono::DateTime<chrono::Utc> { self.start }
-    pub fn end(&self) -> chrono::DateTime<chrono::Utc> { self.end }
+    pub fn start(&self) -> DateTime<Utc> { self.start }
+    pub fn end(&self) -> DateTime<Utc> { self.end }
     pub fn obj_type(&self) -> &ObjectiveType { &self.obj_type }
 }
 
