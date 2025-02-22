@@ -118,7 +118,7 @@ impl GlobalMode for InOrbitMode {
                         return opt;
                     };
                 }
-                WaitExitSignal::BODoneEvent(sig) => return self.b_o_done_handler(sig).await,
+                WaitExitSignal::BODoneEvent(sig) => return self.b_o_done_handler(context, sig).await,
             };
             let context_clone = Arc::clone(&context);
             match self.exec_task(context_clone, task).await {
@@ -263,13 +263,23 @@ impl GlobalMode for InOrbitMode {
         }
     }
 
-    async fn b_o_done_handler(&self, b_sig: BaseWaitExitSignal) -> OpExitSignal {
+    async fn b_o_done_handler(&self, context: Arc<ModeContext>, b_sig: BaseWaitExitSignal) -> OpExitSignal {
         match b_sig {
             BaseWaitExitSignal::Continue => OpExitSignal::Continue,
-            BaseWaitExitSignal::ReturnAllDone => OpExitSignal::ReInit(Box::new(Self {
-                base: BaseMode::MappingMode,
-            })),
-            BaseWaitExitSignal::ReturnSomeLeft => OpExitSignal::ReInit(Box::new(self.clone())),
+            BaseWaitExitSignal::ReturnAllDone => {
+                context.o_ch_lock().write().await.finish(
+                    context.k().f_cont().read().await.current_pos(),
+                    self.bo_done_rationale(),
+                );
+                OpExitSignal::ReInit(Box::new(Self {base: BaseMode::MappingMode}))
+            },
+            BaseWaitExitSignal::ReturnSomeLeft => {
+                context.o_ch_lock().write().await.finish(
+                    context.k().f_cont().read().await.current_pos(),
+                    self.bo_left_rationale(),
+                );
+                OpExitSignal::ReInit(Box::new(self.clone()))
+            },
         }
     }
 
