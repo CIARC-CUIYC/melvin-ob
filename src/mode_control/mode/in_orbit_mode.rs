@@ -159,21 +159,33 @@ impl GlobalMode for InOrbitMode {
                 })
             };
         tokio::select! {
-                exit_sig = fut => {
-                    let sig = exit_sig.expect("[FATAL] Task wait hung up!");
-                    match sig {
-                        BaseWaitExitSignal::Continue => WaitExitSignal::Continue,
-                        sig => WaitExitSignal::BODoneEvent(sig)
+            exit_sig = fut => {
+                let sig = exit_sig.expect("[FATAL] Task wait hung up!");
+                match sig {
+                    BaseWaitExitSignal::Continue => WaitExitSignal::Continue,
+                    sig => WaitExitSignal::BODoneEvent(sig)
+                }
+            },
+            () = safe_mon.notified() => {
+                cancel_task.cancel();
+                WaitExitSignal::SafeEvent
+            },
+            obj = async {
+                // TODO: later we shouldnt block zoned objectives anymore
+                while let Some(msg) = obj_mon.recv().await {
+                    match msg.obj_type() {
+                        ObjectiveType::Beacon { .. } => {
+                            return WaitExitSignal::NewObjectiveEvent(msg);
+                        },
+                        ObjectiveType::KnownImage { .. } => {
+                            continue;
+                        }
                     }
-                },
-                () = safe_mon.notified() => {
-                        cancel_task.cancel();
-                        WaitExitSignal::SafeEvent
-                },
-                obj = obj_mon.recv() => {
-                    cancel_task.cancel();
-                   let unwrapped_obj = obj.expect("[FATAL] Objective monitor hung up!");
-                    WaitExitSignal::NewObjectiveEvent(unwrapped_obj)
+                }
+                fatal!("Objective monitor hung up!")
+                } => {
+                cancel_task.cancel();
+                obj
             }
         }
     }
@@ -206,10 +218,6 @@ impl GlobalMode for InOrbitMode {
         context: Arc<ModeContext>,
         obj: ObjectiveBase,
     ) -> Option<OpExitSignal> {
-        context.o_ch_lock().write().await.finish(
-            context.k().f_cont().read().await.current_pos(),
-            self.new_bo_rationale(),
-        );
         match obj.obj_type() {
             ObjectiveType::Beacon { .. } => {
                 let b_obj = BeaconObjective::new(
@@ -220,6 +228,10 @@ impl GlobalMode for InOrbitMode {
                 );
                 obj!("Found new Beacon Objective {}!", obj.id());
                 let base = self.base.handle_b_o(&context, b_obj).await;
+                context.o_ch_lock().write().await.finish(
+                    context.k().f_cont().read().await.current_pos(),
+                    self.new_bo_rationale(),
+                );
                 Some(OpExitSignal::ReInit(Box::new(Self { base })))
             }
             ObjectiveType::KnownImage {
@@ -236,6 +248,10 @@ impl GlobalMode for InOrbitMode {
                     *zone,
                     *optic_required,
                     *coverage_required,
+                );
+                context.o_ch_lock().write().await.finish(
+                    context.k().f_cont().read().await.current_pos(),
+                    self.new_zo_rationale(),
                 );
                 // TODO: return ZonedObjectivePrepMode
                 None

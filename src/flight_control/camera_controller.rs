@@ -439,7 +439,7 @@ impl CameraController {
                             *lock += 1;
                             *lock
                         };
-                        info!("Took {pic_num}. picture in cycle at {}. Processed for {}s. Position was {}",
+                        info!("Took {pic_num:02}. picture in cycle at {}. Processed for {}s. Position was {}",
                             img_init_timestamp.format("%d. %H:%M:%S"),
                             (Utc::now() - img_init_timestamp).num_seconds(),
                             offset

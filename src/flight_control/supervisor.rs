@@ -66,7 +66,7 @@ impl Supervisor {
         let mut es = EventSource::get(url + "/announcements");
         while let Some(event) = es.next().await {
             match event {
-                Ok(Event::Open) => log!("EventSource connected!"),
+                Ok(Event::Open) => log!("Event Supervisor loop started!"),
                 Ok(Event::Message(msg)) => {
                     let msg_str = format!("{msg:#?}");
                     if self.event_hub.send((Utc::now(), msg_str)).is_err() {
