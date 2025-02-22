@@ -90,6 +90,7 @@ impl FlightComputer {
     const TO_SAFE_SLEEP: Duration = Duration::from_secs(60);
     /// Minimum battery used in decision-making for after safe transition
     const AFTER_SAFE_MIN_BATT: I32F32 = I32F32::lit("50");
+    const EXIT_SAFE_MIN_BATT: I32F32 = I32F32::lit("1.0");
     /// Constant minimum delay between requests
     pub(crate) const STD_REQUEST_DELAY: Duration = Duration::from_millis(100);
     /// Legal Target States for State Change
@@ -378,12 +379,19 @@ impl FlightComputer {
         };
         info!("Safe Mode Runtime initiated. Transitioning back to {target_state} asap.");
         Self::wait_for_duration(Self::TO_SAFE_SLEEP).await;
-        let cond = (
+        let cond_not_trans = (
             // TODO: later this condition must be == FlightState::Safe
             |cont: &FlightComputer| cont.state() != FlightState::Transition,
             format!("State is not {}", FlightState::Transition),
         );
-        Self::wait_for_condition(&locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
+        Self::wait_for_condition(&locked_self, cond_not_trans, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
+        let cond_min_charge = (
+            |cont: &FlightComputer| cont.current_battery() >= Self::EXIT_SAFE_MIN_BATT,
+            format!("Battery level is higher than {}", Self::EXIT_SAFE_MIN_BATT),
+        );
+        Self::wait_for_condition(
+            &locked_self, cond_min_charge, 15000, Self::DEF_COND_PI,
+        ).await;
         Self::set_state_wait(locked_self, target_state).await;
     }
 
