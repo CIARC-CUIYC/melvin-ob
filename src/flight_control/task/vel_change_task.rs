@@ -2,9 +2,9 @@ use crate::flight_control::orbit::BurnSequence;
 
 #[derive(Debug, Copy, Clone)]
 pub enum VelocityChangeTaskRationale {
-    CorrectionalChange,
-    OrbitEscapeChange,
-    OrbitEnterChange,
+    Correctional,
+    OrbitEscape,
+    OrbitEnter,
 }
 
 /// Represents a task for executing a velocity change, using a burn sequence.

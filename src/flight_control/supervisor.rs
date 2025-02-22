@@ -1,34 +1,38 @@
-use std::{collections::HashSet, sync::Arc};
-use chrono::{TimeDelta, Utc};
-use crate::{
-    flight_control::{
-        common::vec2d::Vec2D,
-        flight_computer::FlightComputer,
-        flight_state::FlightState,
-        objective::{
-            objective_base::ObjectiveBase,
-        },
-    },
-    http_handler::http_request::{objective_list_get::ObjectiveListRequest, request_common::NoBodyHTTPRequestType},
+use crate::flight_control::{
+    common::vec2d::Vec2D,
+    flight_computer::FlightComputer,
+    flight_state::FlightState,
+    objective::{known_img_objective::KnownImgObjective, objective_base::ObjectiveBase},
 };
+use crate::http_handler::{
+    http_request::{
+        objective_list_get::ObjectiveListRequest, request_common::NoBodyHTTPRequestType,
+    },
+    ZoneType,
+};
+use crate::{error, event, fatal, log, warn};
+use chrono::{DateTime, TimeDelta, Utc};
+use csv::Writer;
 use fixed::types::I32F32;
 use futures::StreamExt;
 use reqwest_eventsource::{Event, EventSource};
-use tokio::sync::{mpsc, mpsc::Receiver, watch, Notify, RwLock};
-use crate::flight_control::objective::known_img_objective::KnownImgObjective;
-use crate::http_handler::ZoneType;
+use std::{collections::HashSet, env, sync::Arc, time::Duration};
+use tokio::{
+    sync::{broadcast, mpsc, mpsc::Receiver, Notify, RwLock},
+    time::Instant,
+};
 
 pub struct Supervisor {
     f_cont_lock: Arc<RwLock<FlightComputer>>,
     safe_mon: Arc<Notify>,
     reset_pos_mon: Arc<Notify>,
     obj_mon: mpsc::Sender<ObjectiveBase>,
-    event_hub: watch::Sender<String>,
+    event_hub: broadcast::Sender<(DateTime<Utc>, String)>,
 }
 
 impl Supervisor {
     /// Constant update interval for observation updates in the `run()` method
-    const OBS_UPDATE_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+    const OBS_UPDATE_INTERVAL: Duration = Duration::from_millis(500);
     /// Constant update interval for objective updates in the `run()` method
     const OBJ_UPDATE_INTERVAL: TimeDelta = TimeDelta::seconds(300);
     /// Constant minimum time delta to the objective start for sending the objective to `main`
@@ -36,7 +40,7 @@ impl Supervisor {
     /// Creates a new instance of `Supervisor`
     pub fn new(f_cont_lock: Arc<RwLock<FlightComputer>>) -> (Supervisor, Receiver<ObjectiveBase>) {
         let (tx, rx) = mpsc::channel(10);
-        let (event_send, _) = watch::channel(String::new());
+        let (event_send, _) = broadcast::channel(10);
         (
             Self {
                 f_cont_lock,
@@ -52,32 +56,33 @@ impl Supervisor {
     pub fn safe_mon(&self) -> Arc<Notify> { Arc::clone(&self.safe_mon) }
 
     pub fn reset_pos_mon(&self) -> Arc<Notify> { Arc::clone(&self.reset_pos_mon) }
-    
-    pub fn subscribe_event_hub(&self) -> watch::Receiver<String> { self.event_hub.subscribe() }
+
+    pub fn subscribe_event_hub(&self) -> broadcast::Receiver<(DateTime<Utc>, String)> {
+        self.event_hub.subscribe()
+    }
 
     pub async fn run_announcement_hub(&self) {
         let url = {
             let client = self.f_cont_lock.read().await.client();
             client.url().to_string()
         };
-        println!("[INFO] Starting announcement supervisor loop!");
         let mut es = EventSource::get(url + "/announcements");
         while let Some(event) = es.next().await {
             match event {
-                Ok(Event::Open) => println!("[INFO] EventSource connected!"),
+                Ok(Event::Open) => log!("Starting event supervisor loop!"),
                 Ok(Event::Message(msg)) => {
                     let msg_str = format!("{msg:#?}");
-                    self.event_hub.send(msg_str).unwrap_or_else(
-                        |_| println!("[EVENT] No Receiver for: {msg:#?}")
-                    );
-                },
+                    if self.event_hub.send((Utc::now(), msg_str)).is_err() {
+                        event!("No Receiver for: {msg:#?}");
+                    }
+                }
                 Err(err) => {
-                    println!("[ERROR] EventSource error: {err}");
+                    error!("EventSource error: {err}");
                     es.close();
-                },
+                }
             }
         }
-        println!("[FATAL] EventSource disconnected!");
+        fatal!("EventSource disconnected!");
     }
 
     /// Starts the supervisor loop to periodically call `update_observation`
@@ -90,12 +95,27 @@ impl Supervisor {
         let debug_objective = KnownImgObjective::new(
             0,
             "Test Objective".to_string(),
-            chrono::Utc::now(),
-            chrono::Utc::now() + TimeDelta::hours(7),
+            Utc::now(),
+            Utc::now() + TimeDelta::hours(7),
             [4750, 5300, 5350, 5900],
             "narrow".into(),
             100.0,
         );
+        let mut pos_csv = if env::var("TRACK_MELVIN_POS").is_ok() {
+            log!("Activated position tracking!");
+            Some(Writer::from_writer(
+                std::fs::OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .read(true)
+                    .truncate(true)
+                    .open("pos.csv")
+                    .ok()
+                    .unwrap(),
+            ))
+        } else {
+            None
+        };
         // **********
         // TODO: pos monitoring in kalman filter + listening for reset_pos events
         let mut last_pos: Option<Vec2D<I32F32>> = None;
@@ -103,20 +123,20 @@ impl Supervisor {
         let mut last_vel = self.f_cont_lock.read().await.current_vel();
         let mut last_objective_check = Utc::now() - Self::OBJ_UPDATE_INTERVAL;
         let mut id_list: HashSet<usize> = HashSet::new();
-        println!("[INFO] Starting obs/obj supervisor loop!");
+        log!("Starting obs/obj supervisor loop!");
         loop {
             let mut f_cont = self.f_cont_lock.write().await;
             // Update observation and fetch new position
             f_cont.update_observation().await;
-            
+            let last_update = Instant::now();
             /*
             if Utc::now() > next_safe {
                 let act_state = f_cont.state();
                 f_cont.one_time_safe();
                 next_safe += TimeDelta::seconds(5000);
-                println!("[INFO] One time safe mode activated Actual State was {act_state}!");
+                log!("One time safe mode activated Actual State was {act_state}!");
             }*/
-            
+
             let current_pos = f_cont.current_pos();
             let current_vel = f_cont.current_vel();
             let is_safe_trans = {
@@ -136,14 +156,25 @@ impl Supervisor {
                 let expected_pos_wrapped = expected_pos.wrap_around_map();
                 // TODO: this diff value should also consider wrapping (if actual pos wrapped, but expected didnt)
                 let diff = current_pos - expected_pos_wrapped;
+                if let Some(write) = pos_csv.as_mut() {
+                    write
+                        .write_record(&[
+                            current_pos.x().to_string(),
+                            current_pos.y().to_string(),
+                            expected_pos_wrapped.x().to_string(),
+                            expected_pos_wrapped.y().to_string(),
+                            diff.x().to_string(),
+                            diff.y().to_string(),
+                        ])
+                        .expect("[FATAL] Could not write to csv file!");
+                }
                 /*
-                println!(
-                    "[INFO] Position tracking: Current: {current_pos}, \
+                info!("Position tracking: Current: {current_pos}, \
                     Expected: {expected_pos_wrapped}, Diff: {diff}");
                     */
                 // Check flight state and handle safe mode (placeholder for now)
                 if is_safe_trans {
-                    println!("[WARN] Unplanned Safe Mode Transition Detected! Notifying!");
+                    warn!("Unplanned Safe Mode Transition Detected! Notifying!");
                     self.safe_mon.notify_one();
                     self.f_cont_lock.write().await.safe_detected();
                 }
@@ -157,7 +188,7 @@ impl Supervisor {
                 let handle = self.f_cont_lock.read().await.client();
                 let objective_list = ObjectiveListRequest {}.send_request(&handle).await.unwrap();
                 let mut send_objs = Vec::new();
-                
+
                 for img_obj in objective_list.img_objectives() {
                     let obj_on = img_obj.start() < Utc::now() && img_obj.end() > Utc::now();
                     let is_secret = matches!(img_obj.zone_type(), ZoneType::SecretZone(_));
@@ -166,7 +197,8 @@ impl Supervisor {
                     }
                 }
                 for b_o in objective_list.beacon_objectives() {
-                    let obj_about = b_o.start() < Utc::now() + TimeDelta::minutes(20) && b_o.end() > Utc::now();
+                    let obj_about =
+                        b_o.start() < Utc::now() + TimeDelta::minutes(20) && b_o.end() > Utc::now();
                     if obj_about && !id_list.contains(&b_o.id()) {
                         send_objs.push(ObjectiveBase::from(b_o.clone()));
                     }
@@ -178,7 +210,7 @@ impl Supervisor {
                 last_objective_check = Utc::now();
             }
 
-            tokio::time::sleep(Self::OBS_UPDATE_INTERVAL).await;
+            tokio::time::sleep_until(last_update + Self::OBS_UPDATE_INTERVAL).await;
         }
     }
 }

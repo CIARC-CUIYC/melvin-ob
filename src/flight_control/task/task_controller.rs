@@ -1,29 +1,27 @@
+use super::{
+    atomic_decision::AtomicDecision,
+    atomic_decision_cube::AtomicDecisionCube,
+    base_task::Task,
+    score_grid::ScoreGrid,
+    vel_change_task::{VelocityChangeTaskRationale, VelocityChangeTaskRationale::OrbitEscape},
+};
 use crate::flight_control::{
     common::{linked_box::LinkedBox, math, vec2d::Vec2D},
     flight_computer::FlightComputer,
     flight_state::FlightState,
     objective::known_img_objective::KnownImgObjective,
     orbit::{BurnSequence, ClosedOrbit, IndexedOrbitPosition},
-    task::{
-        atomic_decision::AtomicDecision,
-        atomic_decision_cube::AtomicDecisionCube,
-        base_task::Task,
-        score_grid::ScoreGrid,
-        vel_change_task::{
-            VelocityChangeTaskRationale, VelocityChangeTaskRationale::OrbitEscapeChange,
-        },
-    },
 };
-use crate::{MAX_BATTERY_THRESHOLD, MIN_BATTERY_THRESHOLD};
+use crate::{fatal, info, log};
 use bitvec::prelude::BitRef;
 use fixed::types::I32F32;
-use num::{ToPrimitive, Zero};
+use num::Zero;
 use std::{
     collections::VecDeque,
     fmt::Debug,
     sync::{Arc, Condvar},
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use tokio::sync::RwLock;
 
 /// `TaskController` manages and schedules tasks for MELVIN.
@@ -56,6 +54,9 @@ impl TaskController {
 
     /// The resolution for battery levels used in calculations, expressed in fixed-point format.
     const BATTERY_RESOLUTION: I32F32 = I32F32::lit("0.1");
+
+    pub const MIN_BATTERY_THRESHOLD: I32F32 = I32F32::lit("10.00");
+    pub const MAX_BATTERY_THRESHOLD: I32F32 = I32F32::lit("100.00");
 
     /// The resolution for time duration calculations, expressed in fixed-point format.
     const TIME_RESOLUTION: I32F32 = I32F32::lit("1.0");
@@ -124,14 +125,14 @@ impl TaskController {
         // List of potential states during the orbit scheduling process.
         let states = [FlightState::Charge, FlightState::Acquisition];
         // Calculate the usable battery range based on the fixed thresholds.
-        let usable_batt_range = MAX_BATTERY_THRESHOLD - MIN_BATTERY_THRESHOLD;
+        let usable_batt_range = Self::MAX_BATTERY_THRESHOLD - Self::MIN_BATTERY_THRESHOLD;
         // Determine the maximum number of battery levels that can be represented.
         let max_battery =
-            (usable_batt_range / Self::BATTERY_RESOLUTION).round().to_usize().unwrap();
+            (usable_batt_range / Self::BATTERY_RESOLUTION).round().to_num::<usize>();
         // Determine the prediction duration in seconds, constrained by the orbit period or `dt` if provided.
         let prediction_secs = {
             let max_pred_secs =
-                Self::MAX_ORBIT_PREDICTION_SECS.min(orbit.period().0.to_u32().unwrap()) as usize;
+                Self::MAX_ORBIT_PREDICTION_SECS.min(orbit.period().0.to_num::<u32>()) as usize;
             if let Some(pred_secs) = dt {
                 // Ensure the prediction duration does not exceed the maximum prediction length or the provided duration.
                 max_pred_secs.min(pred_secs)
@@ -139,11 +140,11 @@ impl TaskController {
                 max_pred_secs
             }
         };
-        println!("[INFO] Calculating optimal orbit schedule for {prediction_secs} seconds");
+        info!("Calculating optimal orbit schedule for {prediction_secs} seconds");
         // Retrieve a reordered iterator over the orbit's completion bitvector to optimize scheduling.
         let p_t_iter = orbit.get_p_t_reordered(
             p_t_shift,
-            orbit.period().0.to_usize().unwrap() - prediction_secs,
+            orbit.period().0.to_num::<usize>() - prediction_secs,
         );
         // Create a blank decision buffer and score grid for the orbit schedule calculation.
         let decision_buffer =
@@ -152,9 +153,9 @@ impl TaskController {
         // Initialize the first coverage grid based on the end status or use a default grid.
         let cov_dt_first = {
             if let Some(end) = end_status {
-                let end_batt_clamp = end.1.clamp(MIN_BATTERY_THRESHOLD, MAX_BATTERY_THRESHOLD);
+                let end_batt_clamp = end.1.clamp(Self::MIN_BATTERY_THRESHOLD, Self::MAX_BATTERY_THRESHOLD);
                 let end_batt =
-                    (end_batt_clamp / Self::BATTERY_RESOLUTION).round().to_usize().unwrap();
+                    (end_batt_clamp / Self::BATTERY_RESOLUTION).round().to_num::<usize>();
                 let end_state = end.0 as usize;
                 let end_cast = (end_state, end_batt);
                 ScoreGrid::new_from_condition(max_battery + 1, states.len(), end_cast)
@@ -266,7 +267,7 @@ impl TaskController {
     ) -> (Vec<Vec2D<I32F32>>, i64, Vec2D<I32F32>) {
         let is_clockwise = initial_vel.is_clockwise_to(&deviation).unwrap_or(false);
 
-        let min_burn_sequence_time = chrono::TimeDelta::seconds(Self::DEF_MAX_BURN_SEQUENCE_TIME);
+        let min_burn_sequence_time = TimeDelta::seconds(Self::DEF_MAX_BURN_SEQUENCE_TIME);
         let mut max_acc_secs = 1;
         let mut best_burn_sequence = Vec::new();
         let mut best_min_dev = Vec2D::new(I32F32::MAX, I32F32::MAX);
@@ -290,7 +291,7 @@ impl TaskController {
 
             let x_vel_hold_dt = (remaining_deviation.x() / res_vel_diff.x()).floor();
             let y_vel_hold_dt = (remaining_deviation.y() / res_vel_diff.y()).floor();
-            let min_vel_hold_dt = x_vel_hold_dt.min(y_vel_hold_dt).to_i64().unwrap();
+            let min_vel_hold_dt = x_vel_hold_dt.min(y_vel_hold_dt).to_num::<i64>();
 
             if min_vel_hold_dt + max_acc_secs > (due - Utc::now()).num_seconds() {
                 continue;
@@ -306,7 +307,7 @@ impl TaskController {
                 max_y_dev.into(),
             );
             let res_dev_vec = Vec2D::from(res_dev);
-            let min_t_i64 = min_t.floor().to_i64().unwrap();
+            let min_t_i64 = min_t.floor().to_num::<i64>();
 
             if best_min_dev.abs() > res_dev_vec.abs() {
                 best_min_dev = res_dev_vec;
@@ -357,7 +358,7 @@ impl TaskController {
         target_pos: Vec2D<I32F32>,
         target_end_time: DateTime<Utc>,
     ) -> (BurnSequence, I32F32) {
-        println!("[INFO] Starting to calculate single target burn towards {target_pos}");
+        info!("Starting to calculate single target burn towards {target_pos}");
 
         // Calculate maximum allowed time delta for the maneuver
         let time_left = target_end_time - Utc::now();
@@ -385,16 +386,14 @@ impl TaskController {
         for dt in (Self::OBJECTIVE_SCHEDULE_MIN_DT..max_dt).rev() {
             let pos = (curr_i.pos() + orbit_vel * I32F32::from_num(dt)).wrap_around_map();
             let to_target = pos.unwrapped_to(&target_pos);
-            let min_dt = (to_target.abs() / orbit_vel_abs).abs().round().to_usize().unwrap();
+            let min_dt = (to_target.abs() / orbit_vel_abs).abs().round().to_num::<usize>();
 
             if min_dt + dt < max_dt {
                 last_possible_dt = dt;
                 break;
             }
         }
-        println!(
-            "[INFO] Done skipping impossible start times. Last possible dt: {last_possible_dt}"
-        );
+        info!("Done skipping impossible start times. Last possible dt: {last_possible_dt}");
 
         // Define range for evaluation and initialize best burn sequence tracker
         let remaining_range = Self::OBJECTIVE_SCHEDULE_MIN_DT..=last_possible_dt;
@@ -413,7 +412,7 @@ impl TaskController {
             // Calculate the next position and initialize the burn sequence
             let mut next_pos = (curr_i.pos() + orbit_vel * I32F32::from_num(dt)).wrap_around_map();
             let burn_sequence_i =
-                curr_i.new_from_future_pos(next_pos, chrono::TimeDelta::seconds(dt as i64));
+                curr_i.new_from_future_pos(next_pos, TimeDelta::seconds(dt as i64));
             let direction_vec = next_pos.unwrapped_to(&target_pos);
 
             // Skip iterations where the current velocity is too far off-target
@@ -445,7 +444,7 @@ impl TaskController {
 
                 let next_to_target = next_pos.unwrapped_to(&target_pos);
                 let min_dt =
-                    (next_to_target.abs() / next_vel.abs()).abs().round().to_usize().unwrap();
+                    (next_to_target.abs() / next_vel.abs()).abs().round().to_num::<usize>();
 
                 // Check if the maneuver exceeds the maximum allowed time
                 if min_dt + dt + add_dt > max_dt {
@@ -526,7 +525,7 @@ impl TaskController {
             if best_burn_sequence.is_none()
                 || burn_sequence_cost < best_burn_sequence.as_ref().unwrap().0.cost()
             {
-                if min_charge < MAX_BATTERY_THRESHOLD {
+                if min_charge < Self::MAX_BATTERY_THRESHOLD {
                     best_burn_sequence = Some((burn_sequence, min_charge));
                 } else {
                     println!("Cheaper maneuver found but min charge {min_charge} is too high!");
@@ -563,8 +562,7 @@ impl TaskController {
         objective: KnownImgObjective,
     ) {
         let computation_start = Utc::now();
-        println!(
-            "[INFO] Calculating schedule for Retrieval of Objective {}",
+        info!("Calculating schedule for Retrieval of Objective {}",
             objective.id()
         );
         let (burn_sequence, min_charge) = if objective.min_images() == 1 {
@@ -579,15 +577,14 @@ impl TaskController {
             .await
         } else {
             // TODO
-            panic!("[FATAL] Zoned Objective with multiple images not yet supported");
+            fatal!("Zoned Objective with multiple images not yet supported");
         };
         let comp_time = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
-        println!("[INFO] Maneuver calculation completed after {comp_time}s!");
+        info!("Maneuver calculation completed after {comp_time}s!");
 
-        let start =
-            (burn_sequence.start_i().t() - Utc::now()).num_milliseconds() as f32 / 1000.0;
-        println!(
-            "[INFO] Maneuver will start in {start}s, will take {}s. \
+        let start = (burn_sequence.start_i().t() - Utc::now()).num_milliseconds() as f32 / 1000.0;
+        log!(
+            "Maneuver will start in {start}s, will take {}s. \
             Detumble time will be roughly {}s!",
             burn_sequence.acc_dt(),
             burn_sequence.detumble_dt()
@@ -596,8 +593,8 @@ impl TaskController {
             let pos = f_cont_lock.read().await.current_pos();
             scheduling_start_i.new_from_pos(pos)
         };
-        let dt = usize::try_from((burn_sequence.start_i().t() - Utc::now()).num_seconds())
-            .unwrap_or(0);
+        let dt =
+            usize::try_from((burn_sequence.start_i().t() - Utc::now()).num_seconds()).unwrap_or(0);
         let result = {
             let orbit = orbit_lock.read().await;
 
@@ -608,8 +605,7 @@ impl TaskController {
                 Some((FlightState::Acquisition, min_charge)),
             )
         };
-        println!(
-            "[INFO] Calculating optimal orbit schedule to be at {min_charge} and in {} in {dt}s.",
+        info!("Calculating optimal orbit schedule to be at {min_charge} and in {} in {dt}s.",
             <&'static str>::from(FlightState::Acquisition)
         );
         let after_sched_calc_i = {
@@ -625,17 +621,18 @@ impl TaskController {
             true,
         )
         .await;
-        let n_tasks = self.schedule_vel_change(burn_sequence, OrbitEscapeChange).await;
+        let n_tasks = self.schedule_vel_change(burn_sequence, OrbitEscape).await;
         let dt_tot = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
-        println!(
-            "[INFO] Number of tasks after scheduling: {n_tasks}. \
+        info!("Number of tasks after scheduling: {n_tasks}. \
             Calculation and processing took {dt_tot:.2}",
         );
 
         {
             let sched = self.task_schedule.read().await;
             for task in &*sched {
-                println!("[INFO] {task} in {}s.", (task.dt() - Utc::now()).num_seconds());
+                log!("{task} in {}s.",
+                    (task.dt() - Utc::now()).num_seconds()
+                );
             }
         }
     }
@@ -675,15 +672,14 @@ impl TaskController {
             Self::init_orbit_sched_calc(&orbit, p_t_shift, None, None)
         };
         let dt_calc = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
-        println!("[INFO] Optimal Orbit Calculation complete after {dt_calc:.2}");
+        info!("Optimal Orbit Calculation complete after {dt_calc:.2}s.");
         let dt_shift = dt_calc.ceil() as usize;
 
         let n_tasks = self
             .schedule_optimal_orbit_result(f_cont_lock, computation_start, result, dt_shift, true)
             .await;
         let dt_tot = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
-        println!(
-            "[INFO] Number of tasks after scheduling: {n_tasks}. \
+        info!("Number of tasks after scheduling: {n_tasks}. \
             Calculation and processing took {dt_tot:.2}",
         );
     }
@@ -716,7 +712,7 @@ impl TaskController {
         dt_sh: usize,
         trunc: bool,
     ) -> usize {
-        println!("[INFO] Scheduling optimal orbit result...");
+        info!("Scheduling optimal orbit result...");
         if trunc {
             // Clear the existing schedule if truncation is requested.
             self.clear_schedule().await;
@@ -729,21 +725,21 @@ impl TaskController {
             let st: usize = match f_cont.state() {
                 FlightState::Acquisition => 1,
                 FlightState::Charge => 0,
-                state => panic!("[FATAL] Unexpected flight state: {state}"),
+                // TODO: implement comms state here
+                state => fatal!("Unexpected flight state: {state}"),
             };
             (batt, st)
         };
 
         let mut dt = dt_sh;
-        let (min_batt, max_batt) = (MIN_BATTERY_THRESHOLD, MAX_BATTERY_THRESHOLD); // Battery thresholds
+        let (min_batt, max_batt) = (Self::MIN_BATTERY_THRESHOLD, Self::MAX_BATTERY_THRESHOLD); // Battery thresholds
         let max_mapped = (max_batt / Self::BATTERY_RESOLUTION
             - min_batt / Self::BATTERY_RESOLUTION)
             .round()
-            .to_i32()
-            .unwrap();
+            .to_num::<i32>();
 
         // Map the current battery level into a discrete range.
-        let mut batt = ((batt_f32 - min_batt) / Self::BATTERY_RESOLUTION).to_usize().unwrap();
+        let mut batt = ((batt_f32 - min_batt) / Self::BATTERY_RESOLUTION).to_num::<usize>();
         let pred_secs = res.decisions.dt_len();
         let decisions = &res.decisions;
 
@@ -766,14 +762,14 @@ impl TaskController {
                 }
                 AtomicDecision::SwitchToCharge => {
                     // Schedule a state change to "Charge" with an appropriate time delay.
-                    let sched_t = base_t + chrono::TimeDelta::seconds(dt as i64);
+                    let sched_t = base_t + TimeDelta::seconds(dt as i64);
                     self.schedule_switch(FlightState::Charge, sched_t).await;
                     state = 0;
                     dt = (dt + 180).min(pred_secs); // Add a delay for the transition.
                 }
                 AtomicDecision::SwitchToAcquisition => {
                     // Schedule a state change to "Acquisition" with an appropriate time delay.
-                    let sched_t = base_t + chrono::TimeDelta::seconds(dt as i64);
+                    let sched_t = base_t + TimeDelta::seconds(dt as i64);
                     self.schedule_switch(FlightState::Acquisition, sched_t).await;
                     state = 1;
                     dt = (dt + 180).min(pred_secs); // Add a delay for the transition.
@@ -882,7 +878,7 @@ impl TaskController {
     /// - Notifies all waiting threads if the schedule is cleared.
     pub async fn clear_schedule(&self) {
         let schedule = &*self.task_schedule;
-        println!("[INFO] Clearing task schedule...");
+        log!("Clearing task schedule...");
         schedule.write().await.clear();
     }
 }

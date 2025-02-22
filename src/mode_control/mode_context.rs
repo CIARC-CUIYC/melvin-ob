@@ -1,15 +1,14 @@
-use crate::flight_control::objective::{
-    beacon_objective::BeaconObjective, known_img_objective::KnownImgObjective,
-    objective_base::ObjectiveBase,
+use crate::flight_control::{
+    objective::{
+        beacon_objective::BeaconObjective, known_img_objective::KnownImgObjective,
+        objective_base::ObjectiveBase,
+    },
+    orbit::OrbitCharacteristics,
+    supervisor::Supervisor,
 };
-use crate::flight_control::orbit::OrbitCharacteristics;
 use crate::keychain::KeychainWithOrbit;
-use std::{
-    collections::BinaryHeap,
-    sync::Arc,
-};
+use std::{collections::BinaryHeap, sync::Arc};
 use tokio::sync::{mpsc::Receiver, Mutex, RwLock};
-use crate::flight_control::supervisor::Supervisor;
 
 pub struct ModeContext {
     k: Arc<KeychainWithOrbit>,

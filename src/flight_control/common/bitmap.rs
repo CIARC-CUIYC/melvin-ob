@@ -3,7 +3,6 @@ use crate::flight_control::camera_state::CameraAngle;
 use bitvec::{bitbox, boxed::BitBox, order::Lsb0};
 use fixed::types::{I32F0, I32F32};
 use image::{ImageBuffer, RgbImage};
-use num::ToPrimitive;
 use std::ops::Not;
 
 /// A 2D bitmap structure that uses a bit-packed vector to represent the
@@ -58,8 +57,8 @@ impl Bitmap {
     pub fn from_map_size() -> Self {
         let bitmap_size = Vec2D::<I32F32>::map_size();
         Self::new(
-            bitmap_size.x().to_u32().unwrap(),
-            bitmap_size.y().to_u32().unwrap(),
+            bitmap_size.x().to_num::<u32>(),
+            bitmap_size.y().to_num::<u32>(),
         )
     }
 
@@ -185,19 +184,19 @@ impl Bitmap {
         let max_width = I32F0::from_num(self.width);
 
         let x_start =
-            Vec2D::wrap_coordinate(x - I32F0::from_num(angle_const), max_width).to_u32().unwrap();
+            Vec2D::wrap_coordinate(x - I32F0::from_num(angle_const), max_width).to_num::<u32>();
 
         let x_end =
-            Vec2D::wrap_coordinate(x + I32F0::from_num(angle_const), max_width).to_u32().unwrap();
+            Vec2D::wrap_coordinate(x + I32F0::from_num(angle_const), max_width).to_num::<u32>();
 
         let is_wrapped =
             (i128::from(x_end) - i128::from(x_start)).abs() > i128::from(angle_const * 2);
 
-        let y_i32 = y.to_i32().unwrap();
+        let y_i32 = y.to_num::<i32>();
 
         for y_it in y_i32 - angle_const..y_i32 + angle_const {
             let wrapped_y =
-                Vec2D::wrap_coordinate(I32F0::from_num(y_it), max_height).to_u32().unwrap();
+                Vec2D::wrap_coordinate(I32F0::from_num(y_it), max_height).to_num::<u32>();
 
             let start_index = self.get_bitmap_index(x_start, wrapped_y);
             let end_index = self.get_bitmap_index(x_end, wrapped_y);
@@ -268,6 +267,6 @@ impl Bitmap {
         }
 
         // Save the image to a file
-        img.save(output_path).expect("[ERROR] Failed to save the image");
+        img.save(output_path).expect("Failed to save the image");
     }
 }

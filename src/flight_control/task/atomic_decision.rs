@@ -1,3 +1,5 @@
+use crate::fatal;
+
 /// Represents the different atomic decisions that can be made regarding states.
 #[derive(Debug, Clone, Copy)]
 pub enum AtomicDecision {
@@ -30,7 +32,7 @@ impl AtomicDecision {
         } else if state == 1 {
             AtomicDecision::StayInAcquisition
         } else {
-            panic!("[FATAL] Invalid state for stay decision")
+            fatal!("Invalid state for stay decision")
         }
     }
 
@@ -52,7 +54,7 @@ impl AtomicDecision {
         } else if to_state == 1 {
             AtomicDecision::SwitchToAcquisition
         } else {
-            panic!("[FATAL] Invalid state for stay decision")
+            fatal!("Invalid state for stay decision")
         }
     }
 }

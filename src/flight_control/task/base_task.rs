@@ -1,15 +1,13 @@
 use super::{
-    image_task::ImageTask, switch_state_task::SwitchStateTask, vel_change_task::VelocityChangeTask,
+    image_task::ImageTask,
+    switch_state_task::SwitchStateTask,
+    vel_change_task::{VelocityChangeTask, VelocityChangeTaskRationale},
 };
 use crate::flight_control::{
-    camera_state::CameraAngle,
-    common::vec2d::Vec2D,
-    flight_state::FlightState,
-    orbit::BurnSequence,
-    task::vel_change_task::VelocityChangeTaskRationale
+    camera_state::CameraAngle, common::vec2d::Vec2D, flight_state::FlightState, orbit::BurnSequence,
 };
-use std::fmt::{Display, Formatter};
 use chrono::{DateTime, Utc};
+use std::fmt::{Display, Formatter};
 use strum_macros::Display;
 
 /// Represents a task with a specific type and associated time delay.
@@ -106,7 +104,11 @@ impl Task {
     ///
     /// # Returns
     /// - A new `Task` instance representing the velocity change task.
-    pub fn vel_change_task(burn: BurnSequence, rationale: VelocityChangeTaskRationale, dt: DateTime<Utc>) -> Self {
+    pub fn vel_change_task(
+        burn: BurnSequence,
+        rationale: VelocityChangeTaskRationale,
+        dt: DateTime<Utc>,
+    ) -> Self {
         Self {
             task_type: BaseTask::ChangeVelocity(VelocityChangeTask::new(burn, rationale)),
             dt,

@@ -69,9 +69,7 @@ impl ScoreGrid {
     ///
     /// # Returns
     /// The score at the specified position.
-    pub fn get(&self, e: usize, s: usize) -> i32 {
-        self.score[e * self.s_len + s]
-    }
+    pub fn get(&self, e: usize, s: usize) -> i32 { self.score[e * self.s_len + s] }
 
     /// Sets the score at a specific position in the grid.
     ///
@@ -87,15 +85,11 @@ impl ScoreGrid {
     ///
     /// # Returns
     /// The length of the energy dimension (`e_len`).
-    pub fn e_len(&self) -> usize {
-        self.e_len
-    }
+    pub fn e_len(&self) -> usize { self.e_len }
 
     /// Returns the length of the state dimension (number of columns).
     ///
     /// # Returns
     /// The length of the state dimension (`s_len`).
-    pub fn s_len(&self) -> usize {
-        self.s_len
-    }
+    pub fn s_len(&self) -> usize { self.s_len }
 }

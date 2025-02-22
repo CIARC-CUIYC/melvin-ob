@@ -1,16 +1,15 @@
-use crate::flight_control::flight_state::FlightState;
-use crate::flight_control::task::base_task::BaseTask;
-use crate::flight_control::task::image_task::ImageTaskStatus;
+use crate::console_communication::{
+    console_endpoint::{ConsoleEndpoint, ConsoleEvent},
+    melvin_messages,
+};
 use crate::flight_control::{
-    camera_controller::CameraController, camera_state::CameraAngle, common::vec2d::Vec2D,
+    camera_controller::CameraController,
+    camera_state::CameraAngle,
+    common::vec2d::Vec2D,
+    flight_state::FlightState,
+    task::{base_task::BaseTask, image_task::ImageTaskStatus, TaskController},
 };
-use crate::{
-    console_communication::{
-        console_endpoint::{ConsoleEndpoint, ConsoleEvent},
-        melvin_messages,
-    },
-    flight_control::task::TaskController,
-};
+use crate::info;
 
 use std::sync::Arc;
 
@@ -106,7 +105,7 @@ impl ConsoleMessenger {
                                     Vec2D::new(submit_objective.width, submit_objective.height),
                                 )
                                 .await;
-                            println!("[Info] Submitted objective '{objective_id}' with result: {result:?}");
+                            info!("Submitted objective '{objective_id}' with result: {result:?}");
 
                             endpoint_local_clone.send_downstream(
                                 melvin_messages::DownstreamContent::SubmitResponse(

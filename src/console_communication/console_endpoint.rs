@@ -12,6 +12,7 @@ use tokio::{
     },
     sync::{broadcast, oneshot},
 };
+use crate::{info, warn};
 
 /// Represents the different console endpoint event types.
 ///
@@ -65,7 +66,7 @@ impl ConsoleEndpoint {
                 content: Some(content),
             }) = melvin_messages::Upstream::decode(&mut Cursor::new(buffer))
             {
-                println!("[Info] Received upstream message: {content:?}");
+                info!("Received upstream message: {content:?}");
                 upstream_event_sender.send(ConsoleEvent::Message(content)).unwrap();
             }
         }
@@ -110,7 +111,7 @@ impl ConsoleEndpoint {
             close_oneshot_sender: Some(close_oneshot_sender),
         };
         tokio::spawn(async move {
-            println!("[INFO] Started Console Endpoint");
+            info!("Started Console Endpoint");
             let listener = TcpListener::bind("0.0.0.0:1337").await.unwrap();
             loop {
                 let accept = tokio::select! {
@@ -124,7 +125,7 @@ impl ConsoleEndpoint {
                     let mut downstream_receiver = downstream_sender.subscribe();
 
                     tokio::spawn(async move {
-                        println!("[INFO] New connection from console");
+                        info!("New connection from console");
                         let (mut rx_socket, mut tx_socket) = socket.split();
 
                         let result = tokio::select! {
@@ -142,7 +143,7 @@ impl ConsoleEndpoint {
                                 return;
                             }
                             Err(e) => {
-                                eprintln!("[WARN]: Closing connection to console due to {e:?}");
+                                warn!("Closing connection to console due to {e:?}");
                             }
                             _ => {}
                         };

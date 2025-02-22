@@ -1,23 +1,33 @@
-use crate::flight_control::objective::beacon_objective::BeaconMeas;
-use crate::flight_control::objective::beacon_objective_done::BeaconObjectiveDone;
-use crate::http_handler::http_client::HTTPClient;
-use crate::{
-    flight_control::{
-        camera_state::CameraAngle, flight_computer::FlightComputer, flight_state::FlightState,
-        objective::beacon_objective::BeaconObjective, orbit::IndexedOrbitPosition,
-        task::switch_state_task::SwitchStateTask,
+use crate::flight_control::{
+    camera_state::CameraAngle,
+    flight_computer::FlightComputer,
+    flight_state::FlightState,
+    objective::{
+        beacon_objective::{BeaconMeas, BeaconObjective},
+        beacon_objective_done::BeaconObjectiveDone,
     },
-    mode_control::mode_context::ModeContext,
+    orbit::IndexedOrbitPosition,
+    task::{switch_state_task::SwitchStateTask, TaskController},
 };
+use crate::http_handler::http_client::HTTPClient;
+use crate::{event, fatal, info, log, obj, warn};
+
+use crate::mode_control::mode_context::ModeContext;
 use chrono::{DateTime, TimeDelta, Utc};
 use regex::Regex;
-use std::collections::HashMap;
-use std::sync::LazyLock;
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::{
+    collections::HashMap,
+    future::Future,
+    pin::Pin,
+    sync::{Arc, LazyLock},
+    time::Duration,
+};
 use strum_macros::Display;
-use tokio::sync::Mutex;
-use tokio::time::Instant;
-use tokio::{sync::oneshot, task::JoinHandle};
+use tokio::{
+    sync::{oneshot, Mutex},
+    task::JoinHandle,
+    time::Instant,
+};
 use tokio_util::sync::CancellationToken;
 
 pub(crate) enum MappingModeEnd {
@@ -44,6 +54,8 @@ pub enum BaseWaitExitSignal {
 }
 
 impl BaseMode {
+    const BEACON_OBJ_RETURN_MIN_DELAY: TimeDelta = TimeDelta::minutes(10);
+
     fn start_beacon_scanning(obj: BeaconObjective) -> BaseMode {
         let mut obj_m = HashMap::new();
         obj_m.insert(obj.id(), obj);
@@ -60,20 +72,23 @@ fn extract_id_and_d(input: &str) -> Option<(usize, f64)> {
     if let Some(captures) = BO_REGEX.captures(input) {
         // Extract beacon_id and d_noisy
         if let (Some(beacon_id), Some(d_noisy)) = (captures.get(1), captures.get(2)) {
-            let beacon_id: usize = beacon_id.as_str().parse().unwrap();
-            let d_noisy: f64 = d_noisy.as_str().parse().unwrap();
-            return Some((beacon_id, d_noisy));
+            let id: usize = beacon_id.as_str().parse().unwrap();
+            let d_n: f64 = d_noisy.as_str().parse().unwrap();
+            return Some((id, d_n));
         }
     }
     None // Return None if values cannot be extracted
 }
 
 impl BaseMode {
-    const DT_0_STD: std::time::Duration = std::time::Duration::from_secs(0);
+    const DT_0_STD: Duration = Duration::from_secs(0);
+    const MAX_MSG_DT: TimeDelta = TimeDelta::milliseconds(300);
     const DEF_MAPPING_ANGLE: CameraAngle = CameraAngle::Narrow;
-    const BO_MSG_COMM_PROLONG: std::time::Duration = std::time::Duration::from_secs(60);
-    const MIN_COMM_DT: std::time::Duration = std::time::Duration::from_secs(60);
-    const MAX_COMM_INTERVAL: std::time::Duration = std::time::Duration::from_secs(500);
+    const BO_MSG_COMM_PROLONG_STD: Duration = Duration::from_secs(60);
+    const BO_MSG_COMM_PROLONG: TimeDelta = TimeDelta::seconds(60);
+    const MIN_COMM_DT: Duration = Duration::from_secs(60);
+    const MAX_COMM_INTERVAL: Duration = Duration::from_secs(500);
+    const MAX_COMM_PROLONG_RESCHEDULE: TimeDelta = TimeDelta::seconds(2);
 
     #[allow(clippy::cast_possible_wrap)]
     pub async fn exec_map(
@@ -147,11 +162,12 @@ impl BaseMode {
         };
         let fixed_ranges =
             IndexedOrbitPosition::map_ranges(&ranges, o_ch_clone.i_entry().period() as isize);
-        print!("[INFO] Marking done: {} - {}", ranges[0].0, ranges[0].1);
-        if let Some(r) = ranges.get(1) {
-            print!(" and {} - {}", r.0, r.1);
-        }
-        println!();
+        let and = if let Some(r) = ranges.get(1) {
+            format!(" and {} - {}", r.0, r.1)
+        } else {
+            String::new()
+        };
+        log!("Marking done: {} - {}{and}", ranges[0].0, ranges[0].1);
         let k_loc = Arc::clone(context.k());
         tokio::spawn(async move {
             let c_orbit_lock = k_loc.c_orbit();
@@ -162,34 +178,54 @@ impl BaseMode {
         });
     }
 
-    async fn exec_comms(context: Arc<ModeContext>, due: DateTime<Utc>, c_tok: CancellationToken) {
+    async fn exec_comms(
+        context: Arc<ModeContext>,
+        due: DateTime<Utc>,
+        c_tok: CancellationToken,
+        b_o: Arc<Mutex<HashMap<usize, BeaconObjective>>>,
+    ) {
+        let start = Utc::now();
         let mut event_rx = context.super_v().subscribe_event_hub();
         let due_secs = (due - Utc::now()).to_std().unwrap_or(Self::DT_0_STD);
-        let mut deadline = Instant::now() + due_secs;
+        let sleep_fut = tokio::time::sleep_until(Instant::now() + due_secs);
+        tokio::pin!(sleep_fut);
+
         loop {
             tokio::select! {
                 // Wait for a message
-                Ok(()) = event_rx.changed() => {
-                    let val = event_rx.borrow().clone();
+                Ok(msg) = event_rx.recv() => {
+                    let (t, val) = msg;
                     if let Some((id, d_noisy)) = extract_id_and_d(val.as_str()) {
-                        let pos = context.k().f_cont().read().await.current_pos();
-                        let meas = BeaconMeas::new(id, pos, d_noisy);
-                        // TODO: search beacon with id and add
-                        deadline = Instant::now() + Self::BO_MSG_COMM_PROLONG; // Reset timeout
-                        println!("[LOG] Received BO message: {id} - {d_noisy}. Prologing by 60s!");
+                        let (pos, res_batt) = {
+                            let f_cont = context.k().f_cont();
+                            let lock = f_cont.read().await;
+                            (lock.current_pos(), lock.batt_in_dt(Self::BO_MSG_COMM_PROLONG))
+                        };
+                        let msg_delay = Utc::now() - t;
+                        let meas = BeaconMeas::new(id, pos, d_noisy, msg_delay);
+                        obj!("Received BO measurement at {pos} for ID {id} with distance {d_noisy}.");
+                        if let Some(obj) = b_o.lock().await.get_mut(&id) {
+                            obj!("Updating BO {id} and prolonging!");
+                            obj.append_measurement(meas);
+                            let new_end = Utc::now() + Self::BO_MSG_COMM_PROLONG;
+                            if new_end > due && res_batt > TaskController::MIN_BATTERY_THRESHOLD {
+                                sleep_fut.set(tokio::time::sleep_until(Instant::now() + Self::BO_MSG_COMM_PROLONG_STD));
+                            }
+                        } else {
+                            warn!("Unknown BO ID {id}. Ignoring!");
+                        }
                     } else {
-                        println!("[INFO] Received random message: {val:#?}");
+                        event!("Message has unknown format {val:#?}. Ignoring.");
                     }
                 },
                 // If the timeout expires, exit
-                _ = tokio::time::sleep_until(deadline) => {
-                    println!("Timeout reached. Stopping listener.");
-                    // TODO: return beac dictionary;
+                () = &mut sleep_fut => {
+                    log!("Comms Timeout reached after {}s. Stopping listener.",
+                    (Utc::now() - start).num_seconds());
                     return;
                 },
                 // If the task gets cancelled exit with the updated beacon vector
-                _ = c_tok.cancelled() => {
-                    // TODO: return beac dictionary return beac;
+                () = c_tok.cancelled() => {
                     return;
                 }
             }
@@ -207,39 +243,53 @@ impl BaseMode {
             let lock = f_cont.read().await;
             (lock.state(), lock.client())
         };
+        let def = Box::pin(async move {
+            let sleep = (due - Utc::now()).to_std().unwrap_or(Self::DT_0_STD);
+            FlightComputer::wait_for_duration(sleep).await;
+            BaseWaitExitSignal::Continue
+        });
         let task_fut: Pin<Box<dyn Future<Output = BaseWaitExitSignal> + Send>> = match current_state
         {
             FlightState::Acquisition => Box::pin(async move {
                 Self::exec_map(context, MappingModeEnd::Timestamp(due), c_tok).await;
                 BaseWaitExitSignal::Continue
             }),
-            FlightState::Charge => {
-                let def = Box::pin(async move {
-                    let sleep = (due - Utc::now()).to_std().unwrap_or(Self::DT_0_STD);
-                    FlightComputer::wait_for_duration(sleep).await;
-                    BaseWaitExitSignal::Continue
-                });
-                match self {
-                    BaseMode::MappingMode => def,
-                    BaseMode::BeaconObjectiveScanningMode(obj_m) => {
-                        if let Some(obj) = Self::check_b_o_done(obj_m.clone()).await {
-                            let obj_m_clone = Arc::clone(obj_m);
-                            Box::pin(async move {
-                                Self::handle_b_o_done(obj_m_clone, obj, handler).await
-                            })
-                        } else {
-                            def
-                        }
+            FlightState::Charge => match self {
+                BaseMode::MappingMode => def,
+                BaseMode::BeaconObjectiveScanningMode(obj_m) => {
+                    if let Some(obj) = Self::check_b_o_done(obj_m.clone()).await {
+                        let obj_m_clone = Arc::clone(obj_m);
+                        Box::pin(
+                            async move { Self::handle_b_o_done(obj_m_clone, obj, handler).await },
+                        )
+                    } else {
+                        def
                     }
                 }
-            }
+            },
 
-            FlightState::Comms => Box::pin(async move {
-                Self::exec_comms(context, due, c_tok).await;
-                BaseWaitExitSignal::Continue
-            }),
+            FlightState::Comms => {
+                if let Self::BeaconObjectiveScanningMode(b_o_arc) = self {
+                    let clone = Arc::clone(b_o_arc);
+                    if let Some(obj) = Self::check_b_o_done(b_o_arc.clone()).await {
+                        Box::pin(async move { Self::handle_b_o_done(clone, obj, handler).await })
+                    } else {
+                        Box::pin(async move {
+                            Self::exec_comms(context, due, c_tok, clone).await;
+                            if Utc::now() > due + Self::MAX_COMM_PROLONG_RESCHEDULE {
+                                BaseWaitExitSignal::ReturnSomeLeft
+                            } else {
+                                BaseWaitExitSignal::Continue
+                            }
+                        })
+                    }
+                } else {
+                    warn!("No known Beacon Objectives. Waiting!");
+                    def
+                }
+            }
             _ => {
-                panic!("[FATAL] Illegal state ({current_state})!")
+                fatal!("Illegal state ({current_state})!")
             }
         };
         tokio::spawn(task_fut)
@@ -248,7 +298,7 @@ impl BaseMode {
     pub async fn get_task(&self, context: Arc<ModeContext>, task: SwitchStateTask) {
         match task.target_state() {
             FlightState::Acquisition => {
-                FlightComputer::set_state_wait(context.k().f_cont(), FlightState::Acquisition).await;
+                FlightComputer::set_state_wait(context.k().f_cont(), FlightState::Comms).await;
             }
             FlightState::Charge => {
                 let join_handle = async {
@@ -256,14 +306,14 @@ impl BaseMode {
                 };
                 let k_clone = Arc::clone(context.k());
                 tokio::spawn(async move {
-                    k_clone.c_cont().create_full_snapshot().await.expect("[WARN] Export failed!");
+                    k_clone.c_cont().create_full_snapshot().await.expect("Export failed!");
                 });
                 join_handle.await;
             }
             FlightState::Comms => {}
             _ => match self {
                 BaseMode::MappingMode => {
-                    panic!("[FATAL] Illegal target state!")
+                    fatal!("Illegal target state!")
                 }
                 BaseMode::BeaconObjectiveScanningMode(_) => {
                     FlightComputer::set_state_wait(context.k().f_cont(), FlightState::Comms).await;
@@ -288,18 +338,19 @@ impl BaseMode {
         b_o_done: Vec<BeaconObjectiveDone>,
         cl: Arc<HTTPClient>,
     ) -> BaseWaitExitSignal {
+        for b_o in b_o_done {
+            obj!("Submitting Beacon Objective: {}", b_o.id());
+            b_o.guess_max(cl.clone()).await;
+        }
         let empty = {
-            let mut curr_lock = curr.lock().await;
-            for b_o in b_o_done {
-                let id = b_o.id();
-                curr_lock.remove(&id);
-                b_o.guess_max(cl.clone()).await;
-            }
+            let curr_lock = curr.lock().await;
             curr_lock.is_empty()
         };
         if empty {
+            info!("All Beacon Objectives done! Switching to Mapping Mode.");
             BaseWaitExitSignal::ReturnAllDone
         } else {
+            info!("There are still Beacon Objectives left. Waiting for them to finish!");
             BaseWaitExitSignal::ReturnSomeLeft
         }
     }
@@ -313,10 +364,8 @@ impl BaseMode {
                     if let BaseWaitExitSignal::ReturnAllDone = new_b_o {
                         return BaseMode::MappingMode;
                     }
-                } else {
-                    return self.clone();
                 }
-                todo!()
+                self.clone()
             }
         }
     }
@@ -324,10 +373,47 @@ impl BaseMode {
     async fn check_b_o_done(
         b_o_map: Arc<Mutex<HashMap<usize, BeaconObjective>>>,
     ) -> Option<Vec<BeaconObjectiveDone>> {
-        let b_o_map_lock = b_o_map.lock().await;
-        for (i, obj) in b_o_map_lock.iter() {
-            // TODO: check if obj is finished
+        let mut done_obj = Vec::new();
+        let mut not_done_obj_m = HashMap::new();
+        let mut b_o_map_lock = b_o_map.lock().await;
+        for obj in b_o_map_lock.drain() {
+            if obj.1.end() < Utc::now() + Self::BEACON_OBJ_RETURN_MIN_DELAY {
+                let beac_done = BeaconObjectiveDone::from(obj.1);
+                if beac_done.guesses().is_empty() {
+                    obj!(
+                        "Almost ending Beacon objective: ID {}. No guesses :(",
+                        obj.0
+                    );
+                    continue;
+                }
+                done_obj.push(beac_done);
+                obj!(
+                    "Almost ending Beacon objective: ID {}. Submitting this soon!",
+                    obj.0
+                );
+                continue;
+            } else if let Some(meas) = obj.1.measurements() {
+                let min_guesses = meas.guess_estimate();
+                obj!("ID {} has {} min guesses.", obj.0, min_guesses);
+                if min_guesses < 15 {
+                    let beac_done = BeaconObjectiveDone::from(obj.1);
+                    obj!(
+                        "Finished Beacon objective: ID {} has {} guesses.",
+                        obj.0,
+                        beac_done.guesses().len()
+                    );
+                    done_obj.push(beac_done);
+                    continue;
+                }
+            }
+            not_done_obj_m.insert(obj.0, obj.1);
         }
-        None
+        *b_o_map_lock = not_done_obj_m;
+        drop(b_o_map_lock);
+        if done_obj.is_empty() {
+            None
+        } else {
+            Some(done_obj)
+        }
     }
 }

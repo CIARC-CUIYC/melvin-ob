@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use super::http_request::request_common::RequestError;
 use super::http_response::response_common::ResponseError;
 use strum_macros::Display;
@@ -13,11 +14,10 @@ pub enum ZoneType {
 pub struct ImageObjective {
     id: usize,
     name: String,
-    start: chrono::DateTime<chrono::Utc>,
-    end: chrono::DateTime<chrono::Utc>,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
     decrease_rate: f32,
     zone: ZoneType,
-    // TODO: make an enum out of optic_required
     optic_required: String,
     coverage_required: f32,
     description: String,
@@ -28,8 +28,8 @@ pub struct ImageObjective {
 impl ImageObjective {
 
     pub fn id(&self) -> usize { self.id }
-    pub fn start(&self) -> chrono::DateTime<chrono::Utc> { self.start }
-    pub fn end(&self) -> chrono::DateTime<chrono::Utc> { self.end }
+    pub fn start(&self) -> DateTime<Utc> { self.start }
+    pub fn end(&self) -> DateTime<Utc> { self.end }
     pub fn name(&self) -> &str { &self.name }
     pub fn decrease_rate(&self) -> f32 { self.decrease_rate }
     pub fn zone_type(&self) -> &ZoneType { &self.zone }
@@ -43,8 +43,8 @@ impl ImageObjective {
 pub struct BeaconObjective {
     id: usize,
     name: String,
-    start: chrono::DateTime<chrono::Utc>,
-    end: chrono::DateTime<chrono::Utc>,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
     decrease_rate: f32,
     attempts_made: u32,
     description: String,
@@ -55,16 +55,16 @@ impl BeaconObjective {
     pub fn id(&self) -> usize { self.id }
     pub fn attempts_made(&self) -> u32 { self.attempts_made }
     pub fn decrease_rate(&self) -> f32 { self.decrease_rate }
-    pub fn start(&self) -> chrono::DateTime<chrono::Utc> { self.start }
-    pub fn end(&self) -> chrono::DateTime<chrono::Utc> { self.end }
+    pub fn start(&self) -> DateTime<Utc> { self.start }
+    pub fn end(&self) -> DateTime<Utc> { self.end }
     pub fn description(&self) -> &str { self.description.as_str() }
 }
 
 #[derive(serde::Deserialize, Debug)]
 pub struct CommunicationSlot {
     id: usize,
-    start: chrono::DateTime<chrono::Utc>,
-    end: chrono::DateTime<chrono::Utc>,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
     enabled: bool,
 }
 

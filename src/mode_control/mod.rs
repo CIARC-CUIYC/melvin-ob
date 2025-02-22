@@ -1,3 +1,3 @@
 pub mod mode_context;
-pub mod global_mode;
+pub mod mode;
 pub(crate) mod base_mode;

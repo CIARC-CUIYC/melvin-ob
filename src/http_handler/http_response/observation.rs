@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use crate::http_handler::http_response::response_common::SerdeJSONBodyHTTPResponseType;
 
 #[derive(serde::Deserialize, Debug)]
@@ -19,7 +20,7 @@ pub struct ObservationResponse {
     active_time: f64,
     objectives_done: u16,
     objectives_points: u32,
-    timestamp: chrono::DateTime<chrono::Utc>,
+    timestamp: DateTime<Utc>,
 }
 
 impl SerdeJSONBodyHTTPResponseType for ObservationResponse {}
@@ -35,7 +36,7 @@ impl ObservationResponse {
     pub fn battery(&self) -> f64 { self.battery }
     pub fn max_battery(&self) -> f64 { self.max_battery }
     pub fn fuel(&self) -> f64 { self.fuel }
-    pub fn timestamp(&self) -> chrono::DateTime<chrono::Utc> { self.timestamp }
+    pub fn timestamp(&self) -> DateTime<Utc> { self.timestamp }
 }
 
 #[derive(serde::Deserialize, Debug)]
