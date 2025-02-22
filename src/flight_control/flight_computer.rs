@@ -1,6 +1,6 @@
 use super::{
     camera_state::CameraAngle,
-    common::{vec2d::Vec2D, math::MAX_DEC},
+    common::{math::MAX_DEC, vec2d::Vec2D},
     flight_state::{FlightState, TRANSITION_DELAY_LOOKUP},
 };
 use crate::flight_control::{
@@ -17,10 +17,13 @@ use crate::http_handler::{
     },
 };
 use crate::{error, fatal, info, log};
+use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::{I32F32, I64F64};
 use num::{ToPrimitive, Zero};
-use std::{sync::Arc, time::{Duration, Instant}};
-use chrono::{DateTime, TimeDelta, Utc};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio::sync::RwLock;
 
 type TurnsClockCClockTup = (
@@ -384,14 +387,18 @@ impl FlightComputer {
             |cont: &FlightComputer| cont.state() != FlightState::Transition,
             format!("State is not {}", FlightState::Transition),
         );
-        Self::wait_for_condition(&locked_self, cond_not_trans, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
+        Self::wait_for_condition(
+            &locked_self,
+            cond_not_trans,
+            Self::DEF_COND_TO,
+            Self::DEF_COND_PI,
+        )
+        .await;
         let cond_min_charge = (
             |cont: &FlightComputer| cont.current_battery() >= Self::EXIT_SAFE_MIN_BATT,
             format!("Battery level is higher than {}", Self::EXIT_SAFE_MIN_BATT),
         );
-        Self::wait_for_condition(
-            &locked_self, cond_min_charge, 15000, Self::DEF_COND_PI,
-        ).await;
+        Self::wait_for_condition(&locked_self, cond_min_charge, 15000, Self::DEF_COND_PI).await;
         Self::set_state_wait(locked_self, target_state).await;
     }
 
@@ -525,7 +532,8 @@ impl FlightComputer {
         };
         let projected_res_pos = act_pos + act_vel * I32F32::from_num(burn_sequence.detumble_dt());
         let deviation = projected_res_pos.to(&target_pos);
-        log!("Evaluated Velocity change. Expected target position: {target_pos}, \
+        log!(
+            "Evaluated Velocity change. Expected target position: {target_pos}, \
             resulting position: {projected_res_pos}, deviation: {deviation}"
         );
         (act_vel, deviation)
@@ -587,10 +595,7 @@ impl FlightComputer {
         };
         loop {
             if req.send_request(&self.request_client).await.is_ok() {
-                info!("Velocity change commanded to [{}, {}]",
-                    vel.x(),
-                    vel.y()
-                );
+                info!("Velocity change commanded to [{}, {}]", vel.x(), vel.y());
                 return;
             }
             error!("Unnoticed HTTP Error in set_vel()");
@@ -675,20 +680,14 @@ impl FlightComputer {
     ///
     /// # Returns
     /// - A `Vec2D<I32F32>` representing the satellite’s predicted position.
-    pub fn pos_in_dt(
-        &self,
-        now: IndexedOrbitPosition,
-        dt: TimeDelta,
-    ) -> IndexedOrbitPosition {
+    pub fn pos_in_dt(&self, now: IndexedOrbitPosition, dt: TimeDelta) -> IndexedOrbitPosition {
         let pos = self.current_pos
             + (self.current_vel * I32F32::from_num(dt.num_seconds())).wrap_around_map();
         now.new_from_future_pos(pos, dt)
     }
 
-    pub fn batt_in_dt(
-        &self,
-        dt: TimeDelta,
-    ) -> I32F32 {
-        self.current_battery + (self.current_state.get_charge_rate() * I32F32::from_num(dt.num_seconds()))
+    pub fn batt_in_dt(&self, dt: TimeDelta) -> I32F32 {
+        self.current_battery
+            + (self.current_state.get_charge_rate() * I32F32::from_num(dt.num_seconds()))
     }
 }

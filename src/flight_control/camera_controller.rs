@@ -1,3 +1,6 @@
+use super::imaging::map_image::{
+    EncodedImageExtract, FullsizeMapImage, MapImage, ThumbnailMapImage,
+};
 use crate::console_communication::ConsoleMessenger;
 use crate::flight_control::{
     camera_state::CameraAngle, common::vec2d::Vec2D, flight_computer::FlightComputer,
@@ -17,15 +20,12 @@ use bitvec::boxed::BitBox;
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use futures::StreamExt;
-use image::{imageops::Lanczos3, ImageReader, RgbImage, GenericImageView, Pixel};
+use image::{imageops::Lanczos3, GenericImageView, ImageReader, Pixel, RgbImage};
 use std::{
     path::Path,
     {io::Cursor, sync::Arc},
 };
 use tokio::sync::{oneshot, Mutex, RwLock};
-use super::imaging::map_image::{
-    EncodedImageExtract, FullsizeMapImage, MapImage, ThumbnailMapImage,
-};
 
 /// A struct for managing camera-related operations and map snapshots.
 pub struct CameraController {
@@ -104,8 +104,8 @@ impl CameraController {
                     offset.x() as i32 + additional_offset_x,
                     offset.y() as i32 + additional_offset_y,
                 )
-                    .wrap_around_map()
-                    .to_unsigned();
+                .wrap_around_map()
+                .to_unsigned();
                 let map_image_view = base.vec_view(
                     current_offset,
                     Vec2D::new(decoded_image.width(), decoded_image.height()),
@@ -161,7 +161,7 @@ impl CameraController {
             position.x().round().to_num::<i32>() - i32::from(angle_const),
             position.y().round().to_num::<i32>() - i32::from(angle_const),
         )
-            .wrap_around_map();
+        .wrap_around_map();
 
         let tot_offset_u32 = {
             let mut fullsize_map_image = self.fullsize_map_image.write().await;
@@ -194,8 +194,8 @@ impl CameraController {
             offset.x() as i32 - ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR as i32 * 2,
             offset.y() as i32 - ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR as i32 * 2,
         )
-            .wrap_around_map()
-            .to_unsigned();
+        .wrap_around_map()
+        .to_unsigned();
         let size_scaled = size * 2 + ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR * 4;
         let fullsize_map_image = self.fullsize_map_image.read().await;
         let map_image_view =
@@ -319,7 +319,8 @@ impl CameraController {
             .read()
             .await
             .create_snapshot(Path::new(&self.base_path).join(SNAPSHOT_FULL_PATH))?;
-        info!("Exported Full-View PNG in {}s!",
+        info!(
+            "Exported Full-View PNG in {}s!",
             (Utc::now() - start_time).num_seconds()
         );
         Ok(())
@@ -393,21 +394,22 @@ impl CameraController {
         self: Arc<Self>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
         console_messenger: Arc<ConsoleMessenger>,
-        (end_time, kill): (
-            DateTime<Utc>,
-            oneshot::Receiver<PeriodicImagingEndSignal>,
-        ),
+        (end_time, kill): (DateTime<Utc>, oneshot::Receiver<PeriodicImagingEndSignal>),
         image_max_dt: I32F32,
         lens: CameraAngle,
         start_index: usize,
     ) -> Vec<(isize, isize)> {
-        fn get_p_secs(last_pic: Option<DateTime<Utc>>, last_mark: DateTime<Utc>, overlap: TimeDelta) -> i64 {
+        fn get_p_secs(
+            last_pic: Option<DateTime<Utc>>,
+            last_mark: DateTime<Utc>,
+            overlap: TimeDelta,
+        ) -> i64 {
             if let Some(last_pic_val) = last_pic {
                 (last_pic_val - last_mark + overlap).num_seconds()
             } else {
                 0
             }
-        }        
+        }
         let mut kill_box = Box::pin(kill);
         let mut last_image_flag = false;
         let st = start_index as isize;
@@ -418,10 +420,7 @@ impl CameraController {
             let overlap_dt = (image_max_dt.floor() / I32F32::lit("2.0")).to_num::<isize>();
             TimeDelta::seconds(overlap_dt as i64)
         };
-        let mut last_mark = (
-            st - overlap.num_seconds() as isize,
-            Utc::now() - overlap,
-        );
+        let mut last_mark = (st - overlap.num_seconds() as isize, Utc::now() - overlap);
         let mut last_pic = None;
         loop {
             let f_cont_lock_clone = Arc::clone(&f_cont_lock);
@@ -451,8 +450,7 @@ impl CameraController {
             });
 
             let mut next_img_due = {
-                let next_max_dt =
-                    Utc::now() + TimeDelta::seconds(image_max_dt.to_num::<i64>());
+                let next_max_dt = Utc::now() + TimeDelta::seconds(image_max_dt.to_num::<i64>());
                 if next_max_dt > end_time {
                     last_image_flag = true;
                     end_time
