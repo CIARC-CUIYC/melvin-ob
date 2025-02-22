@@ -1,5 +1,3 @@
-use crate::http_handler::http_client::HTTPClient;
-use crate::{event, fatal, info, log, obj, warn};
 use crate::flight_control::{
     camera_state::CameraAngle,
     flight_computer::FlightComputer,
@@ -11,6 +9,8 @@ use crate::flight_control::{
     orbit::IndexedOrbitPosition,
     task::{switch_state_task::SwitchStateTask, TaskController},
 };
+use crate::http_handler::http_client::HTTPClient;
+use crate::{event, fatal, info, log, obj, warn};
 
 use crate::mode_control::mode_context::ModeContext;
 use chrono::{DateTime, TimeDelta, Utc};
@@ -275,12 +275,12 @@ impl BaseMode {
                         Box::pin(async move { Self::handle_b_o_done(clone, obj, handler).await })
                     } else {
                         Box::pin(async move {
-                                Self::exec_comms(context, due, c_tok, clone).await;
-                                if Utc::now() > due + Self::MAX_COMM_PROLONG_RESCHEDULE {
-                                    BaseWaitExitSignal::ReturnSomeLeft
-                                } else {
-                                    BaseWaitExitSignal::Continue
-                                }
+                            Self::exec_comms(context, due, c_tok, clone).await;
+                            if Utc::now() > due + Self::MAX_COMM_PROLONG_RESCHEDULE {
+                                BaseWaitExitSignal::ReturnSomeLeft
+                            } else {
+                                BaseWaitExitSignal::Continue
+                            }
                         })
                     }
                 } else {
@@ -381,14 +381,14 @@ impl BaseMode {
                 let beac_done = BeaconObjectiveDone::from(obj.1);
                 if beac_done.guesses().is_empty() {
                     obj!(
-                        "Found almost ending Beacon objective: ID {}. No guesses :(",
+                        "Almost ending Beacon objective: ID {}. No guesses :(",
                         obj.0
                     );
                     continue;
                 }
                 done_obj.push(beac_done);
                 obj!(
-                    "Found almost ending Beacon objective: ID {}. Submitting this soon!",
+                    "Almost ending Beacon objective: ID {}. Submitting this soon!",
                     obj.0
                 );
                 continue;
