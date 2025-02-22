@@ -725,6 +725,7 @@ impl TaskController {
             let st: usize = match f_cont.state() {
                 FlightState::Acquisition => 1,
                 FlightState::Charge => 0,
+                // TODO: implement comms state here
                 state => fatal!("Unexpected flight state: {state}"),
             };
             (batt, st)
