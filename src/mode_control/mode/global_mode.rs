@@ -1,10 +1,8 @@
 use async_trait::async_trait;
 use std::sync::Arc;
 use chrono::{DateTime, Utc};
-use crate::flight_control::objective::objective_base::ObjectiveBase;
-use crate::flight_control::task::base_task::Task;
-use crate::mode_control::base_mode::BaseWaitExitSignal;
-use crate::mode_control::mode_context::ModeContext;
+use crate::flight_control::{objective::objective_base::ObjectiveBase, task::base_task::Task};
+use crate::mode_control::{mode_context::ModeContext, base_mode::BaseWaitExitSignal};
 
 #[async_trait]
 pub trait GlobalMode {

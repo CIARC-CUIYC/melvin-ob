@@ -1,16 +1,16 @@
+use super::{
+    atomic_decision::AtomicDecision,
+    atomic_decision_cube::AtomicDecisionCube,
+    base_task::Task,
+    score_grid::ScoreGrid,
+    vel_change_task::{VelocityChangeTaskRationale, VelocityChangeTaskRationale::OrbitEscape},
+};
 use crate::flight_control::{
     common::{linked_box::LinkedBox, math, vec2d::Vec2D},
     flight_computer::FlightComputer,
     flight_state::FlightState,
     objective::known_img_objective::KnownImgObjective,
     orbit::{BurnSequence, ClosedOrbit, IndexedOrbitPosition},
-    task::{
-        atomic_decision::AtomicDecision,
-        atomic_decision_cube::AtomicDecisionCube,
-        base_task::Task,
-        score_grid::ScoreGrid,
-        vel_change_task::{VelocityChangeTaskRationale, VelocityChangeTaskRationale::OrbitEscape},
-    },
 };
 use crate::{fatal, info, log};
 use bitvec::prelude::BitRef;

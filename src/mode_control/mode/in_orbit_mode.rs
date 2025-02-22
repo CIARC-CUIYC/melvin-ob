@@ -1,27 +1,24 @@
-use crate::flight_control::objective::beacon_objective::BeaconObjective;
-use crate::flight_control::objective::known_img_objective::KnownImgObjective;
-use crate::flight_control::objective::objective_base::ObjectiveBase;
-use crate::flight_control::objective::objective_type::ObjectiveType;
 use crate::flight_control::{
     flight_computer::FlightComputer,
     flight_state::FlightState,
+    objective::{
+        beacon_objective::BeaconObjective, known_img_objective::KnownImgObjective,
+        objective_base::ObjectiveBase, objective_type::ObjectiveType,
+    },
     task::{
         base_task::{BaseTask, Task},
         TaskController,
     },
 };
-use crate::mode_control::base_mode::BaseWaitExitSignal;
-use crate::mode_control::mode::global_mode::WaitExitSignal;
 use crate::mode_control::{
-    base_mode::{BaseMode, MappingModeEnd::Join},
-    mode::global_mode::{ExecExitSignal, GlobalMode, OpExitSignal},
+    base_mode::{BaseMode, BaseWaitExitSignal, MappingModeEnd::Join},
+    mode::global_mode::{ExecExitSignal, GlobalMode, OpExitSignal, WaitExitSignal},
     mode_context::ModeContext,
 };
 use crate::{fatal, info, obj, warn};
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
-use std::time::Duration;
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
 

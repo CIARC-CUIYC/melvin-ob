@@ -1,10 +1,10 @@
-use crate::flight_control::common::vec2d::Vec2D;
+use crate::flight_control::objective::beacon_objective::BeaconMeas;
+use super::vec2d::Vec2D;
 use fixed::types::I32F32;
 use kiddo::{ImmutableKdTree, SquaredEuclidean};
 use num::traits::FloatConst;
 use std::collections::{HashMap, HashSet};
 use std::num::NonZero;
-use crate::flight_control::objective::beacon_objective::BeaconMeas;
 
 #[derive(Debug, Clone)]
 pub struct SquareSlice {
@@ -24,7 +24,7 @@ impl SquareSlice {
     pub fn map_right_top(&self, p: Vec2D<I32F32>) -> Vec2D<I32F32> {
         self.offset + self.offset.unwrapped_to_top_right(&p)
     }
-    
+
     fn map_right_bottom(&self, p: Vec2D<I32F32>) -> Vec2D<I32F32> {
         self.offset + self.offset.unwrapped_to_bottom_right(&p)
     }
@@ -45,8 +45,14 @@ impl SquareSlice {
 
         // If there's no overlap, return a zero-sized square
         if start_x >= end_x || start_y >= end_y {
-            println!("corr_offs: {corr_offs}, self_offs: {}, other_offs: {}", self.offset, other.offset);
-            println!("self_side_length: {}, other_side_length: {}", self.side_length, other.side_length);
+            println!(
+                "corr_offs: {corr_offs}, self_offs: {}, other_offs: {}",
+                self.offset, other.offset
+            );
+            println!(
+                "self_side_length: {}, other_side_length: {}",
+                self.side_length, other.side_length
+            );
             println!("start_x: {start_x}, start_y: {start_y}, end_x: {end_x}, end_y: {end_y}");
             return Self {
                 offset: Vec2D::new(start_x, start_y),
@@ -131,11 +137,10 @@ impl SquareSlice {
 pub struct BayesianSet {
     set: HashSet<Vec2D<i32>>,
     curr_slice: SquareSlice,
-    measurements: Vec<BeaconMeas>
+    measurements: Vec<BeaconMeas>,
 }
 
 impl BayesianSet {
-    
     const K_FAC_MAX: I32F32 = I32F32::lit("0.9");
     const K_FAC_MIN: I32F32 = I32F32::lit("1.1");
     pub const STD_DIST_SAFETY: I32F32 = I32F32::lit("5");
@@ -148,7 +153,10 @@ impl BayesianSet {
     fn get_dists(d_noisy: I32F32) -> (I32F32, I32F32) {
         let min_dist = ((d_noisy - Self::K_ADD) / Self::K_FAC_MIN) - Self::STD_DIST_SAFETY;
         let max_dist = ((d_noisy + Self::K_ADD) / Self::K_FAC_MAX) + Self::STD_DIST_SAFETY;
-        (min_dist.max(Self::MIN_DIST).floor(), max_dist.min(Self::MAX_DIST).ceil())
+        (
+            min_dist.max(Self::MIN_DIST).floor(),
+            max_dist.min(Self::MAX_DIST).ceil(),
+        )
     }
 
     pub fn new(meas: BeaconMeas) -> Self {
@@ -160,7 +168,7 @@ impl BayesianSet {
         Self {
             set,
             curr_slice: slice,
-            measurements: vec![meas]
+            measurements: vec![meas],
         }
     }
 

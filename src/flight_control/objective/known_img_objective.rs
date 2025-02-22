@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
 use chrono::{DateTime, Utc};
-use crate::flight_control::camera_state::CameraAngle;
-use crate::flight_control::common::vec2d::Vec2D;
+use crate::flight_control::{camera_state::CameraAngle, common::vec2d::Vec2D};
 use crate::http_handler::{ImageObjective, ZoneType};
 use fixed::types::I32F32;
 use num::ToPrimitive;

@@ -1,29 +1,34 @@
-use crate::flight_control::objective::beacon_objective::BeaconMeas;
-use crate::flight_control::objective::beacon_objective_done::BeaconObjectiveDone;
 use crate::http_handler::http_client::HTTPClient;
-use crate::{
-    event, fatal,
-    flight_control::{
-        camera_state::CameraAngle, flight_computer::FlightComputer, flight_state::FlightState,
-        objective::beacon_objective::BeaconObjective, orbit::IndexedOrbitPosition,
-        task::switch_state_task::SwitchStateTask,
+use crate::{event, fatal, info, log, obj, warn};
+use crate::flight_control::{
+    camera_state::CameraAngle,
+    flight_computer::FlightComputer,
+    flight_state::FlightState,
+    objective::{
+        beacon_objective::{BeaconMeas, BeaconObjective},
+        beacon_objective_done::BeaconObjectiveDone,
     },
-    info, log,
-    mode_control::mode_context::ModeContext,
-    obj, warn,
+    orbit::IndexedOrbitPosition,
+    task::{switch_state_task::SwitchStateTask, TaskController},
 };
+
+use crate::mode_control::mode_context::ModeContext;
 use chrono::{DateTime, TimeDelta, Utc};
 use regex::Regex;
-use std::collections::HashMap;
-use std::sync::LazyLock;
-use std::{future::Future, pin::Pin, sync::Arc};
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    future::Future,
+    pin::Pin,
+    sync::{Arc, LazyLock},
+    time::Duration,
+};
 use strum_macros::Display;
-use tokio::sync::Mutex;
-use tokio::time::Instant;
-use tokio::{sync::oneshot, task::JoinHandle};
+use tokio::{
+    sync::{oneshot, Mutex},
+    task::JoinHandle,
+    time::Instant,
+};
 use tokio_util::sync::CancellationToken;
-use crate::flight_control::task::TaskController;
 
 pub(crate) enum MappingModeEnd {
     Timestamp(DateTime<Utc>),
@@ -84,7 +89,7 @@ impl BaseMode {
     const MIN_COMM_DT: Duration = Duration::from_secs(60);
     const MAX_COMM_INTERVAL: Duration = Duration::from_secs(500);
     const MAX_COMM_PROLONG_RESCHEDULE: TimeDelta = TimeDelta::seconds(2);
-    
+
     #[allow(clippy::cast_possible_wrap)]
     pub async fn exec_map(
         context: Arc<ModeContext>,

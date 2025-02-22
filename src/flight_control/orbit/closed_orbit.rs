@@ -1,4 +1,5 @@
-use crate::flight_control::{camera_state::CameraAngle, orbit::orbit_base::OrbitBase};
+use super::orbit_base::OrbitBase;
+use crate::flight_control::camera_state::CameraAngle;
 use bitvec::{
     bitbox,
     order::Lsb0,

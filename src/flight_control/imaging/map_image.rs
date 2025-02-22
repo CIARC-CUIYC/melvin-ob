@@ -9,8 +9,7 @@ use image::{
     PixelWithColorType, Rgb, Rgba, RgbaImage,
 };
 use tokio::{fs::File, io::AsyncReadExt};
-use crate::flight_control::common::{bitmap::Bitmap, vec2d::Vec2D};
-use crate::flight_control::common::vec2d::MapSize;
+use crate::flight_control::common::{bitmap::Bitmap, vec2d::{Vec2D, MapSize}};
 use super::{file_based_buffer::FileBackedBuffer, sub_buffer::SubBuffer};
 
 

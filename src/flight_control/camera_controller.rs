@@ -17,8 +17,7 @@ use bitvec::boxed::BitBox;
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use futures::StreamExt;
-use image::{imageops::Lanczos3, ImageReader, RgbImage};
-use image::{GenericImageView, Pixel};
+use image::{imageops::Lanczos3, ImageReader, RgbImage, GenericImageView, Pixel};
 use std::{
     path::Path,
     {io::Cursor, sync::Arc},

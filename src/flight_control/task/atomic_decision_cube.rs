@@ -1,4 +1,4 @@
-use crate::flight_control::task::atomic_decision::AtomicDecision;
+use super::atomic_decision::AtomicDecision;
 
 /// A flattened 3D data structure to manage atomic decisions for multiple dimensions with good cache performance.
 pub struct AtomicDecisionCube {

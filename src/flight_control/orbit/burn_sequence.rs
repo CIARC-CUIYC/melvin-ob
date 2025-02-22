@@ -1,4 +1,5 @@
-use crate::flight_control::{common::vec2d::Vec2D, orbit::index::IndexedOrbitPosition};
+use crate::flight_control::common::vec2d::Vec2D;
+use super::index::IndexedOrbitPosition;
 use fixed::types::I32F32;
 
 /// Represents a sequence of corrective burns for orbital adjustments.

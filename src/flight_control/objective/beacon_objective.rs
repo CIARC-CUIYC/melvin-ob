@@ -1,5 +1,4 @@
-use crate::flight_control::common::bayesian_set::BayesianSet;
-use crate::flight_control::common::vec2d::Vec2D;
+use crate::flight_control::common::{bayesian_set::BayesianSet, vec2d::Vec2D};
 use crate::STATIC_ORBIT_VEL;
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;

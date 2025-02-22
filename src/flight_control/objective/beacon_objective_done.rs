@@ -1,13 +1,17 @@
-use crate::flight_control::common::vec2d::Vec2D;
-use crate::flight_control::flight_computer::FlightComputer;
-use crate::flight_control::objective::beacon_objective::BeaconObjective;
-use crate::http_handler::http_client::HTTPClient;
-use crate::http_handler::http_request::beacon_position_put::BeaconPositionRequest;
-use crate::http_handler::http_request::request_common::NoBodyHTTPRequestType;
+use crate::flight_control::{
+    common::vec2d::Vec2D, flight_computer::FlightComputer,
+};
+use super::beacon_objective::BeaconObjective;
+use crate::http_handler::{
+    http_client::HTTPClient,
+    http_request::{
+        beacon_position_put::BeaconPositionRequest, request_common::NoBodyHTTPRequestType,
+    },
+};
+use crate::{error, obj};
+use chrono::{DateTime, Utc};
 use fixed::types::I32F32;
 use std::sync::Arc;
-use chrono::{DateTime, Utc};
-use crate::{error, obj};
 
 pub struct BeaconObjectiveDone {
     id: usize,
@@ -26,7 +30,11 @@ impl BeaconObjectiveDone {
 
     #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
     pub async fn guess_max(&self, client: Arc<HTTPClient>) {
-        obj!("Guessing max for {}: {} guesses...", self.id, self.guesses.len());
+        obj!(
+            "Guessing max for {}: {} guesses...",
+            self.id,
+            self.guesses.len()
+        );
         let id_u16 = self.id() as u16;
         'outer: for (i, guess) in self.guesses().iter().enumerate() {
             let width = guess.x().abs().to_num::<u32>();

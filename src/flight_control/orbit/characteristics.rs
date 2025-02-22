@@ -1,11 +1,11 @@
 use chrono::{DateTime, TimeDelta, Utc};
 use crate::flight_control::{
     flight_computer::FlightComputer,
-    orbit::{closed_orbit::ClosedOrbit, index::IndexedOrbitPosition},
+    common::vec2d::Vec2D
 };
+use super::{closed_orbit::ClosedOrbit, index::IndexedOrbitPosition};
 use fixed::types::I32F32;
 use tokio::sync::RwLock;
-use crate::flight_control::common::vec2d::Vec2D;
 use crate::info;
 
 /// Represents the characteristics of an orbital path including imaging frequency,

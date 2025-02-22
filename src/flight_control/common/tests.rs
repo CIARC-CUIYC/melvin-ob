@@ -1,6 +1,5 @@
 use chrono::TimeDelta;
-use crate::flight_control::common::bayesian_set::BayesianSet;
-use crate::flight_control::common::vec2d::{MapSize, Vec2D};
+use super::{bayesian_set::BayesianSet, vec2d::{MapSize, Vec2D}};
 use crate::flight_control::objective::beacon_objective::BeaconMeas;
 use crate::STATIC_ORBIT_VEL;
 use fixed::types::I32F32;

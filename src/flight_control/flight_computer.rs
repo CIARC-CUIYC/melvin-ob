@@ -1,9 +1,8 @@
 use super::{
     camera_state::CameraAngle,
-    common::vec2d::Vec2D,
+    common::{vec2d::Vec2D, math::MAX_DEC},
     flight_state::{FlightState, TRANSITION_DELAY_LOOKUP},
 };
-use crate::flight_control::common::math::MAX_DEC;
 use crate::flight_control::{
     orbit::{BurnSequence, IndexedOrbitPosition},
     task::TaskController,
@@ -20,8 +19,7 @@ use crate::http_handler::{
 use crate::{error, fatal, info, log};
 use fixed::types::{I32F32, I64F64};
 use num::{ToPrimitive, Zero};
-use std::{sync::Arc, time::Duration};
-use std::time::Instant;
+use std::{sync::Arc, time::{Duration, Instant}};
 use chrono::{DateTime, TimeDelta, Utc};
 use tokio::sync::RwLock;
 
