@@ -18,6 +18,7 @@ use futures::StreamExt;
 use reqwest_eventsource::{Event, EventSource};
 use std::{collections::HashSet, env, sync::Arc};
 use tokio::sync::{broadcast, mpsc, mpsc::Receiver, Notify, RwLock};
+use tokio::time::Instant;
 
 pub struct Supervisor {
     f_cont_lock: Arc<RwLock<FlightComputer>>,
@@ -125,7 +126,7 @@ impl Supervisor {
             let mut f_cont = self.f_cont_lock.write().await;
             // Update observation and fetch new position
             f_cont.update_observation().await;
-
+            let last_update = Instant::now();
             /*
             if Utc::now() > next_safe {
                 let act_state = f_cont.state();
@@ -207,7 +208,7 @@ impl Supervisor {
                 last_objective_check = Utc::now();
             }
 
-            tokio::time::sleep(Self::OBS_UPDATE_INTERVAL).await;
+            tokio::time::sleep_until(last_update + Self::OBS_UPDATE_INTERVAL).await;
         }
     }
 }

@@ -22,6 +22,7 @@ use tokio::sync::Mutex;
 use tokio::time::Instant;
 use tokio::{sync::oneshot, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
+use crate::flight_control::task::TaskController;
 
 pub(crate) enum MappingModeEnd {
     Timestamp(DateTime<Utc>),
@@ -81,7 +82,8 @@ impl BaseMode {
     const BO_MSG_COMM_PROLONG: TimeDelta = TimeDelta::seconds(60);
     const MIN_COMM_DT: std::time::Duration = std::time::Duration::from_secs(60);
     const MAX_COMM_INTERVAL: std::time::Duration = std::time::Duration::from_secs(500);
-
+    const MAX_COMM_PROLONG_RESCHEDULE: chrono::TimeDelta = chrono::Duration::seconds(2);
+    
     #[allow(clippy::cast_possible_wrap)]
     pub async fn exec_map(
         context: Arc<ModeContext>,
@@ -188,7 +190,11 @@ impl BaseMode {
                 Ok(msg) = event_rx.recv() => {
                     let (t, val) = msg;
                     if let Some((id, d_noisy)) = extract_id_and_d(val.as_str()) {
-                        let pos = context.k().f_cont().read().await.current_pos();
+                        let (pos, res_batt) = {
+                            let f_cont = context.k().f_cont();
+                            let lock = f_cont.read().await;
+                            (lock.current_pos().clone(), lock.batt_in_dt(Self::BO_MSG_COMM_PROLONG))
+                        };
                         let msg_delay = Utc::now() - t;
                         let meas = BeaconMeas::new(id, pos, d_noisy, msg_delay);
                         obj!("Received BO measurement at {pos} for ID {id} with distance {d_noisy}.");
@@ -196,7 +202,7 @@ impl BaseMode {
                             obj!("Updating BO {id} and prolonging!");
                             obj.append_measurement(meas);
                             let new_end = Utc::now() + Self::BO_MSG_COMM_PROLONG;
-                            if new_end > due {
+                            if new_end > due && res_batt > TaskController::MIN_BATTERY_THRESHOLD {
                                 sleep_fut.set(tokio::time::sleep_until(Instant::now() + Self::BO_MSG_COMM_PROLONG_STD));
                             }
                         } else {
@@ -261,7 +267,11 @@ impl BaseMode {
                     let clone = Arc::clone(b_o_arc);
                     Box::pin(async move {
                         Self::exec_comms(context, due, c_tok, clone).await;
-                        BaseWaitExitSignal::Continue
+                        if Utc::now() > due + Self::MAX_COMM_PROLONG_RESCHEDULE {
+                            BaseWaitExitSignal::ReturnSomeLeft
+                        } else {
+                            BaseWaitExitSignal::Continue
+                        }
                     })
                 } else {
                     warn!("No known Beacon Objectives. Waiting!");

@@ -686,4 +686,11 @@ impl FlightComputer {
             + (self.current_vel * I32F32::from_num(dt.num_seconds())).wrap_around_map();
         now.new_from_future_pos(pos, dt)
     }
+
+    pub fn batt_in_dt(
+        &self,
+        dt: chrono::TimeDelta,
+    ) -> I32F32 {
+        self.current_battery + (self.current_state.get_charge_rate() * I32F32::from_num(dt.num_seconds()))
+    }
 }

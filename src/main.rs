@@ -23,6 +23,9 @@ use crate::mode_control::{
 use chrono::TimeDelta;
 use fixed::types::I32F32;
 use std::{env, sync::Arc};
+use tokio::time::Instant;
+use std::time::Duration;
+use crate::http_handler::http_client::HTTPClient;
 
 const DT_MIN: TimeDelta = TimeDelta::seconds(5);
 const DT_0: TimeDelta = TimeDelta::seconds(0);
@@ -30,15 +33,12 @@ const DT_0_STD: std::time::Duration = std::time::Duration::from_secs(0);
 const DETUMBLE_TOL: TimeDelta = DT_MIN;
 
 const STATIC_ORBIT_VEL: (I32F32, I32F32) = (I32F32::lit("6.40"), I32F32::lit("7.40"));
-pub const MIN_BATTERY_THRESHOLD: I32F32 = I32F32::lit("10.00");
-pub const MAX_BATTERY_THRESHOLD: I32F32 = I32F32::lit("100.00");
 const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {    
     let base_url_var = env::var("DRS_BASE_URL");
     let base_url = base_url_var.as_ref().map_or("http://localhost:33000", |v| v.as_str());
-    
     let context = Arc::new(init(base_url).await);
     
     let mut global_mode: Box<dyn GlobalMode> = Box::new(InOrbitMode::new());

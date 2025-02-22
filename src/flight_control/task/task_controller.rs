@@ -12,7 +12,7 @@ use crate::flight_control::{
         vel_change_task::{VelocityChangeTaskRationale, VelocityChangeTaskRationale::OrbitEscape},
     },
 };
-use crate::{fatal, info, log, MAX_BATTERY_THRESHOLD, MIN_BATTERY_THRESHOLD};
+use crate::{fatal, info, log};
 use bitvec::prelude::BitRef;
 use chrono::{DateTime, Utc};
 use fixed::types::I32F32;
@@ -54,6 +54,9 @@ impl TaskController {
 
     /// The resolution for battery levels used in calculations, expressed in fixed-point format.
     const BATTERY_RESOLUTION: I32F32 = I32F32::lit("0.1");
+
+    pub const MIN_BATTERY_THRESHOLD: I32F32 = I32F32::lit("10.00");
+    pub const MAX_BATTERY_THRESHOLD: I32F32 = I32F32::lit("100.00");
 
     /// The resolution for time duration calculations, expressed in fixed-point format.
     const TIME_RESOLUTION: I32F32 = I32F32::lit("1.0");
@@ -122,7 +125,7 @@ impl TaskController {
         // List of potential states during the orbit scheduling process.
         let states = [FlightState::Charge, FlightState::Acquisition];
         // Calculate the usable battery range based on the fixed thresholds.
-        let usable_batt_range = MAX_BATTERY_THRESHOLD - MIN_BATTERY_THRESHOLD;
+        let usable_batt_range = Self::MAX_BATTERY_THRESHOLD - Self::MIN_BATTERY_THRESHOLD;
         // Determine the maximum number of battery levels that can be represented.
         let max_battery =
             (usable_batt_range / Self::BATTERY_RESOLUTION).round().to_usize().unwrap();
@@ -150,7 +153,7 @@ impl TaskController {
         // Initialize the first coverage grid based on the end status or use a default grid.
         let cov_dt_first = {
             if let Some(end) = end_status {
-                let end_batt_clamp = end.1.clamp(MIN_BATTERY_THRESHOLD, MAX_BATTERY_THRESHOLD);
+                let end_batt_clamp = end.1.clamp(Self::MIN_BATTERY_THRESHOLD, Self::MAX_BATTERY_THRESHOLD);
                 let end_batt =
                     (end_batt_clamp / Self::BATTERY_RESOLUTION).round().to_usize().unwrap();
                 let end_state = end.0 as usize;
@@ -522,7 +525,7 @@ impl TaskController {
             if best_burn_sequence.is_none()
                 || burn_sequence_cost < best_burn_sequence.as_ref().unwrap().0.cost()
             {
-                if min_charge < MAX_BATTERY_THRESHOLD {
+                if min_charge < Self::MAX_BATTERY_THRESHOLD {
                     best_burn_sequence = Some((burn_sequence, min_charge));
                 } else {
                     println!("Cheaper maneuver found but min charge {min_charge} is too high!");
@@ -728,7 +731,7 @@ impl TaskController {
         };
 
         let mut dt = dt_sh;
-        let (min_batt, max_batt) = (MIN_BATTERY_THRESHOLD, MAX_BATTERY_THRESHOLD); // Battery thresholds
+        let (min_batt, max_batt) = (Self::MIN_BATTERY_THRESHOLD, Self::MAX_BATTERY_THRESHOLD); // Battery thresholds
         let max_mapped = (max_batt / Self::BATTERY_RESOLUTION
             - min_batt / Self::BATTERY_RESOLUTION)
             .round()
