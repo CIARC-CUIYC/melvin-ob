@@ -679,7 +679,6 @@ impl TaskController {
         orbit_lock: Arc<RwLock<ClosedOrbit>>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
         scheduling_start_i: IndexedOrbitPosition,
-        first_comms_end: DateTime<Utc>,
         end_t: DateTime<Utc>,
     ) {
         let computation_start = scheduling_start_i.t();
@@ -689,8 +688,9 @@ impl TaskController {
         let strict_end = (end_t, scheduling_start_i.index_then(end_t - Utc::now()));
         
         let mut curr_comms_end = {
-            let batt = f_cont_lock.read().await.batt_in_dt(first_comms_end - Utc::now());
-            Some((first_comms_end, batt))
+            let dt = TimeDelta::seconds(Self::IN_COMMS_SCHED_SECS as i64);
+            let batt = f_cont_lock.read().await.batt_in_dt(dt);
+            Some((Utc::now() + dt, batt))
         };
 
         let orbit = orbit_lock.read().await;

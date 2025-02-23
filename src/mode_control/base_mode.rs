@@ -12,7 +12,7 @@ use crate::flight_control::{
 use crate::http_handler::http_client::HTTPClient;
 use crate::{event, fatal, info, log, obj, warn};
 
-use crate::mode_control::base_mode::TaskEndSignal::Join;
+use crate::mode_control::base_mode::TaskEndSignal::{Join, Timestamp};
 use crate::mode_control::mode_context::ModeContext;
 use chrono::{DateTime, TimeDelta, Utc};
 use regex::Regex;
@@ -40,11 +40,6 @@ pub(crate) enum TaskEndSignal {
 pub enum PeriodicImagingEndSignal {
     KillNow,
     KillLastImage,
-}
-
-pub enum CommsTransitDecision {
-    TransitNow,
-    ScheduleTransit,
 }
 
 #[derive(Display, Clone)]
@@ -93,11 +88,7 @@ impl BaseMode {
     }
 
     #[allow(clippy::cast_possible_wrap)]
-    pub async fn exec_map(
-        context: Arc<ModeContext>,
-        end: TaskEndSignal,
-        c_tok: CancellationToken,
-    ) {
+    pub async fn exec_map(context: Arc<ModeContext>, end: TaskEndSignal, c_tok: CancellationToken) {
         let end_t = {
             match end {
                 TaskEndSignal::Timestamp(dt) => dt,
@@ -184,16 +175,28 @@ impl BaseMode {
 
     async fn exec_comms(
         context: Arc<ModeContext>,
-        due: DateTime<Utc>,
+        due: TaskEndSignal,
         c_tok: CancellationToken,
         b_o: Arc<Mutex<HashMap<usize, BeaconObjective>>>,
     ) {
         let start = Utc::now();
         let obj_length = b_o.lock().await.len();
         let mut event_rx = context.super_v().subscribe_event_hub();
-        let due_secs = (due - Utc::now()).to_std().unwrap_or(Self::DT_0_STD);
-        let sleep_fut = tokio::time::sleep_until(Instant::now() + due_secs);
-        tokio::pin!(sleep_fut);
+        let due_t = {
+            if let Timestamp(x) = due {
+                Some(x)
+            } else {
+                None
+            }
+        };
+
+        let mut fut: Pin<Box<dyn Future<Output = ()>>> = match due {
+            Timestamp(due) => {
+                let due_secs = (due - Utc::now()).to_std().unwrap_or(Self::DT_0_STD);
+                Box::pin(tokio::time::sleep_until(Instant::now() + due_secs))
+            }
+            Join(join_handle) => Box::pin(async { join_handle.await.ok().unwrap() }),
+        };
 
         loop {
             tokio::select! {
@@ -213,10 +216,11 @@ impl BaseMode {
                             obj!("Updating BO {id} and prolonging!");
                             obj.append_measurement(meas);
                             let new_end = Utc::now() + Self::BO_MSG_COMM_PROLONG;
-                            let prolong_cond = new_end > due || obj_length == 1;
+                            if let Some(t) = due_t{
+                                let prolong_cond = new_end > t || obj_length == 1;
                             if prolong_cond && res_batt > TaskController::MIN_BATTERY_THRESHOLD {
-                                sleep_fut.set(tokio::time::sleep_until(Instant::now() + Self::BO_MSG_COMM_PROLONG_STD));
-                            }
+                                fut = Box::pin(tokio::time::sleep_until(Instant::now() + Self::BO_MSG_COMM_PROLONG_STD));
+                            }}
                         } else {
                             warn!("Unknown BO ID {id}. Ignoring!");
                         }
@@ -225,14 +229,15 @@ impl BaseMode {
                     }
                 },
                 // If the timeout expires, exit
-                () = &mut sleep_fut => {
+                () = &mut fut => {
                     log!("Comms Timeout reached after {}s. Stopping listener.",
                     (Utc::now() - start).num_seconds());
-                    return;
+                    break;
                 },
                 // If the task gets cancelled exit with the updated beacon vector
                 () = c_tok.cancelled() => {
-                    return;
+                    
+                    break;
                 }
             }
         }
@@ -247,25 +252,44 @@ impl BaseMode {
         }
     }
 
-    pub async fn get_schedule_handle(&self, context: Arc<ModeContext>, c_tok: CancellationToken) -> JoinHandle<()> {
+    pub async fn get_schedule_handle(
+        &self,
+        context: Arc<ModeContext>,
+        c_tok: CancellationToken,
+    ) -> JoinHandle<()> {
         let k = Arc::clone(context.k());
         let o_ch = context.o_ch_clone().await;
-        let t = match self {
-            BaseMode::MappingMode => {
-                TaskController::sched_opt_orbit(k.t_cont(), k.c_orbit(), k.f_cont(), o_ch.i_entry())
-            }
+        let j_handle = match self {
+            BaseMode::MappingMode => tokio::spawn(TaskController::sched_opt_orbit(
+                k.t_cont(),
+                k.c_orbit(),
+                k.f_cont(),
+                o_ch.i_entry(),
+            )),
             BaseMode::BeaconObjectiveScanningMode(obj_m) => {
-                TaskController::sched_opt_orbit(k.t_cont(), k.c_orbit(), k.f_cont(), o_ch.i_entry())
+                let last_obj_end =
+                    obj_m.lock().await.values().map(|obj| obj.end()).max().unwrap_or(Utc::now());
+                tokio::spawn(TaskController::sched_opt_orbit_w_comms(
+                    k.t_cont(),
+                    k.c_orbit(),
+                    k.f_cont(),
+                    o_ch.i_entry(),
+                    last_obj_end,
+                ))
             }
         };
-        let j_handle = tokio::spawn(t);
         let state = context.k().f_cont().read().await.state();
         if state == FlightState::Acquisition {
             tokio::spawn(BaseMode::exec_map(context, Join(j_handle), c_tok))
         } else if state == FlightState::Comms {
-            // TODO::
-            todo!()
-            //Box::new(BaseMode::exec_comms(context, Join(j_handle), c_tok))
+            match self {
+                BaseMode::MappingMode => fatal!("Illegal state ({state})!"),
+                BaseMode::BeaconObjectiveScanningMode(b_o_arc) => {
+                    let b_o_clone = Arc::clone(b_o_arc);
+                    todo!()
+                    //tokio::spawn(BaseMode::exec_comms(context, Join(j_handle), c_tok, b_o_clone))
+                }
+            }
         } else {
             tokio::spawn(async { j_handle.await.ok().unwrap() })
         }
@@ -287,10 +311,10 @@ impl BaseMode {
             FlightComputer::wait_for_duration(sleep).await;
             BaseWaitExitSignal::Continue
         });
-        let task_fut: Pin<Box<dyn Future<Output=BaseWaitExitSignal> + Send>> = match current_state
+        let task_fut: Pin<Box<dyn Future<Output = BaseWaitExitSignal> + Send>> = match current_state
         {
             FlightState::Acquisition => Box::pin(async move {
-                Self::exec_map(context, TaskEndSignal::Timestamp(due), c_tok).await;
+                Self::exec_map(context, Timestamp(due), c_tok).await;
                 BaseWaitExitSignal::Continue
             }),
             FlightState::Charge => match self {
@@ -298,9 +322,7 @@ impl BaseMode {
                 BaseMode::BeaconObjectiveScanningMode(obj_m) => {
                     if let Some(obj) = Self::check_b_o_done(obj_m.clone()).await {
                         let obj_m_clone = Arc::clone(obj_m);
-                        Box::pin(
-                            async move { Self::handle_b_o_done(obj_m_clone, obj, handler).await },
-                        )
+                        Box::pin(Self::handle_b_o_done(obj_m_clone, obj, handler))
                     } else {
                         def
                     }
@@ -311,16 +333,17 @@ impl BaseMode {
                 if let Self::BeaconObjectiveScanningMode(b_o_arc) = self {
                     let clone = Arc::clone(b_o_arc);
                     if let Some(obj) = Self::check_b_o_done(b_o_arc.clone()).await {
-                        Box::pin(async move { Self::handle_b_o_done(clone, obj, handler).await })
+                        Box::pin(Self::handle_b_o_done(clone, obj, handler))
                     } else {
-                        Box::pin(async move {
-                            Self::exec_comms(context, due, c_tok, clone).await;
+                       todo!()
+                        /*Box::pin(async move {
+                            Self::exec_comms(context, Timestamp(due), c_tok, clone).await;
                             if Utc::now() > due + Self::MAX_COMM_PROLONG_RESCHEDULE {
                                 BaseWaitExitSignal::ReturnSomeLeft
                             } else {
                                 BaseWaitExitSignal::Continue
                             }
-                        })
+                        })*/
                     }
                 } else {
                     warn!("No known Beacon Objectives. Waiting!");
