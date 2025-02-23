@@ -161,7 +161,7 @@ impl TaskController {
         // Initialize the first coverage grid based on the end status or use a default grid.
         let cov_dt_first = {
             let batt = end_batt.map_or(max_battery + 1, Self::map_e_to_dp);
-            let state = end_state.map_or(states.len(), |o| o as usize);
+            let state = end_state.map(|o| o as usize);
             let end_cast = (state, batt);
             ScoreGrid::new_from_condition(max_battery + 1, states.len(), end_cast)
         };
