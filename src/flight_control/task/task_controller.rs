@@ -148,7 +148,7 @@ impl TaskController {
                 max_pred_secs
             }
         };
-        
+
         // Retrieve a reordered iterator over the orbit's completion bitvector to optimize scheduling.
         let p_t_iter = orbit.get_p_t_reordered(
             p_t_shift,
@@ -641,9 +641,12 @@ impl TaskController {
         let t_time = *TRANS_DEL.get(&(FlightState::Charge, FlightState::Comms)).unwrap();
         let sched_end = sched_start.0 + Self::COMMS_SCHED_USABLE_TIME;
         let t_ch = Self::MIN_COMMS_START_CHARGE;
-        
+
         if sched_end + t_time > strict_end.0 {
-            info!("Scheduling last comms cycle from {} to {}.", sched_start.0, strict_end.0);
+            info!(
+                "Scheduling last comms cycle from {} to {}.",
+                sched_start.0, strict_end.0
+            );
             info!("Current Comms end time: {}", c_end.0);
             let dt = usize::try_from((strict_end.0 - sched_start.0).num_seconds()).unwrap_or(0);
             let result = Self::init_sched_dp(orbit, sched_start.1, Some(dt), None, None);
@@ -656,13 +659,17 @@ impl TaskController {
             self.sched_opt_orbit_res(sched_start.0, result, 0, false, target).await;
             None
         } else {
-            info!("Scheduling next comms cycle from {} to {sched_end}.", sched_start.0);
+            info!(
+                "Scheduling next comms cycle from {} to {sched_end}.",
+                sched_start.0
+            );
             info!("Current Comms end time: {}", c_end.0);
             let dt = usize::try_from((sched_end - sched_start.0).num_seconds()).unwrap_or(0);
             let result = Self::init_sched_dp(orbit, sched_start.1, Some(dt), None, Some(t_ch));
             let target = {
                 let st =
                     result.coverage_slice.front().unwrap().get_max_s(Self::map_e_to_dp(c_end.1));
+                info!("Target state: {st} after comms, with charge {t_ch}.");
                 (c_end.1, st)
             };
             self.schedule_switch(FlightState::from_dp_usize(target.1), c_end.0).await;
@@ -699,7 +706,7 @@ impl TaskController {
             let batt = f_cont_lock.read().await.batt_in_dt(dt);
             Some((Utc::now() + dt, batt))
         };
-        
+
         let mut i = 0;
         let orbit = orbit_lock.read().await;
         while let Some(end) = curr_comms_end {
@@ -708,10 +715,11 @@ impl TaskController {
                 let i = scheduling_start_i.index_then(t - computation_start);
                 (t, i)
             };
-            curr_comms_end = self.sched_single_comms_cycle(end, next_start, &orbit, strict_end).await;
-            i+=1;
+            curr_comms_end =
+                self.sched_single_comms_cycle(end, next_start, &orbit, strict_end).await;
+            i += 1;
         }
-        
+
         let n_tasks = self.task_schedule.read().await.len();
         let dt_tot = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
         info!(
@@ -785,7 +793,10 @@ impl TaskController {
         (e_clamp / Self::BATTERY_RESOLUTION).round().to_num::<usize>()
     }
 
-    fn map_dp_to_e(dp: usize) -> I32F32 { I32F32::from_num(dp) * Self::BATTERY_RESOLUTION }
+    fn map_dp_to_e(dp: usize) -> I32F32 {
+        (Self::MIN_BATTERY_THRESHOLD + I32F32::from_num(dp) * Self::BATTERY_RESOLUTION)
+            .min(Self::MAX_BATTERY_THRESHOLD)
+    }
 
     #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     /// Schedules the result of an optimal orbit calculation as tasks.
