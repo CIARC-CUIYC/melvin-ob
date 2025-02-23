@@ -82,7 +82,7 @@ impl GlobalMode for InOrbitMode {
             },
             () = safe_mon.notified() => {
                 cancel_task.cancel();
-                sched_handle.abort();
+                sched_handle.await.ok();
 
                 // Return to mapping mode
                 return OpExitSignal::ReInit(Box::new(self.clone()))

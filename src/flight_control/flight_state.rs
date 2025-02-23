@@ -47,6 +47,21 @@ impl FlightState {
             FlightState::Safe => I32F32::lit("0.05"),
         }
     }
+
+    pub fn from_dp_usize(i: usize) -> Self {
+        match i {
+            1 => FlightState::Acquisition,
+            0 => FlightState::Charge,
+            _ => panic!("Invalid state"),
+        }
+    }
+    pub fn to_dp_usize(&self) -> usize {
+        match self {
+            FlightState::Acquisition => 1,
+            FlightState::Charge => 0,
+            _ => panic!("Invalid state"),
+        }
+    }
 }
 
 impl From<&str> for FlightState {

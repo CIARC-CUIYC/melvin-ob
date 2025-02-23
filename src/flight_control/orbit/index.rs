@@ -150,7 +150,7 @@ impl IndexedOrbitPosition {
     /// # Returns
     /// The future index in the orbit.
     #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-    fn index_then(&self, dt: TimeDelta) -> usize {
+    pub(crate) fn index_then(&self, dt: TimeDelta) -> usize {
         (self.index + dt.num_seconds() as usize) % self.period
     }
 }

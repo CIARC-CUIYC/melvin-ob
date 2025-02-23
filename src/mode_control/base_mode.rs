@@ -101,7 +101,7 @@ impl BaseMode {
         let end_t = {
             match end {
                 TaskEndSignal::Timestamp(dt) => dt,
-                TaskEndSignal::Join(_) => Utc::now() + TimeDelta::seconds(10000),
+                Join(_) => Utc::now() + TimeDelta::seconds(10000),
             }
         };
         let o_ch_clone = context.o_ch_clone().await;
@@ -255,8 +255,7 @@ impl BaseMode {
                 TaskController::sched_opt_orbit(k.t_cont(), k.c_orbit(), k.f_cont(), o_ch.i_entry())
             }
             BaseMode::BeaconObjectiveScanningMode(obj_m) => {
-                todo!()
-                //TaskController::sched_opt_comms_orbit
+                TaskController::sched_opt_orbit(k.t_cont(), k.c_orbit(), k.f_cont(), o_ch.i_entry())
             }
         };
         let j_handle = tokio::spawn(t);

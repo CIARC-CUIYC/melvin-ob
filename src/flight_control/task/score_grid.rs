@@ -48,7 +48,6 @@ impl ScoreGrid {
         if end_s < s_len && end_min_e < e_len {
             let start_ind = end_min_e * s_len + end_s;
             let end_ind = s_len * e_len;
-
             for i in (start_ind..end_ind).step_by(s_len) {
                 min_score[i] = 0;
             }
@@ -70,6 +69,17 @@ impl ScoreGrid {
     /// # Returns
     /// The score at the specified position.
     pub fn get(&self, e: usize, s: usize) -> i32 { self.score[e * self.s_len + s] }
+
+    /// Retrieves the state with the maximum score at a specific energy level.
+    ///
+    /// # Arguments
+    /// * `e` - The index along the energy dimension (row).
+    ///
+    /// # Returns
+    /// The score at the specified position.
+    pub fn get_max_s(&self, e: usize) -> usize {
+        (0..self.s_len).max_by_key(|&i| self.score[e * self.s_len + i]).unwrap()
+    }
 
     /// Sets the score at a specific position in the grid.
     ///
