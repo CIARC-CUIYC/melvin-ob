@@ -94,7 +94,6 @@ impl FlightComputer {
     /// Minimum battery used in decision-making for after safe transition
     const AFTER_SAFE_MIN_BATT: I32F32 = I32F32::lit("50");
     const EXIT_SAFE_MIN_BATT: I32F32 = I32F32::lit("1.0");
-    const MIN_COMMS_START_CHARGE: I32F32 = I32F32::lit("40");
     /// Constant minimum delay between requests
     pub(crate) const STD_REQUEST_DELAY: Duration = Duration::from_millis(100);
     /// Legal Target States for State Change
@@ -402,10 +401,10 @@ impl FlightComputer {
         Self::wait_for_condition(&self_lock, cond_min_charge, 15000, Self::DEF_COND_PI).await;
         Self::set_state_wait(self_lock, target_state).await;
     }
-    
+
     pub async fn get_to_comms(self_lock: Arc<RwLock<Self>>) {
         let charge_dt = {
-            let batt_diff = (self_lock.read().await.current_battery - Self::MIN_COMMS_START_CHARGE).max(I32F32::zero());
+            let batt_diff = (self_lock.read().await.current_battery - TaskController::MIN_COMMS_START_CHARGE).max(I32F32::zero());
             (batt_diff / FlightState::Charge.get_charge_rate()).ceil().to_num::<u64>()
         };
         if charge_dt > I32F32::zero() {

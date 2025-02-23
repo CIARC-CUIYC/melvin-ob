@@ -96,7 +96,8 @@ impl TaskController {
     const COMMS_SCHED_PERIOD: usize = 1025;
     const COMMS_SCHED_USABLE_TIME: TimeDelta =
         TimeDelta::seconds((Self::COMMS_SCHED_PERIOD - 2 * 180) as i64);
-    const COMMS_CHARGE_USAGE: I32F32 = I32F32::lit("48.6");
+    pub const COMMS_CHARGE_USAGE: I32F32 = I32F32::lit("48.6");
+    pub const MIN_COMMS_START_CHARGE: I32F32 = I32F32::lit("58.6");
 
     /// Creates a new instance of the `TaskController` struct.
     ///
@@ -639,10 +640,13 @@ impl TaskController {
     ) -> Option<(DateTime<Utc>, I32F32)> {
         let t_time = *TRANS_DEL.get(&(FlightState::Charge, FlightState::Comms)).unwrap();
         let sched_end = sched_start.0 + Self::COMMS_SCHED_USABLE_TIME;
-        let t_ch = Self::COMMS_CHARGE_USAGE + Self::MIN_BATTERY_THRESHOLD;
+        let t_ch = Self::MIN_COMMS_START_CHARGE;
+        info!("Scheduling single comms cycle from {} to {sched_end}.", sched_start.0);
+        info!("Current Comms end time: {}", c_end.0);
+        
         if sched_end + t_time > strict_end.0 {
             let dt = usize::try_from((strict_end.0 - sched_start.0).num_seconds()).unwrap_or(0);
-            let result = Self::init_sched_dp(&orbit, sched_start.1, Some(dt), None, None);
+            let result = Self::init_sched_dp(orbit, sched_start.1, Some(dt), None, None);
             let target = {
                 let st =
                     result.coverage_slice.front().unwrap().get_max_s(Self::map_e_to_dp(c_end.1));
@@ -692,7 +696,7 @@ impl TaskController {
             let batt = f_cont_lock.read().await.batt_in_dt(dt);
             Some((Utc::now() + dt, batt))
         };
-
+        let mut i = 0;
         let orbit = orbit_lock.read().await;
         while let Some(end) = curr_comms_end {
             let next_start = {
@@ -700,7 +704,9 @@ impl TaskController {
                 let i = scheduling_start_i.index_then(t - computation_start);
                 (t, i)
             };
+            info!("Scheduling comms cycle {i} from {} to {}.", end.0, next_start.0);
             curr_comms_end = self.sched_single_comms_cycle(end, next_start, &orbit, strict_end).await;
+            i+=1;
         }
         
         let n_tasks = self.task_schedule.read().await.len();
