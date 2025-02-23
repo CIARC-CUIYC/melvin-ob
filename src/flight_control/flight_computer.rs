@@ -404,9 +404,9 @@ impl FlightComputer {
 
     pub async fn get_to_comms(self_lock: Arc<RwLock<Self>>) {
         let charge_dt = {
-            let batt_diff = (self_lock.read().await.current_battery
+            let batt_diff = (self_lock.read().await.current_battery()
                 - TaskController::MIN_COMMS_START_CHARGE)
-                .max(I32F32::zero());
+                .min(I32F32::zero());
             (- batt_diff / FlightState::Charge.get_charge_rate()).ceil().to_num::<u64>()
         };
         log!("Charge time for comms: {}", charge_dt);
