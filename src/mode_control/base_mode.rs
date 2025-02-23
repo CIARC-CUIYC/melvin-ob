@@ -236,7 +236,7 @@ impl BaseMode {
                 },
                 // If the task gets cancelled exit with the updated beacon vector
                 () = c_tok.cancelled() => {
-                    
+
                     break;
                 }
             }
@@ -268,7 +268,7 @@ impl BaseMode {
             )),
             BaseMode::BeaconObjectiveScanningMode(obj_m) => {
                 let last_obj_end =
-                    obj_m.lock().await.values().map(|obj| obj.end()).max().unwrap_or(Utc::now());
+                    obj_m.lock().await.values().map(BeaconObjective::end).max().unwrap_or(Utc::now());
                 tokio::spawn(TaskController::sched_opt_orbit_w_comms(
                     k.t_cont(),
                     k.c_orbit(),

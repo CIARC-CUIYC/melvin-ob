@@ -641,10 +641,10 @@ impl TaskController {
         let t_time = *TRANS_DEL.get(&(FlightState::Charge, FlightState::Comms)).unwrap();
         let sched_end = sched_start.0 + Self::COMMS_SCHED_USABLE_TIME;
         let t_ch = Self::MIN_COMMS_START_CHARGE;
-        info!("Scheduling single comms cycle from {} to {sched_end}.", sched_start.0);
-        info!("Current Comms end time: {}", c_end.0);
-
+        
         if sched_end + t_time > strict_end.0 {
+            info!("Scheduling last comms cycle from {} to {}.", sched_start.0, strict_end.0);
+            info!("Current Comms end time: {}", c_end.0);
             let dt = usize::try_from((strict_end.0 - sched_start.0).num_seconds()).unwrap_or(0);
             let result = Self::init_sched_dp(orbit, sched_start.1, Some(dt), None, None);
             let target = {
@@ -656,8 +656,10 @@ impl TaskController {
             self.sched_opt_orbit_res(sched_start.0, result, 0, false, target).await;
             None
         } else {
-            let dt = usize::try_from((strict_end.0 - sched_start.0).num_seconds()).unwrap_or(0);
-            let result = Self::init_sched_dp(&orbit, sched_start.1, Some(dt), None, Some(t_ch));
+            info!("Scheduling next comms cycle from {} to {sched_end}.", sched_start.0);
+            info!("Current Comms end time: {}", c_end.0);
+            let dt = usize::try_from((sched_end - sched_start.0).num_seconds()).unwrap_or(0);
+            let result = Self::init_sched_dp(orbit, sched_start.1, Some(dt), None, Some(t_ch));
             let target = {
                 let st =
                     result.coverage_slice.front().unwrap().get_max_s(Self::map_e_to_dp(c_end.1));
