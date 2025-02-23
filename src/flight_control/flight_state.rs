@@ -96,7 +96,7 @@ impl From<FlightState> for &'static str {
 /// for transitioning between different flight states.
 ///
 /// The delay for each transition is represented as a `Duration`.
-pub static TRANSITION_DELAY_LOOKUP: LazyLock<HashMap<(FlightState, FlightState), Duration>> =
+pub static TRANS_DEL: LazyLock<HashMap<(FlightState, FlightState), Duration>> =
     LazyLock::new(|| {
         let mut lookup = HashMap::new();
         let transition_times = vec![

@@ -197,9 +197,8 @@ impl Supervisor {
                     }
                 }
                 for b_o in objective_list.beacon_objectives() {
-                    let obj_about =
-                        b_o.start() < Utc::now() + TimeDelta::minutes(20) && b_o.end() > Utc::now();
-                    if obj_about && !id_list.contains(&b_o.id()) {
+                    let obj_on = b_o.start() < Utc::now() && b_o.end() > Utc::now();
+                    if obj_on && !id_list.contains(&b_o.id()) {
                         send_objs.push(ObjectiveBase::from(b_o.clone()));
                     }
                 }

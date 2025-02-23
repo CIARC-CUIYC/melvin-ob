@@ -91,6 +91,9 @@ impl TaskController {
     /// A constant representing a 90-degree angle, in fixed-point format.
     const NINETY_DEG: I32F32 = I32F32::lit("90.0");
 
+    const IN_COMMS_SCHED_SECS: usize = 1020;
+    const COMMS_SCHED_PERIOD: usize = 1610;
+
     /// Creates a new instance of the `TaskController` struct.
     ///
     /// # Returns
@@ -554,7 +557,7 @@ impl TaskController {
     /// # Panics
     /// - Panics if the objective requires more than one image as multi-image scheduling is not yet supported.
     #[allow(clippy::cast_precision_loss)]
-    pub async fn schedule_zoned_objective(
+    pub async fn sched_z_o(
         self: Arc<TaskController>,
         orbit_lock: Arc<RwLock<ClosedOrbit>>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
@@ -613,7 +616,7 @@ impl TaskController {
             scheduling_start_i.new_from_pos(pos)
         };
         let dt_shift = after_sched_calc_i.index() - after_burn_calc_i.index();
-        self.schedule_optimal_orbit_result(
+        self.sched_opt_orbit_res(
             f_cont_lock,
             after_burn_calc_i.t(),
             result,
@@ -659,7 +662,7 @@ impl TaskController {
         clippy::cast_precision_loss,
         clippy::cast_possible_wrap
     )]
-    pub async fn schedule_optimal_orbit(
+    pub async fn sched_opt_orbit(
         self: Arc<TaskController>,
         orbit_lock: Arc<RwLock<ClosedOrbit>>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
@@ -676,7 +679,7 @@ impl TaskController {
         let dt_shift = dt_calc.ceil() as usize;
 
         let n_tasks = self
-            .schedule_optimal_orbit_result(f_cont_lock, computation_start, result, dt_shift, true)
+            .sched_opt_orbit_res(f_cont_lock, computation_start, result, dt_shift, true)
             .await;
         let dt_tot = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
         info!("Number of tasks after scheduling: {n_tasks}. \
@@ -704,7 +707,7 @@ impl TaskController {
     /// - Tasks are dynamically scheduled based on the required transitions and predicted durations.
     /// - Adjusts the state and battery level during simulation.
     /// - Handles transitions between charging and acquisition states with proper time delays.
-    async fn schedule_optimal_orbit_result(
+    async fn sched_opt_orbit_res(
         &self,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
         base_t: DateTime<Utc>,

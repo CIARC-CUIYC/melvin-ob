@@ -11,7 +11,7 @@ use crate::flight_control::{
     },
 };
 use crate::mode_control::{
-    base_mode::{BaseMode, BaseWaitExitSignal, MappingModeEnd::Join},
+    base_mode::{BaseMode, BaseWaitExitSignal, TaskEndSignal::Join},
     mode::global_mode::{ExecExitSignal, GlobalMode, OpExitSignal, WaitExitSignal},
     mode_context::ModeContext,
 };
@@ -38,16 +38,17 @@ impl InOrbitMode {
         }
     }
 
-    pub async fn sched_and_map(context: Arc<ModeContext>, c_tok: CancellationToken) {
+    pub async fn sched_and_map(&self, context: Arc<ModeContext>, c_tok: CancellationToken) {
+        let k_clone = Arc::clone(context.k());
+        
+        
         let j_handle = {
-            // TODO: self.base.get_schedule_handle();
-            let k_clone_clone = Arc::clone(context.k());
             let orbit_char = context.o_ch_clone().await;
             tokio::spawn(async move {
-                TaskController::schedule_optimal_orbit(
-                    k_clone_clone.t_cont(),
-                    k_clone_clone.c_orbit(),
-                    k_clone_clone.f_cont(),
+                TaskController::sched_opt_orbit(
+                    k_clone.t_cont(),
+                    k_clone.c_orbit(),
+                    k_clone.f_cont(),
                     orbit_char.i_entry(),
                 )
                 .await;
@@ -68,12 +69,10 @@ impl GlobalMode for InOrbitMode {
 
     async fn init_mode(&self, context: Arc<ModeContext>) -> OpExitSignal {
         let cancel_task = CancellationToken::new();
+        self.base.handle_sched_preconditions(Arc::clone(&context)).await;
         let sched_handle = {
             let cancel_clone = cancel_task.clone();
-            let context_clone = Arc::clone(&context);
-            tokio::spawn(async move {
-                Self::sched_and_map(context_clone, cancel_clone).await;
-            })
+            self.base.get_schedule_handle(Arc::clone(&context), cancel_clone).await
         };
         tokio::pin!(sched_handle);
         let safe_mon = context.super_v().safe_mon();
@@ -105,23 +104,25 @@ impl GlobalMode for InOrbitMode {
             let due_time = task.dt() - Utc::now();
             let task_type = task.task_type();
             info!("TASK {tasks}: {task_type} in  {}s!", due_time.num_seconds());
-            let context_clone = Arc::clone(&context);
-            match self.exec_task_wait(context_clone, task.dt()).await {
-                WaitExitSignal::Continue => {}
-                WaitExitSignal::SafeEvent => {
-                    return self.safe_handler(context_local).await;
-                }
-                WaitExitSignal::NewObjectiveEvent(obj) => {
-                    let context_clone = Arc::clone(&context);
-                    let ret = self.objective_handler(context_clone, obj).await;
-                    if let Some(opt) = ret {
-                        return opt;
-                    };
-                }
-                WaitExitSignal::BODoneEvent(sig) => {
-                    return self.b_o_done_handler(context, sig).await
-                }
-            };
+            while task.dt() > Utc::now() {
+                let context_clone = Arc::clone(&context);
+                match self.exec_task_wait(context_clone, task.dt()).await {
+                    WaitExitSignal::Continue => {}
+                    WaitExitSignal::SafeEvent => {
+                        return self.safe_handler(context_local).await;
+                    }
+                    WaitExitSignal::NewObjectiveEvent(obj) => {
+                        let context_clone = Arc::clone(&context);
+                        let ret = self.objective_handler(context_clone, obj).await;
+                        if let Some(opt) = ret {
+                            return opt;
+                        };
+                    }
+                    WaitExitSignal::BODoneEvent(sig) => {
+                        return self.b_o_done_handler(context, sig).await
+                    }
+                };
+            }
             let context_clone = Arc::clone(&context);
             match self.exec_task(context_clone, task).await {
                 ExecExitSignal::Continue => {}
@@ -176,7 +177,7 @@ impl GlobalMode for InOrbitMode {
                 WaitExitSignal::SafeEvent
             },
             obj = async {
-                // TODO: later we shouldnt block zoned objectives anymore
+                // TODO: later we shouldn't block zoned objectives anymore
                 while let Some(msg) = obj_mon.recv().await {
                     match msg.obj_type() {
                         ObjectiveType::Beacon { .. } => {
@@ -237,7 +238,7 @@ impl GlobalMode for InOrbitMode {
                     context.k().f_cont().read().await.current_pos(),
                     self.new_bo_rationale(),
                 );
-                Some(OpExitSignal::ReInit(Box::new(Self { base })))
+                base.map(|b| OpExitSignal::ReInit(Box::new(Self { base: b })))                
             }
             ObjectiveType::KnownImage {
                 zone,
