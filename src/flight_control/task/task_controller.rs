@@ -148,7 +148,7 @@ impl TaskController {
                 max_pred_secs
             }
         };
-        info!("Calculating optimal orbit schedule for {prediction_secs} seconds");
+        
         // Retrieve a reordered iterator over the orbit's completion bitvector to optimize scheduling.
         let p_t_iter = orbit.get_p_t_reordered(
             p_t_shift,
@@ -687,6 +687,7 @@ impl TaskController {
         scheduling_start_i: IndexedOrbitPosition,
         end_t: DateTime<Utc>,
     ) {
+        log!("Calculating/Scheduling optimal orbit with.");
         let computation_start = scheduling_start_i.t();
         // TODO: later maybe this shouldnt be cleared anymore
         self.clear_schedule().await;
@@ -698,6 +699,7 @@ impl TaskController {
             let batt = f_cont_lock.read().await.batt_in_dt(dt);
             Some((Utc::now() + dt, batt))
         };
+        
         let mut i = 0;
         let orbit = orbit_lock.read().await;
         while let Some(end) = curr_comms_end {
@@ -706,10 +708,10 @@ impl TaskController {
                 let i = scheduling_start_i.index_then(t - computation_start);
                 (t, i)
             };
-            info!("Scheduling comms cycle {i} from {} to {}.", end.0, next_start.0);
             curr_comms_end = self.sched_single_comms_cycle(end, next_start, &orbit, strict_end).await;
             i+=1;
         }
+        
         let n_tasks = self.task_schedule.read().await.len();
         let dt_tot = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
         info!(
@@ -753,6 +755,7 @@ impl TaskController {
         f_cont_lock: Arc<RwLock<FlightComputer>>,
         scheduling_start_i: IndexedOrbitPosition,
     ) {
+        log!("Calculating/Scheduling optimal orbit with.");
         let p_t_shift = scheduling_start_i.index();
         let comp_start = scheduling_start_i.t();
         let result = {
@@ -760,7 +763,6 @@ impl TaskController {
             Self::init_sched_dp(&orbit, p_t_shift, None, None, None)
         };
         let dt_calc = (Utc::now() - comp_start).num_milliseconds() as f32 / 1000.0;
-        info!("Optimal Orbit Calculation complete after {dt_calc:.2}s.");
         let dt_shift = dt_calc.ceil() as usize;
 
         info!("Scheduling optimal orbit result...");
@@ -768,7 +770,7 @@ impl TaskController {
         let (n_tasks, _) =
             self.sched_opt_orbit_res(comp_start, result, dt_shift, true, st_batt).await;
         let dt_tot = (Utc::now() - comp_start).num_milliseconds() as f32 / 1000.0;
-        info!("Tasks after scheduling: {n_tasks}. Calculation and processing took {dt_tot:.2}")
+        info!("Tasks after scheduling: {n_tasks}. Calculation and processing took {dt_tot:.2}");
     }
 
     async fn get_batt_and_state(f_cont_lock: &Arc<RwLock<FlightComputer>>) -> (I32F32, usize) {
@@ -863,6 +865,7 @@ impl TaskController {
                 }
             }
         }
+        info!("Schedule end batt: {batt}");
         // Return the final number of tasks in the schedule.
         (
             self.task_schedule.read().await.len(),
