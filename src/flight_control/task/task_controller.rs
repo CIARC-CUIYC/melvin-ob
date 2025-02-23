@@ -631,6 +631,7 @@ impl TaskController {
         }
     }
 
+    #[allow(clippy::cast_possible_wrap)]
     async fn sched_single_comms_cycle(
         &self,
         c_end: (DateTime<Utc>, I32F32),
@@ -706,8 +707,7 @@ impl TaskController {
             let batt = f_cont_lock.read().await.batt_in_dt(dt);
             Some((Utc::now() + dt, batt))
         };
-
-        let mut i = 0;
+        
         let orbit = orbit_lock.read().await;
         while let Some(end) = curr_comms_end {
             let next_start = {
@@ -717,7 +717,6 @@ impl TaskController {
             };
             curr_comms_end =
                 self.sched_single_comms_cycle(end, next_start, &orbit, strict_end).await;
-            i += 1;
         }
 
         let n_tasks = self.task_schedule.read().await.len();
