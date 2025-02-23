@@ -410,6 +410,7 @@ impl FlightComputer {
             (- batt_diff / FlightState::Charge.get_charge_rate()).ceil().to_num::<u64>()
         };
         log!("Charge time for comms: {}", charge_dt);
+        
         if charge_dt > 0 {
             FlightComputer::set_state_wait(Arc::clone(&self_lock), FlightState::Charge).await;
             FlightComputer::wait_for_duration(Duration::from_secs(charge_dt)).await;
