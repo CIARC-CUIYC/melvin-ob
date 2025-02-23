@@ -160,8 +160,8 @@ impl TaskController {
         let cov_dt_temp = ScoreGrid::new(max_battery + 1, states.len());
         // Initialize the first coverage grid based on the end status or use a default grid.
         let cov_dt_first = {
-            let batt = end_batt.map_or(0, Self::map_e_to_dp);
-            let state = end_state.map_or(0, |o| o as usize);
+            let batt = end_batt.map_or(max_battery + 1, Self::map_e_to_dp);
+            let state = end_state.map_or(states.len(), |o| o as usize);
             let end_cast = (state, batt);
             ScoreGrid::new_from_condition(max_battery + 1, states.len(), end_cast)
         };
@@ -669,7 +669,7 @@ impl TaskController {
             let target = {
                 let st =
                     result.coverage_slice.front().unwrap().get_max_s(Self::map_e_to_dp(c_end.1));
-                info!("Target state: {st} after comms, with charge {t_ch}.");
+                info!("Target state: {st} after comms.");
                 (c_end.1, st)
             };
             self.schedule_switch(FlightState::from_dp_usize(target.1), c_end.0).await;
@@ -694,9 +694,9 @@ impl TaskController {
         scheduling_start_i: IndexedOrbitPosition,
         end_t: DateTime<Utc>,
     ) {
-        log!("Calculating/Scheduling optimal orbit with.");
+        log!("Calculating/Scheduling optimal orbit with passive beacon scanning.");
         let computation_start = scheduling_start_i.t();
-        // TODO: later maybe this shouldnt be cleared anymore
+        // TODO: later maybe this shouldnt be cleared here anymore
         self.clear_schedule().await;
         let t_time = *TRANS_DEL.get(&(FlightState::Charge, FlightState::Comms)).unwrap();
         let strict_end = (end_t, scheduling_start_i.index_then(end_t - Utc::now()));
@@ -763,7 +763,7 @@ impl TaskController {
         f_cont_lock: Arc<RwLock<FlightComputer>>,
         scheduling_start_i: IndexedOrbitPosition,
     ) {
-        log!("Calculating/Scheduling optimal orbit with.");
+        log!("Calculating/Scheduling optimal orbit.");
         let p_t_shift = scheduling_start_i.index();
         let comp_start = scheduling_start_i.t();
         let result = {
