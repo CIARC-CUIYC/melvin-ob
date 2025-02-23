@@ -190,9 +190,9 @@ impl BaseMode {
             }
         };
 
-        let mut fut: Pin<Box<dyn Future<Output = ()>>> = match due {
-            Timestamp(due) => {
-                let due_secs = (due - Utc::now()).to_std().unwrap_or(Self::DT_0_STD);
+        let mut fut: Pin<Box<dyn Future<Output = ()> + Send>> = match due {
+            Timestamp(t) => {
+                let due_secs = (t - Utc::now()).to_std().unwrap_or(Self::DT_0_STD);
                 Box::pin(tokio::time::sleep_until(Instant::now() + due_secs))
             }
             Join(join_handle) => Box::pin(async { join_handle.await.ok().unwrap() }),
@@ -286,8 +286,7 @@ impl BaseMode {
                 BaseMode::MappingMode => fatal!("Illegal state ({state})!"),
                 BaseMode::BeaconObjectiveScanningMode(b_o_arc) => {
                     let b_o_clone = Arc::clone(b_o_arc);
-                    todo!()
-                    //tokio::spawn(BaseMode::exec_comms(context, Join(j_handle), c_tok, b_o_clone))
+                    tokio::spawn(BaseMode::exec_comms(context, Join(j_handle), c_tok, b_o_clone))
                 }
             }
         } else {
@@ -335,15 +334,14 @@ impl BaseMode {
                     if let Some(obj) = Self::check_b_o_done(b_o_arc.clone()).await {
                         Box::pin(Self::handle_b_o_done(clone, obj, handler))
                     } else {
-                       todo!()
-                        /*Box::pin(async move {
+                        Box::pin(async move {
                             Self::exec_comms(context, Timestamp(due), c_tok, clone).await;
                             if Utc::now() > due + Self::MAX_COMM_PROLONG_RESCHEDULE {
                                 BaseWaitExitSignal::ReturnSomeLeft
                             } else {
                                 BaseWaitExitSignal::Continue
                             }
-                        })*/
+                        })
                     }
                 } else {
                     warn!("No known Beacon Objectives. Waiting!");
