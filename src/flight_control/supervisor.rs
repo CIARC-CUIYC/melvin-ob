@@ -34,7 +34,7 @@ impl Supervisor {
     /// Constant update interval for observation updates in the `run()` method
     const OBS_UPDATE_INTERVAL: Duration = Duration::from_millis(500);
     /// Constant update interval for objective updates in the `run()` method
-    const OBJ_UPDATE_INTERVAL: TimeDelta = TimeDelta::seconds(300);
+    const OBJ_UPDATE_INTERVAL: TimeDelta = TimeDelta::seconds(15);
     /// Constant minimum time delta to the objective start for sending the objective to `main`
     const B_O_MIN_DT: TimeDelta = TimeDelta::minutes(20);
     /// Creates a new instance of `Supervisor`

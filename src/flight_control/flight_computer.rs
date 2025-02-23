@@ -404,10 +404,13 @@ impl FlightComputer {
 
     pub async fn get_to_comms(self_lock: Arc<RwLock<Self>>) {
         let charge_dt = {
-            let batt_diff = (self_lock.read().await.current_battery - TaskController::MIN_COMMS_START_CHARGE).max(I32F32::zero());
-            (batt_diff / FlightState::Charge.get_charge_rate()).ceil().to_num::<u64>()
+            let batt_diff = (self_lock.read().await.current_battery
+                - TaskController::MIN_COMMS_START_CHARGE)
+                .max(I32F32::zero());
+            (- batt_diff / FlightState::Charge.get_charge_rate()).ceil().to_num::<u64>()
         };
-        if charge_dt > I32F32::zero() {
+        log!("Charge time for comms: {}", charge_dt);
+        if charge_dt > 0 {
             FlightComputer::set_state_wait(Arc::clone(&self_lock), FlightState::Charge).await;
             FlightComputer::wait_for_duration(Duration::from_secs(charge_dt)).await;
             FlightComputer::set_state_wait(self_lock, FlightState::Comms).await;
@@ -434,10 +437,9 @@ impl FlightComputer {
         self_lock.write().await.target_state = Some(new_state);
         self_lock.read().await.set_state(new_state).await;
 
-        let transition_t =
-            TRANS_DEL.get(&(init_state, new_state)).unwrap_or_else(|| {
-                fatal!("({init_state}, {new_state}) not in TRANSITION_DELAY_LOOKUP")
-            });
+        let transition_t = TRANS_DEL.get(&(init_state, new_state)).unwrap_or_else(|| {
+            fatal!("({init_state}, {new_state}) not in TRANSITION_DELAY_LOOKUP")
+        });
 
         Self::wait_for_duration(*transition_t).await;
         let cond = (
