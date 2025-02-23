@@ -643,7 +643,7 @@ impl TaskController {
         let t_ch = Self::MIN_COMMS_START_CHARGE;
         info!("Scheduling single comms cycle from {} to {sched_end}.", sched_start.0);
         info!("Current Comms end time: {}", c_end.0);
-        
+
         if sched_end + t_time > strict_end.0 {
             let dt = usize::try_from((strict_end.0 - sched_start.0).num_seconds()).unwrap_or(0);
             let result = Self::init_sched_dp(orbit, sched_start.1, Some(dt), None, None);
@@ -690,7 +690,7 @@ impl TaskController {
         self.clear_schedule().await;
         let t_time = *TRANS_DEL.get(&(FlightState::Charge, FlightState::Comms)).unwrap();
         let strict_end = (end_t, scheduling_start_i.index_then(end_t - Utc::now()));
-        
+
         let mut curr_comms_end = {
             let dt = TimeDelta::seconds(Self::IN_COMMS_SCHED_SECS as i64);
             let batt = f_cont_lock.read().await.batt_in_dt(dt);
@@ -708,7 +708,6 @@ impl TaskController {
             curr_comms_end = self.sched_single_comms_cycle(end, next_start, &orbit, strict_end).await;
             i+=1;
         }
-        
         let n_tasks = self.task_schedule.read().await.len();
         let dt_tot = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
         info!(
