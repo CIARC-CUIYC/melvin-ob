@@ -168,8 +168,8 @@ impl BaseMode {
             let c_orbit_lock = k_loc.c_orbit();
             let mut c_orbit = c_orbit_lock.write().await;
             for (start, end) in &fixed_ranges {
-                if start!=end{
-                    c_orbit.mark_done(*start, *end);    
+                if start != end {
+                    c_orbit.mark_done(*start, *end);
                 }
             }
         });
@@ -416,8 +416,12 @@ impl BaseMode {
         cl: Arc<HTTPClient>,
     ) -> BaseWaitExitSignal {
         for b_o in b_o_done {
-            obj!("Submitting Beacon Objective: {}", b_o.id());
-            b_o.guess_max(cl.clone()).await;
+            if b_o.guesses().is_empty() {
+                obj!("Beacon Objective {} has no guesses.", b_o.id());
+            } else {
+                obj!("Submitting Beacon Objective: {}", b_o.id());
+                b_o.guess_max(cl.clone()).await;
+            }
         }
         let empty = {
             let curr_lock = curr.lock().await;
@@ -456,18 +460,8 @@ impl BaseMode {
         for obj in b_o_map_lock.drain() {
             if obj.1.end() < Utc::now() + Self::BEACON_OBJ_RETURN_MIN_DELAY {
                 let beac_done = BeaconObjectiveDone::from(obj.1);
-                if beac_done.guesses().is_empty() {
-                    obj!(
-                        "Almost ending Beacon objective: ID {}. No guesses :(",
-                        obj.0
-                    );
-                    continue;
-                }
                 done_obj.push(beac_done);
-                obj!(
-                    "Almost ending Beacon objective: ID {}. Submitting this soon!",
-                    obj.0
-                );
+                obj!("Almost ending Beacon objective: ID {}.", obj.0);
                 continue;
             } else if let Some(meas) = obj.1.measurements() {
                 let min_guesses = meas.guess_estimate();
