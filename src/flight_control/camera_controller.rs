@@ -1,3 +1,4 @@
+use super::imaging::cycle_state::CycleState;
 use super::imaging::map_image::{
     EncodedImageExtract, FullsizeMapImage, MapImage, ThumbnailMapImage,
 };
@@ -15,7 +16,7 @@ use crate::http_handler::{
     },
 };
 use crate::mode_control::base_mode::PeriodicImagingEndSignal;
-use crate::{error, info, DT_0_STD};
+use crate::{error, info, log, DT_0_STD};
 use bitvec::boxed::BitBox;
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
@@ -399,103 +400,87 @@ impl CameraController {
         lens: CameraAngle,
         start_index: usize,
     ) -> Vec<(isize, isize)> {
-        fn get_p_secs(
-            last_pic: Option<DateTime<Utc>>,
-            last_mark: DateTime<Utc>,
-            overlap: TimeDelta,
-        ) -> i64 {
-            if let Some(last_pic_val) = last_pic {
-                (last_pic_val - last_mark + overlap).num_seconds()
-            } else {
-                0
-            }
-        }
+        log!(
+            "Starting acquisition cycle. Timeout: {}",
+            end_time.format("%H:%M:%S")
+        );
+
         let mut kill_box = Box::pin(kill);
         let mut last_image_flag = false;
-        let st = start_index as isize;
-        let pic_count = 0;
-        let pic_count_lock = Arc::new(Mutex::new(pic_count));
-        let mut done_ranges: Vec<(isize, isize)> = Vec::new();
-        let overlap = {
-            let overlap_dt = (image_max_dt.floor() / I32F32::lit("2.0")).to_num::<isize>();
-            TimeDelta::seconds(overlap_dt as i64)
-        };
-        let mut last_mark = (st - overlap.num_seconds() as isize, Utc::now() - overlap);
-        let mut last_pic = None;
+
+        let pic_count_lock = Arc::new(Mutex::new(0));
+        let mut state = CycleState::init_cycle(image_max_dt, start_index as isize);
+
         loop {
-            let f_cont_lock_clone = Arc::clone(&f_cont_lock);
-            let pic_count_lock_clone = Arc::clone(&pic_count_lock);
-            let self_clone = Arc::clone(&self);
-            let img_init_timestamp = Utc::now();
-            let img_handle = tokio::spawn(async move {
-                match self_clone.shoot_image_to_buffer(Arc::clone(&f_cont_lock_clone), lens).await {
-                    Ok(offset) => {
-                        let pic_num = {
-                            let mut lock = pic_count_lock_clone.lock().await;
-                            *lock += 1;
-                            *lock
-                        };
-                        info!("Took {pic_num:02}. picture in cycle at {}. Processed for {}s. Position was {}",
-                            img_init_timestamp.format("%d. %H:%M:%S"),
-                            (Utc::now() - img_init_timestamp).num_seconds(),
-                            offset
-                        );
-                        Some(offset)
-                    }
-                    Err(e) => {
-                        error!("Couldn't take picture: {e}");
-                        None
-                    }
-                }
-            });
+            let (img_t, offset) =
+                Self::exec_capture(&self, &f_cont_lock, &pic_count_lock, lens).await;
 
-            let mut next_img_due = {
-                let next_max_dt = Utc::now() + TimeDelta::seconds(image_max_dt.to_num::<i64>());
-                if next_max_dt > end_time {
-                    last_image_flag = true;
-                    end_time
-                } else {
-                    next_max_dt
-                }
-            };
-
-            let offset = img_handle.await;
-            if let Some(off) = offset.ok().flatten() {
+            let mut next_img_due = Self::get_next_img(image_max_dt, end_time);
+            if let Some(off) = offset {
                 console_messenger.send_thumbnail(off, lens);
-                last_pic = Some(img_init_timestamp);
+                state.update_success(img_t);
             } else {
-                let p_secs = get_p_secs(last_pic, last_mark.1, overlap);
-                done_ranges.push((last_mark.0, last_mark.0 + p_secs as isize));
-                let tot_passed_secs = (img_init_timestamp - last_mark.1 - overlap).num_seconds();
-                last_mark = (tot_passed_secs as isize, Utc::now());
-                last_pic = None;
+                state.update_failed(img_t);
                 next_img_due = Utc::now() + TimeDelta::seconds(1);
             }
 
             if last_image_flag {
-                let p_secs = get_p_secs(last_pic, last_mark.1, overlap);
-                done_ranges.push((last_mark.0, last_mark.0 + p_secs as isize));
-                return done_ranges;
+                return state.finish();
+            } else if next_img_due >= end_time {
+                last_image_flag = true;
             }
+
             let sleep_time = next_img_due - Utc::now();
             tokio::select! {
                 () = tokio::time::sleep(sleep_time.to_std().unwrap_or(DT_0_STD)) => {},
-                msg = &mut kill_box => {
-                    let msg_unwr = msg.unwrap_or_else(
-                        |e| {
-                            error!("Couldn't receive kill signal: {e}");
-                            PeriodicImagingEndSignal::KillNow
-                        });
-                    match msg_unwr{
-                        PeriodicImagingEndSignal::KillLastImage => last_image_flag = true,
-                        PeriodicImagingEndSignal::KillNow => {
-                             let p_secs = get_p_secs(last_pic, last_mark.1, overlap);
-                            done_ranges.push((last_mark.0, last_mark.0 + p_secs as isize));
-                            return done_ranges
-                        }
-                    }
+                Ok(PeriodicImagingEndSignal::KillLastImage) = &mut kill_box => last_image_flag = true,
+                else => {
+                    return state.finish();
                 }
             }
         }
+    }
+
+    fn get_next_img(img_max_dt: I32F32, end_time: DateTime<Utc>) -> DateTime<Utc> {
+        let next_max_dt = Utc::now() + TimeDelta::seconds(img_max_dt.to_num::<i64>());
+        if next_max_dt > end_time {
+            end_time
+        } else {
+            next_max_dt
+        }
+    }
+
+    async fn exec_capture(
+        self: &Arc<Self>,
+        f_cont: &Arc<RwLock<FlightComputer>>,
+        p_c: &Arc<Mutex<i32>>,
+        lens: CameraAngle,
+    ) -> (DateTime<Utc>, Option<Vec2D<u32>>) {
+        let f_cont_clone = Arc::clone(f_cont);
+        let p_c_clone = Arc::clone(p_c);
+        let self_clone = Arc::clone(self);
+        let img_init_timestamp = Utc::now();
+
+        let img_handle = tokio::spawn(async move {
+            match self_clone.shoot_image_to_buffer(Arc::clone(&f_cont_clone), lens).await {
+                Ok(offset) => {
+                    let pic_num = {
+                        let mut lock = p_c_clone.lock().await;
+                        *lock += 1;
+                        *lock
+                    };
+                    let s = (Utc::now() - img_init_timestamp).num_seconds();
+                    info!("Took {pic_num:02}. picture. Processed for {s}s. Position was {offset}");
+                    Some(offset)
+                }
+                Err(e) => {
+                    error!("Couldn't take picture: {e}");
+                    None
+                }
+            }
+        });
+
+        let res = img_handle.await.ok().flatten();
+        (img_init_timestamp, res)
     }
 }
