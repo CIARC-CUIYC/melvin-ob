@@ -784,7 +784,8 @@ impl TaskController {
 
     fn map_e_to_dp(e: I32F32) -> usize {
         let e_clamp = e.clamp(Self::MIN_BATTERY_THRESHOLD, Self::MAX_BATTERY_THRESHOLD);
-        (e_clamp / Self::BATTERY_RESOLUTION).round().to_num::<usize>()
+
+        ((e_clamp - Self::MIN_BATTERY_THRESHOLD) / Self::BATTERY_RESOLUTION).round().to_num::<usize>()
     }
 
     fn map_dp_to_e(dp: usize) -> I32F32 {
