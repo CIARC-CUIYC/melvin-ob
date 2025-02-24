@@ -788,7 +788,7 @@ impl TaskController {
     }
 
     fn map_dp_to_e(dp: usize) -> I32F32 {
-        (Self::MIN_BATTERY_THRESHOLD + I32F32::from_num(dp) * Self::BATTERY_RESOLUTION)
+        (Self::MIN_BATTERY_THRESHOLD + (I32F32::from_num(dp) * Self::BATTERY_RESOLUTION))
             .min(Self::MAX_BATTERY_THRESHOLD)
     }
 

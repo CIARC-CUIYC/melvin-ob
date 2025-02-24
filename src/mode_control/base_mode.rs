@@ -168,7 +168,9 @@ impl BaseMode {
             let c_orbit_lock = k_loc.c_orbit();
             let mut c_orbit = c_orbit_lock.write().await;
             for (start, end) in &fixed_ranges {
-                c_orbit.mark_done(*start, *end);
+                if start!=end{
+                    c_orbit.mark_done(*start, *end);    
+                }
             }
         });
     }
