@@ -15,7 +15,7 @@ use crate::mode_control::{
     mode::global_mode::{ExecExitSignal, GlobalMode, OpExitSignal, WaitExitSignal},
     mode_context::ModeContext,
 };
-use crate::{fatal, info, obj, warn};
+use crate::{fatal, info, obj, warn, log};
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
@@ -39,8 +39,7 @@ impl InOrbitMode {
 
     pub async fn sched_and_map(&self, context: Arc<ModeContext>, c_tok: CancellationToken) {
         let k_clone = Arc::clone(context.k());
-        
-        
+
         let j_handle = {
             let orbit_char = context.o_ch_clone().await;
             tokio::spawn(async move {
@@ -103,26 +102,28 @@ impl GlobalMode for InOrbitMode {
             let due_time = task.dt() - Utc::now();
             let task_type = task.task_type();
             info!("TASK {tasks}: {task_type} in  {}s!", due_time.num_seconds());
-            while task.dt() > Utc::now() {
-                let context_clone = Arc::clone(&context);
-                match self.exec_task_wait(context_clone, task.dt()).await {
-                    WaitExitSignal::Continue => {}
-                    WaitExitSignal::SafeEvent => {
-                        return self.safe_handler(context_local).await;
-                    }
-                    WaitExitSignal::NewObjectiveEvent(obj) => {
-                        let context_clone = Arc::clone(&context);
-                        let ret = self.objective_handler(context_clone, obj).await;
-                        if let Some(opt) = ret {
-                            return opt;
-                        };
-                    }
-                    WaitExitSignal::BODoneEvent(sig) => {
-                        return self.b_o_done_handler(context, sig).await
-                    }
-                };
+            let context_clone = Arc::clone(&context);
+            match self.exec_task_wait(context_clone, task.dt()).await {
+                WaitExitSignal::Continue => {}
+                WaitExitSignal::SafeEvent => {
+                    return self.safe_handler(context_local).await;
+                }
+                WaitExitSignal::NewObjectiveEvent(obj) => {
+                    let context_clone = Arc::clone(&context);
+                    let ret = self.objective_handler(context_clone, obj).await;
+                    if let Some(opt) = ret {
+                        return opt;
+                    };
+                }
+                WaitExitSignal::BODoneEvent(sig) => {
+                    return self.b_o_done_handler(context, sig).await
+                }
+            };
+            let task_delay = (task.dt() - Utc::now()).num_milliseconds() as f32 /1000.0;
+            if task_delay.abs() > 5.0 {
+                log!("Task {tasks} delayed by {task_delay}s!");
             }
-            
+
             let context_clone = Arc::clone(&context);
             match self.exec_task(context_clone, task).await {
                 ExecExitSignal::Continue => {}

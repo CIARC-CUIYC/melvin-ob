@@ -748,6 +748,7 @@ impl TaskController {
         scheduling_start_i: IndexedOrbitPosition,
     ) {
         log!("Calculating/Scheduling optimal orbit.");
+        self.clear_schedule().await;
         let p_t_shift = scheduling_start_i.index();
         let comp_start = scheduling_start_i.t();
         let result = {
@@ -758,9 +759,18 @@ impl TaskController {
         let dt_shift = dt_calc.ceil() as usize;
 
         info!("Scheduling optimal orbit result...");
-        let st_batt = Self::get_batt_and_state(&f_cont_lock).await;
+        let (st_batt, dt_sh) = {
+            let (batt, st) = Self::get_batt_and_state(&f_cont_lock).await;
+            if st == 2 {
+                let best_st = result.coverage_slice.back().unwrap().get_max_s(Self::map_e_to_dp(batt));
+                self.schedule_switch(FlightState::from_dp_usize(best_st), comp_start).await;
+                ((batt, best_st), dt_shift + 180)
+            } else {
+                ((batt, st), dt_shift)
+            }
+        };
         let (n_tasks, _) =
-            self.sched_opt_orbit_res(comp_start, result, dt_shift, true, st_batt).await;
+            self.sched_opt_orbit_res(comp_start, result, dt_sh, false, st_batt).await;
         let dt_tot = (Utc::now() - comp_start).num_milliseconds() as f32 / 1000.0;
         info!("Tasks after scheduling: {n_tasks}. Calculation and processing took {dt_tot:.2}");
     }

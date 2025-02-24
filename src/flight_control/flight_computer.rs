@@ -16,7 +16,7 @@ use crate::http_handler::{
         reset_get::ResetRequest,
     },
 };
-use crate::{error, fatal, info, log};
+use crate::{error, fatal, info, log, warn};
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::{I32F32, I64F64};
 use num::{ToPrimitive, Zero};
@@ -394,11 +394,15 @@ impl FlightComputer {
             Self::DEF_COND_PI,
         )
         .await;
+        let state = self_lock.read().await.state();
+        if state != FlightState::Safe {
+            error!("State is not safe but {}", state);
+        }
         let cond_min_charge = (
             |cont: &FlightComputer| cont.current_battery() >= Self::EXIT_SAFE_MIN_BATT,
             format!("Battery level is higher than {}", Self::EXIT_SAFE_MIN_BATT),
         );
-        Self::wait_for_condition(&self_lock, cond_min_charge, 15000, Self::DEF_COND_PI).await;
+        Self::wait_for_condition(&self_lock, cond_min_charge, 30000, Self::DEF_COND_PI).await;
         Self::set_state_wait(self_lock, target_state).await;
     }
 
