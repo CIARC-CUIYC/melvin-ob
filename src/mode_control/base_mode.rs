@@ -238,7 +238,7 @@ impl BaseMode {
                 },
                 // If the task gets cancelled exit with the updated beacon vector
                 () = c_tok.cancelled() => {
-
+                    log!("Comms Listener cancelled. Stopping listener.");
                     break;
                 }
             }
