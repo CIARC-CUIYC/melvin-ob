@@ -197,7 +197,7 @@ impl BaseMode {
             }
             Join(join_handle) => Box::pin(async { join_handle.await.ok().unwrap() }),
         };
-
+        info!("Starting Comms Listener.");
         loop {
             tokio::select! {
                 // Wait for a message
@@ -267,8 +267,13 @@ impl BaseMode {
                 o_ch.i_entry(),
             )),
             BaseMode::BeaconObjectiveScanningMode(obj_m) => {
-                let last_obj_end =
-                    obj_m.lock().await.values().map(BeaconObjective::end).max().unwrap_or(Utc::now());
+                let last_obj_end = obj_m
+                    .lock()
+                    .await
+                    .values()
+                    .map(BeaconObjective::end)
+                    .max()
+                    .unwrap_or(Utc::now());
                 tokio::spawn(TaskController::sched_opt_orbit_w_comms(
                     k.t_cont(),
                     k.c_orbit(),
@@ -286,7 +291,12 @@ impl BaseMode {
                 BaseMode::MappingMode => fatal!("Illegal state ({state})!"),
                 BaseMode::BeaconObjectiveScanningMode(b_o_arc) => {
                     let b_o_clone = Arc::clone(b_o_arc);
-                    tokio::spawn(BaseMode::exec_comms(context, Join(j_handle), c_tok, b_o_clone))
+                    tokio::spawn(BaseMode::exec_comms(
+                        context,
+                        Join(j_handle),
+                        c_tok,
+                        b_o_clone,
+                    ))
                 }
             }
         } else {
@@ -358,7 +368,8 @@ impl BaseMode {
     pub async fn get_task(&self, context: Arc<ModeContext>, task: SwitchStateTask) {
         match task.target_state() {
             FlightState::Acquisition => {
-                FlightComputer::set_state_wait(context.k().f_cont(), FlightState::Comms).await;
+                FlightComputer::set_state_wait(context.k().f_cont(), FlightState::Acquisition)
+                    .await;
             }
             FlightState::Charge => {
                 let join_handle = async {
@@ -370,8 +381,7 @@ impl BaseMode {
                 });
                 join_handle.await;
             }
-            FlightState::Comms => {}
-            _ => match self {
+            FlightState::Comms => match self {
                 BaseMode::MappingMode => {
                     fatal!("Illegal target state!")
                 }
@@ -379,6 +389,7 @@ impl BaseMode {
                     FlightComputer::set_state_wait(context.k().f_cont(), FlightState::Comms).await;
                 }
             },
+            _ => fatal!("Illegal target state!"),
         }
     }
 

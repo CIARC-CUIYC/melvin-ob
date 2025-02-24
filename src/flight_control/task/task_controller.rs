@@ -644,11 +644,6 @@ impl TaskController {
         let t_ch = Self::MIN_COMMS_START_CHARGE;
 
         if sched_end + t_time > strict_end.0 {
-            info!(
-                "Scheduling last comms cycle from {} to {}.",
-                sched_start.0, strict_end.0
-            );
-            info!("Current Comms end time: {}", c_end.0);
             let dt = usize::try_from((strict_end.0 - sched_start.0).num_seconds()).unwrap_or(0);
             let result = Self::init_sched_dp(orbit, sched_start.1, Some(dt), None, None);
             let target = {
@@ -660,17 +655,12 @@ impl TaskController {
             self.sched_opt_orbit_res(sched_start.0, result, 0, false, target).await;
             None
         } else {
-            info!(
-                "Scheduling next comms cycle from {} to {sched_end}.",
-                sched_start.0
-            );
-            info!("Current Comms end time: {}", c_end.0);
+            
             let dt = usize::try_from((sched_end - sched_start.0).num_seconds()).unwrap_or(0);
             let result = Self::init_sched_dp(orbit, sched_start.1, Some(dt), None, Some(t_ch));
             let target = {
                 let st =
                     result.coverage_slice.front().unwrap().get_max_s(Self::map_e_to_dp(c_end.1));
-                info!("Target state: {st} after comms.");
                 (c_end.1, st)
             };
             self.schedule_switch(FlightState::from_dp_usize(target.1), c_end.0).await;
@@ -707,7 +697,7 @@ impl TaskController {
             let batt = f_cont_lock.read().await.batt_in_dt(dt);
             Some((Utc::now() + dt, batt))
         };
-        
+
         let orbit = orbit_lock.read().await;
         while let Some(end) = curr_comms_end {
             let next_start = {
@@ -725,13 +715,6 @@ impl TaskController {
             "Number of tasks after scheduling: {n_tasks}. \
             Calculation and processing took {dt_tot:.2}",
         );
-
-        {
-            let sched = self.task_schedule.read().await;
-            for task in &*sched {
-                log!("{task} in {}s.", (task.dt() - Utc::now()).num_seconds());
-            }
-        }
     }
 
     /// Calculates and schedules the optimal orbit trajectory based on the current position and state.
@@ -871,7 +854,6 @@ impl TaskController {
                 }
             }
         }
-        info!("Schedule end batt: {batt}");
         // Return the final number of tasks in the schedule.
         (
             self.task_schedule.read().await.len(),

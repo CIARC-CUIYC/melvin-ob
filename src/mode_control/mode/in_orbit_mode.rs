@@ -123,6 +123,7 @@ impl GlobalMode for InOrbitMode {
                     }
                 };
             }
+            
             let context_clone = Arc::clone(&context);
             match self.exec_task(context_clone, task).await {
                 ExecExitSignal::Continue => {}
