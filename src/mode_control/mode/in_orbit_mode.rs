@@ -175,7 +175,7 @@ impl GlobalMode for InOrbitMode {
                 fut.await.ok();
                 WaitExitSignal::SafeEvent
             },
-            obj = async {
+            obj = async move {
                 // TODO: later we shouldn't block zoned objectives anymore
                 while let Some(msg) = obj_mon.recv().await {
                     match msg.obj_type() {

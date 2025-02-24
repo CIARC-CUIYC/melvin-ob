@@ -16,6 +16,7 @@ use crate::http_handler::{
     },
 };
 use crate::mode_control::base_mode::PeriodicImagingEndSignal;
+use crate::mode_control::base_mode::PeriodicImagingEndSignal::{KillLastImage, KillNow};
 use crate::{error, info, log, DT_0_STD};
 use bitvec::boxed::BitBox;
 use chrono::{DateTime, TimeDelta, Utc};
@@ -48,6 +49,7 @@ const SNAPSHOT_FULL_PATH: &str = "snapshot_full.png";
 const SNAPSHOT_THUMBNAIL_PATH: &str = "snapshot_thumb.png";
 
 impl CameraController {
+    const LAST_IMG_END_DELAY: TimeDelta = TimeDelta::milliseconds(500);
     /// Initializes the `CameraController` with the given base path and HTTP client.
     ///
     /// # Arguments
@@ -421,21 +423,29 @@ impl CameraController {
                 state.update_success(img_t);
             } else {
                 state.update_failed(img_t);
+                error!("Rescheduling failed picture immediately!");
                 next_img_due = Utc::now() + TimeDelta::seconds(1);
             }
 
             if last_image_flag {
                 return state.finish();
-            } else if next_img_due >= end_time {
+            } else if next_img_due + Self::LAST_IMG_END_DELAY >= end_time {
                 last_image_flag = true;
             }
 
             let sleep_time = next_img_due - Utc::now();
             tokio::select! {
                 () = tokio::time::sleep(sleep_time.to_std().unwrap_or(DT_0_STD)) => {},
-                Ok(PeriodicImagingEndSignal::KillLastImage) = &mut kill_box => last_image_flag = true,
-                else => {
-                    return state.finish();
+                msg = &mut kill_box => {
+                     match msg.unwrap_or_else(|e| {
+                            error!("Couldn't receive kill signal: {e}");
+                            KillNow
+                        }) {
+                        KillLastImage => last_image_flag = true,
+                        KillNow => {
+                             return state.finish();
+                        }
+                    }
                 }
             }
         }
@@ -444,7 +454,7 @@ impl CameraController {
     fn get_next_img(img_max_dt: I32F32, end_time: DateTime<Utc>) -> DateTime<Utc> {
         let next_max_dt = Utc::now() + TimeDelta::seconds(img_max_dt.to_num::<i64>());
         if next_max_dt > end_time {
-            end_time - TimeDelta::milliseconds(500)
+            end_time - Self::LAST_IMG_END_DELAY
         } else {
             next_max_dt
         }

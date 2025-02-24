@@ -123,23 +123,19 @@ impl BaseMode {
         let ranges = {
             if let Join(join_handle) = end {
                 tokio::pin!(join_handle);
-                let ((), res) = tokio::join!(
-                    async move {
-                        tokio::select! {
-                            () = c_tok.cancelled() => {
-                                let sig = PeriodicImagingEndSignal::KillNow;
-                                acq_phase.1.send(sig).expect("[FATAL] Receiver hung up!");
-                                join_handle.abort();
-                            },
-                            _ = &mut join_handle => {
-                                let sig = PeriodicImagingEndSignal::KillLastImage;
-                                acq_phase.1.send(sig).expect("[FATAL] Receiver hung up!");
-                            }
-                        }
+                tokio::select! {
+                    () = c_tok.cancelled() => {
+                        let sig = PeriodicImagingEndSignal::KillNow;
+                        acq_phase.1.send(sig).expect("[FATAL] Receiver hung up!");
+                        join_handle.abort();
+                        acq_phase.0.await.ok().unwrap_or(vec![(0, 0)])
                     },
-                    async move { acq_phase.0.await.ok().unwrap_or(Vec::new()) }
-                );
-                res
+                    _ = &mut join_handle => {
+                        let sig = PeriodicImagingEndSignal::KillLastImage;
+                        acq_phase.1.send(sig).expect("[FATAL] Receiver hung up!");
+                        acq_phase.0.await.ok().unwrap_or(vec![(0, 0)])
+                    }
+                }
             } else {
                 let img_fut = acq_phase.0;
                 tokio::pin!(img_fut);
@@ -147,10 +143,10 @@ impl BaseMode {
                     () = c_tok.cancelled() => {
                         let sig = PeriodicImagingEndSignal::KillNow;
                         acq_phase.1.send(sig).expect("[FATAL] Receiver hung up!");
-                        img_fut.await.ok().unwrap_or(Vec::new())
+                        img_fut.await.ok().unwrap_or(vec![(0, 0)])
                     }
                     res = &mut img_fut => {
-                        res.ok().unwrap_or(Vec::new())
+                        res.ok().unwrap_or(vec![(0, 0)])
                     }
                 }
             }
