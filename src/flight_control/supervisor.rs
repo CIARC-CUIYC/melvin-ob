@@ -66,7 +66,6 @@ impl Supervisor {
             let client = self.f_cont_lock.read().await.client();
             client.url().to_string()
         };
-        /*
         let mut es = EventSource::get(url + "/announcements");
         while let Some(event) = es.next().await {
             match event {
@@ -83,7 +82,7 @@ impl Supervisor {
                 }
             }
         }
-        fatal!("EventSource disconnected!");*/
+        fatal!("EventSource disconnected!");
     }
 
     /// Starts the supervisor loop to periodically call `update_observation`

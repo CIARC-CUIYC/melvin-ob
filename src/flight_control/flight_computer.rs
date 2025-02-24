@@ -700,7 +700,8 @@ impl FlightComputer {
     pub fn pos_in_dt(&self, now: IndexedOrbitPosition, dt: TimeDelta) -> IndexedOrbitPosition {
         let pos = self.current_pos
             + (self.current_vel * I32F32::from_num(dt.num_seconds())).wrap_around_map();
-        now.new_from_future_pos(pos, dt)
+        let t = Utc::now() + dt;
+        now.new_from_future_pos(pos, t)
     }
 
     pub fn batt_in_dt(&self, dt: TimeDelta) -> I32F32 {

@@ -91,7 +91,7 @@ impl BaseMode {
     pub async fn exec_map(context: Arc<ModeContext>, end: TaskEndSignal, c_tok: CancellationToken) {
         let end_t = {
             match end {
-                TaskEndSignal::Timestamp(dt) => dt,
+                Timestamp(dt) => dt,
                 Join(_) => Utc::now() + TimeDelta::seconds(10000),
             }
         };

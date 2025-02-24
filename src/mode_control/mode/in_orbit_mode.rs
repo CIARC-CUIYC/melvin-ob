@@ -15,12 +15,11 @@ use crate::mode_control::{
     mode::global_mode::{ExecExitSignal, GlobalMode, OpExitSignal, WaitExitSignal},
     mode_context::ModeContext,
 };
-use crate::{fatal, info, obj, warn, DT_0_STD};
+use crate::{fatal, info, obj, warn};
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 use tokio::task::JoinError;
-use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
@@ -164,12 +163,7 @@ impl GlobalMode for InOrbitMode {
             exit_sig = fut => {
                 let sig = exit_sig.expect("[FATAL] Task wait hung up!");
                 match sig {
-                    BaseWaitExitSignal::Continue => {
-                        tokio::time::sleep_until(
-                            Instant::now() + (due - Utc::now()).to_std().unwrap_or(DT_0_STD)
-                        ).await;
-                        WaitExitSignal::Continue
-                    }
+                    BaseWaitExitSignal::Continue => WaitExitSignal::Continue,
                     sig => WaitExitSignal::BODoneEvent(sig)
                 }
             },
@@ -234,12 +228,15 @@ impl GlobalMode for InOrbitMode {
                     obj.end(),
                 );
                 obj!("Found new Beacon Objective {}!", obj.id());
-                let base = self.base.handle_b_o(&context, b_obj).await;
-                context.o_ch_lock().write().await.finish(
-                    context.k().f_cont().read().await.current_pos(),
-                    self.new_bo_rationale(),
-                );
-                base.map(|b| OpExitSignal::ReInit(Box::new(Self { base: b })))                
+                if let Some(base) = self.base.handle_b_o(&context, b_obj).await {
+                    context.o_ch_lock().write().await.finish(
+                        context.k().f_cont().read().await.current_pos(),
+                        self.new_bo_rationale(),
+                    );
+                    Some(OpExitSignal::ReInit(Box::new(Self { base })))
+                } else {
+                    None
+                }
             }
             ObjectiveType::KnownImage {
                 zone,

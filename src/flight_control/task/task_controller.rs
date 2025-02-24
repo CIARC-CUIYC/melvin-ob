@@ -94,6 +94,7 @@ impl TaskController {
 
     const IN_COMMS_SCHED_SECS: usize = 585;
     const COMMS_SCHED_PERIOD: usize = 1025;
+    #[allow(clippy::cast_possible_wrap)]
     const COMMS_SCHED_USABLE_TIME: TimeDelta =
         TimeDelta::seconds((Self::COMMS_SCHED_PERIOD - 2 * 180) as i64);
     pub const COMMS_CHARGE_USAGE: I32F32 = I32F32::lit("48.6");
@@ -363,7 +364,8 @@ impl TaskController {
         info!("Starting to calculate single target burn towards {target_pos}");
 
         // Calculate maximum allowed time delta for the maneuver
-        let time_left = target_end_time - Utc::now();
+        let comp_start = Utc::now();
+        let time_left = target_end_time - comp_start;
         let max_dt = {
             let max = usize::try_from(time_left.num_seconds()).unwrap_or(0);
             max - Self::OBJECTIVE_MIN_RETRIEVAL_TOL
@@ -414,7 +416,7 @@ impl TaskController {
             // Calculate the next position and initialize the burn sequence
             let mut next_pos = (curr_i.pos() + orbit_vel * I32F32::from_num(dt)).wrap_around_map();
             let burn_sequence_i =
-                curr_i.new_from_future_pos(next_pos, TimeDelta::seconds(dt as i64));
+                curr_i.new_from_future_pos(next_pos, comp_start + TimeDelta::seconds(dt as i64));
             let direction_vec = next_pos.unwrapped_to(&target_pos);
 
             // Skip iterations where the current velocity is too far off-target
@@ -686,11 +688,11 @@ impl TaskController {
         end_t: DateTime<Utc>,
     ) {
         log!("Calculating/Scheduling optimal orbit with passive beacon scanning.");
-        let computation_start = scheduling_start_i.t();
+        let computation_start = Utc::now();
         // TODO: later maybe this shouldnt be cleared here anymore
         self.clear_schedule().await;
         let t_time = *TRANS_DEL.get(&(FlightState::Charge, FlightState::Comms)).unwrap();
-        let strict_end = (end_t, scheduling_start_i.index_then(end_t - Utc::now()));
+        let strict_end = (end_t, scheduling_start_i.index_then(end_t));
 
         let mut curr_comms_end = {
             let dt = TimeDelta::seconds(Self::IN_COMMS_SCHED_SECS as i64);
@@ -702,7 +704,7 @@ impl TaskController {
         while let Some(end) = curr_comms_end {
             let next_start = {
                 let t = end.0 + TimeDelta::from_std(t_time).unwrap();
-                let i = scheduling_start_i.index_then(t - computation_start);
+                let i = scheduling_start_i.index_then(t);
                 (t, i)
             };
             curr_comms_end =
@@ -829,7 +831,7 @@ impl TaskController {
                 AtomicDecision::StayInCharge => {
                     // Stay in the charge state, increment battery level.
                     state = 0;
-                    batt = (batt + 1).min(max_mapped as usize);
+                    batt = (batt + 1).min(max_mapped);
                     dt += 1;
                 }
                 AtomicDecision::StayInAcquisition => {
