@@ -13,7 +13,7 @@ use crate::flight_control::{
     objective::known_img_objective::KnownImgObjective,
     orbit::{BurnSequence, ClosedOrbit, IndexedOrbitPosition},
 };
-use crate::{fatal, info, log};
+use crate::{error, fatal, info, log};
 use bitvec::prelude::BitRef;
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
@@ -848,7 +848,12 @@ impl TaskController {
                 AtomicDecision::StayInAcquisition => {
                     // Stay in the acquisition state, decrement battery level.
                     state = 1;
-                    batt -= 1;
+                    if batt == 0 {
+                        error!("Battery level is already at 0!");
+                        error!("current: {dt} max: {pred_secs} init_batt: {batt_f32}");
+                    } else {
+                        batt -= 1;
+                    }
                     dt += 1;
                 }
                 AtomicDecision::SwitchToCharge => {

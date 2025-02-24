@@ -444,7 +444,7 @@ impl CameraController {
     fn get_next_img(img_max_dt: I32F32, end_time: DateTime<Utc>) -> DateTime<Utc> {
         let next_max_dt = Utc::now() + TimeDelta::seconds(img_max_dt.to_num::<i64>());
         if next_max_dt > end_time {
-            end_time
+            end_time - TimeDelta::milliseconds(500)
         } else {
             next_max_dt
         }

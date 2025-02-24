@@ -218,11 +218,12 @@ impl BaseMode {
                             obj!("Updating BO {id} and prolonging!");
                             obj.append_measurement(meas);
                             let new_end = Utc::now() + Self::BO_MSG_COMM_PROLONG;
-                            if let Some(t) = due_t{
+                            if let Some(t) = due_t {
                                 let prolong_cond = new_end > t || obj_length == 1;
-                            if prolong_cond && res_batt > TaskController::MIN_BATTERY_THRESHOLD {
-                                fut = Box::pin(tokio::time::sleep_until(Instant::now() + Self::BO_MSG_COMM_PROLONG_STD));
-                            }}
+                                if prolong_cond && res_batt > TaskController::MIN_BATTERY_THRESHOLD {
+                                    fut = Box::pin(tokio::time::sleep_until(Instant::now() + Self::BO_MSG_COMM_PROLONG_STD));
+                                }
+                            }
                         } else {
                             warn!("Unknown BO ID {id}. Ignoring!");
                         }
