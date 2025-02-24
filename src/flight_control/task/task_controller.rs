@@ -757,8 +757,7 @@ impl TaskController {
         };
         let dt_calc = (Utc::now() - comp_start).num_milliseconds() as f32 / 1000.0;
         let dt_shift = dt_calc.ceil() as usize;
-
-        info!("Scheduling optimal orbit result...");
+        
         let (st_batt, dt_sh) = {
             let (batt, st) = Self::get_batt_and_state(&f_cont_lock).await;
             if st == 2 {

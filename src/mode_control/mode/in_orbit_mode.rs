@@ -190,6 +190,7 @@ impl GlobalMode for InOrbitMode {
                 fatal!("Objective monitor hung up!")
                 } => {
                 cancel_task.cancel();
+                fut.await.ok();
                 obj
             }
         }
