@@ -154,10 +154,8 @@ impl GlobalMode for InOrbitMode {
             } else {
                 warn!("Task wait time too short. Just waiting!");
                 Box::pin(async {
-                    tokio::time::sleep(
-                        (due - Utc::now()).to_std().unwrap_or(Duration::from_secs(0)),
-                    )
-                    .await;
+                    let sleep = (due - Utc::now()).to_std().unwrap_or(Duration::from_secs(0));
+                    tokio::time::timeout(sleep, cancel_task.cancelled()).await.ok().unwrap_or(());
                     Ok(BaseWaitExitSignal::Continue)
                 })
             };
@@ -190,7 +188,7 @@ impl GlobalMode for InOrbitMode {
                 fatal!("Objective monitor hung up!")
                 } => {
                 cancel_task.cancel();
-                fut.await.ok();
+                //fut.await.ok();
                 obj
             }
         }

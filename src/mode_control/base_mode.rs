@@ -314,9 +314,10 @@ impl BaseMode {
             let lock = f_cont.read().await;
             (lock.state(), lock.client())
         };
+        let c_tok_clone = c_tok.clone();
         let def = Box::pin(async move {
             let sleep = (due - Utc::now()).to_std().unwrap_or(Self::DT_0_STD);
-            FlightComputer::wait_for_duration(sleep).await;
+            tokio::time::timeout(sleep, c_tok_clone.cancelled()).await.ok().unwrap_or(());
             BaseWaitExitSignal::Continue
         });
         let task_fut: Pin<Box<dyn Future<Output = BaseWaitExitSignal> + Send>> = match current_state
