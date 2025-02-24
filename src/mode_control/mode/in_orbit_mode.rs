@@ -161,8 +161,9 @@ impl GlobalMode for InOrbitMode {
                     Ok(BaseWaitExitSignal::Continue)
                 })
             };
+        tokio::pin!(fut);
         tokio::select! {
-            exit_sig = fut => {
+            exit_sig = &mut fut => {
                 let sig = exit_sig.expect("[FATAL] Task wait hung up!");
                 match sig {
                     BaseWaitExitSignal::Continue => WaitExitSignal::Continue,
@@ -171,6 +172,7 @@ impl GlobalMode for InOrbitMode {
             },
             () = safe_mon.notified() => {
                 cancel_task.cancel();
+                fut.await.ok();
                 WaitExitSignal::SafeEvent
             },
             obj = async {
