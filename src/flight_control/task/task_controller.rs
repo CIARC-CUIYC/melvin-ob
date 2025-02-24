@@ -831,14 +831,10 @@ impl TaskController {
         }
 
         let mut dt = dt_sh;
-        let (min_batt, max_batt) = (Self::MIN_BATTERY_THRESHOLD, Self::MAX_BATTERY_THRESHOLD); // Battery thresholds
-        let max_mapped = (max_batt / Self::BATTERY_RESOLUTION
-            - min_batt / Self::BATTERY_RESOLUTION)
-            .round()
-            .to_num::<i32>();
+        let max_mapped = Self::map_e_to_dp(Self::MAX_BATTERY_THRESHOLD);
 
         // Map the current battery level into a discrete range.
-        let mut batt = ((batt_f32 - min_batt) / Self::BATTERY_RESOLUTION).to_num::<usize>();
+        let mut batt = Self::map_e_to_dp(batt_f32);
         let pred_secs = res.decisions.dt_len();
         let decisions = &res.decisions;
 
