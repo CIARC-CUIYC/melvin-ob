@@ -403,7 +403,7 @@ impl BaseMode {
         match self {
             BaseMode::MappingMode => Some(BaseMode::start_beacon_scanning(obj)),
             BaseMode::BeaconObjectiveScanningMode(curr_obj) => {
-                let mut obj_m = curr_obj.lock().await.clone();
+                let mut obj_m = curr_obj.lock().await;
                 obj_m.insert(obj.id(), obj);
                 None
             }
