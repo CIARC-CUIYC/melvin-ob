@@ -1,5 +1,5 @@
 use crate::flight_control::{
-    objective::{objective_base::ObjectiveBase, objective_type::ObjectiveType},
+    objective::objective_base::ObjectiveBase,
     task::base_task::Task,
 };
 use crate::mode_control::{
@@ -135,7 +135,6 @@ pub trait OrbitalMode: GlobalMode {
                 WaitExitSignal::SafeEvent
             },
             msg =  obj_mon.recv() => {
-                // TODO: later we shouldn't block zoned objectives anymore
                 let obj = msg.expect("[FATAL] Objective monitor hung up!");
                 cancel_task.cancel();
                 fut.await.ok();
