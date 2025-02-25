@@ -1,12 +1,11 @@
 use super::{
     bayesian_set::BayesianSet,
-    vec2d::{MapSize, Vec2D},
+    vec2d::Vec2D,
 };
 use crate::flight_control::objective::beacon_objective::BeaconMeas;
 use crate::STATIC_ORBIT_VEL;
 use chrono::TimeDelta;
 use fixed::types::I32F32;
-use num::traits::FloatConst;
 use rand::{rng, Rng};
 
 const MAX_MEASURE_POINTS: usize = 6;

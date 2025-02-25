@@ -25,7 +25,7 @@ pub trait GlobalMode: Sync {
     fn type_name(&self) -> &'static str;
     async fn init_mode(&self, context: Arc<ModeContext>) -> OpExitSignal;
 
-    #[allow(clippy::cast_sign_loss)]
+    #[allow(clippy::cast_sign_loss, clippy::cast_precision_loss)]
     async fn exec_task_queue(&self, context: Arc<ModeContext>) -> OpExitSignal {
         let context_local = Arc::clone(&context);
         let mut tasks = 0;
@@ -126,7 +126,7 @@ pub trait OrbitalMode: GlobalMode {
                 let sig = exit_sig.expect("[FATAL] Task wait hung up!");
                 match sig {
                     BaseWaitExitSignal::Continue => WaitExitSignal::Continue,
-                    sig => WaitExitSignal::BODoneEvent(sig)
+                    signal => WaitExitSignal::BODoneEvent(signal)
                 }
             },
             () = safe_mon.notified() => {

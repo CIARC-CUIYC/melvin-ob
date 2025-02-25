@@ -16,7 +16,7 @@ use crate::http_handler::{
         reset_get::ResetRequest,
     },
 };
-use crate::{error, fatal, info, log, warn};
+use crate::{error, fatal, info, log};
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::{I32F32, I64F64};
 use num::{ToPrimitive, Zero};
@@ -406,15 +406,17 @@ impl FlightComputer {
         Self::set_state_wait(self_lock, target_state).await;
     }
 
-    pub async fn get_to_comms(self_lock: Arc<RwLock<Self>>) {
-        let charge_dt = {
-            let batt_diff = (self_lock.read().await.current_battery()
-                - TaskController::MIN_COMMS_START_CHARGE)
-                .min(I32F32::zero());
-            (- batt_diff / FlightState::Charge.get_charge_rate()).ceil().to_num::<u64>()
-        };
+    #[allow(clippy::cast_possible_wrap)]
+    pub async fn get_to_comms(self_lock: Arc<RwLock<Self>>) -> DateTime<Utc> {
+        if self_lock.read().await.state() == FlightState::Comms {
+            let batt_diff =
+                self_lock.read().await.current_battery() - TaskController::MIN_COMMS_START_CHARGE;
+            let rem_t = (batt_diff / FlightState::Comms.get_charge_rate()).abs().ceil();
+            return Utc::now() + TimeDelta::seconds(rem_t.to_num::<i64>());
+        }
+        let charge_dt = Self::get_charge_dt(&self_lock).await;
         log!("Charge time for comms: {}", charge_dt);
-        
+
         if charge_dt > 0 {
             FlightComputer::set_state_wait(Arc::clone(&self_lock), FlightState::Charge).await;
             FlightComputer::wait_for_duration(Duration::from_secs(charge_dt)).await;
@@ -422,6 +424,36 @@ impl FlightComputer {
         } else {
             FlightComputer::set_state_wait(self_lock, FlightState::Comms).await;
         }
+        Utc::now() + TimeDelta::seconds(TaskController::IN_COMMS_SCHED_SECS as i64)
+    }
+
+    #[allow(clippy::cast_possible_wrap)]
+    pub async fn get_to_comms_dt_est(self_lock: Arc<RwLock<Self>>) -> (u64, TimeDelta) {
+        let t_time = TimeDelta::from_std(
+            *TRANS_DEL.get(&(FlightState::Charge, FlightState::Comms)).unwrap(),
+        )
+        .unwrap();
+        if self_lock.read().await.state() == FlightState::Comms {
+            let batt_diff =
+                self_lock.read().await.current_battery() - TaskController::MIN_COMMS_START_CHARGE;
+            let rem_t = (batt_diff / FlightState::Comms.get_charge_rate()).abs().ceil();
+            return (0, TimeDelta::seconds(rem_t.to_num::<i64>()));
+        }
+        let charge_dt = Self::get_charge_dt(&self_lock).await;
+        log!("Charge time for comms: {}", charge_dt);
+
+        if charge_dt > 0 {
+            (charge_dt, TimeDelta::seconds(charge_dt as i64) + t_time * 2)
+        } else {
+            (0, t_time)
+        }
+    }
+
+    async fn get_charge_dt(self_lock: &Arc<RwLock<Self>>) -> u64 {
+        let batt_diff = (self_lock.read().await.current_battery()
+            - TaskController::MIN_COMMS_START_CHARGE)
+            .min(I32F32::zero());
+        (-batt_diff / FlightState::Charge.get_charge_rate()).ceil().to_num::<u64>()
     }
 
     /// Transitions the satellite to a new operational state and waits for transition completion.

@@ -6,6 +6,7 @@ use crate::flight_control::{
     },
     task::base_task::{BaseTask, Task},
 };
+use crate::mode_control::mode::zo_prep_mode::ZOPrepMode;
 use crate::mode_control::{
     base_mode::{BaseMode, BaseWaitExitSignal},
     mode::global_mode::{GlobalMode, OrbitalMode},
@@ -15,7 +16,7 @@ use crate::mode_control::{
 use crate::{fatal, obj};
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
-use std::{pin::Pin, sync::Arc};
+use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
@@ -27,9 +28,7 @@ impl InOrbitMode {
     const MODE_NAME: &'static str = "InOrbitMode";
     const MAX_WAIT_TIMEDELTA: TimeDelta = TimeDelta::seconds(10);
 
-    pub fn new(base: BaseMode) -> Self {
-        Self { base }
-    }
+    pub fn new(base: BaseMode) -> Self { Self { base } }
 }
 
 impl OrbitalMode for InOrbitMode {
@@ -42,10 +41,10 @@ impl GlobalMode for InOrbitMode {
 
     async fn init_mode(&self, context: Arc<ModeContext>) -> OpExitSignal {
         let cancel_task = CancellationToken::new();
-        self.base.handle_sched_preconditions(Arc::clone(&context)).await;
+        let comms_end = self.base.handle_sched_preconditions(Arc::clone(&context)).await;
         let sched_handle = {
             let cancel_clone = cancel_task.clone();
-            self.base.get_schedule_handle(Arc::clone(&context), cancel_clone, None).await
+            self.base.get_schedule_handle(Arc::clone(&context), cancel_clone, comms_end, None).await
         };
         tokio::pin!(sched_handle);
         let safe_mon = context.super_v().safe_mon();
@@ -64,7 +63,11 @@ impl GlobalMode for InOrbitMode {
         OpExitSignal::Continue
     }
 
-    async fn exec_task_wait(&self, context: Arc<ModeContext>, due: DateTime<Utc>) -> WaitExitSignal {
+    async fn exec_task_wait(
+        &self,
+        context: Arc<ModeContext>,
+        due: DateTime<Utc>,
+    ) -> WaitExitSignal {
         <Self as OrbitalMode>::exec_task_wait(self, context, due).await
     }
 
@@ -135,8 +138,10 @@ impl GlobalMode for InOrbitMode {
                     self.new_zo_rationale(),
                 );
                 // TODO: return ZonedObjectivePrepMode
-                None
-                //OpExitSignal::ReInit(Box::New())
+                todo!();
+                ZOPrepMode::from_obj(context, k_obj, self.base.clone())
+                    .await
+                    .map(|mode| OpExitSignal::ReInit(Box::new(mode)))
             }
         }
     }

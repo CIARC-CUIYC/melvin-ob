@@ -243,11 +243,11 @@ impl BaseMode {
         }
     }
 
-    pub async fn handle_sched_preconditions(&self, context: Arc<ModeContext>) {
+    pub async fn handle_sched_preconditions(&self, context: Arc<ModeContext>) -> DateTime<Utc> {
         match self {
-            BaseMode::MappingMode => (),
+            BaseMode::MappingMode => Utc::now(),
             BaseMode::BeaconObjectiveScanningMode(_) => {
-                FlightComputer::get_to_comms(context.k().f_cont()).await;
+                FlightComputer::get_to_comms(context.k().f_cont()).await
             }
         }
     }
@@ -256,6 +256,7 @@ impl BaseMode {
         &self,
         context: Arc<ModeContext>,
         c_tok: CancellationToken,
+        comms_end: DateTime<Utc>,
         end: Option<EndCondition>,
     ) -> JoinHandle<()> {
         let k = Arc::clone(context.k());
@@ -282,6 +283,7 @@ impl BaseMode {
                     k.f_cont(),
                     o_ch.i_entry(),
                     last_obj_end,
+                    comms_end,
                     end,
                 ))
             }

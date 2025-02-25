@@ -10,6 +10,7 @@ pub struct CycleState {
 }
 
 impl CycleState {
+    #[allow(clippy::cast_possible_truncation)]
     pub fn init_cycle(img_max_dt: I32F32, start_i: isize) -> Self {
         let overlap = {
             let overlap_dt = (img_max_dt.floor() / I32F32::lit("2.0")).to_num::<isize>();
@@ -32,6 +33,7 @@ impl CycleState {
         }
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     pub fn update_failed(&mut self, img_t: DateTime<Utc>) {
         let p_secs = self.get_p_secs();
         self.done_ranges.push((self.last_mark.0, self.last_mark.0 + p_secs as isize));
@@ -41,9 +43,10 @@ impl CycleState {
     }
 
     pub fn update_success(&mut self, img_t: DateTime<Utc>) {
-        self.last_pic = Some(img_t)
+        self.last_pic = Some(img_t);
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     pub fn finish(mut self) -> Vec<(isize, isize)> {
         let p_secs = self.get_p_secs();
         self.done_ranges.push((self.last_mark.0, self.last_mark.0 + p_secs as isize));

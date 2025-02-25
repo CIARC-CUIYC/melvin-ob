@@ -1,9 +1,6 @@
 use super::{
-    atomic_decision::AtomicDecision,
-    atomic_decision_cube::AtomicDecisionCube,
-    base_task::Task,
-    score_grid::ScoreGrid,
-    vel_change_task::VelocityChangeTaskRationale,
+    atomic_decision::AtomicDecision, atomic_decision_cube::AtomicDecisionCube, base_task::Task,
+    score_grid::ScoreGrid, vel_change_task::VelocityChangeTaskRationale,
 };
 use crate::flight_control::flight_state::TRANS_DEL;
 use crate::flight_control::task::end_condition::EndCondition;
@@ -92,7 +89,7 @@ impl TaskController {
     /// A constant representing a 90-degree angle, in fixed-point format.
     const NINETY_DEG: I32F32 = I32F32::lit("90.0");
 
-    const IN_COMMS_SCHED_SECS: usize = 585;
+    pub const IN_COMMS_SCHED_SECS: usize = 585;
     const COMMS_SCHED_PERIOD: usize = 1025;
     #[allow(clippy::cast_possible_wrap)]
     const COMMS_SCHED_USABLE_TIME: TimeDelta =
@@ -594,6 +591,7 @@ impl TaskController {
         f_cont_lock: Arc<RwLock<FlightComputer>>,
         scheduling_start_i: IndexedOrbitPosition,
         last_bo_end_t: DateTime<Utc>,
+        first_comms_end: DateTime<Utc>,
         end_cond: Option<EndCondition>,
     ) {
         log!("Calculating/Scheduling optimal orbit with passive beacon scanning.");
@@ -604,27 +602,28 @@ impl TaskController {
         let t_time_ch = TimeDelta::from_std(t_time).unwrap();
         let strict_end = (last_bo_end_t, scheduling_start_i.index_then(last_bo_end_t));
 
-        let is_next_possible: Box<dyn Fn(DateTime<Utc>) -> bool + Send> = if let Some(end) = &end_cond {
-            let dt = end.min_charge_time() + t_time_ch * 2;
-            Box::new(move |comms_end: DateTime<Utc>| -> bool {
-                let n_end = comms_end
-                    + TaskController::COMMS_SCHED_USABLE_TIME
-                    + TaskController::COMMS_SCHED_USABLE_TIME;
-                n_end + dt <= end.end_time()
-            })
-        } else {
-            Box::new(|_| -> bool { true })
-        };
+        let is_next_possible: Box<dyn Fn(DateTime<Utc>) -> bool + Send> =
+            if let Some(end) = &end_cond {
+                let dt = end.min_charge_time() + t_time_ch * 2;
+                Box::new(move |comms_end: DateTime<Utc>| -> bool {
+                    let n_end = comms_end
+                        + TaskController::COMMS_SCHED_USABLE_TIME + t_time_ch * 2
+                        + TimeDelta::seconds(TaskController::IN_COMMS_SCHED_SECS as i64);
+                    n_end + dt <= end.time()
+                })
+            } else {
+                Box::new(|_| -> bool { true })
+            };
 
         let mut curr_comms_end = {
-            let dt = TimeDelta::seconds(Self::IN_COMMS_SCHED_SECS as i64);
+            let dt = first_comms_end - Utc::now();
             let batt = f_cont_lock.read().await.batt_in_dt(dt);
-            Some((Utc::now() + dt, batt))
+            Some((first_comms_end, batt))
         };
-        
+
         let mut next_start = (Utc::now(), scheduling_start_i.index());
         let mut next_start_e = I32F32::zero();
-        
+
         let orbit = orbit_lock.read().await;
         while let Some(end) = curr_comms_end {
             (next_start, next_start_e) = {
@@ -639,13 +638,13 @@ impl TaskController {
                 break;
             }
         }
-        
+
         if let Some(e) = &end_cond {
-            let (left_dt, ch, s) ={
-                let dt = usize::try_from((e.end_time() - next_start.0).num_seconds()).unwrap_or(0);
-                (Some(dt), Some(e.end_charge()), Some(e.end_state()))
+            let (left_dt, ch, s) = {
+                let dt = usize::try_from((e.time() - next_start.0).num_seconds()).unwrap_or(0);
+                (Some(dt), Some(e.charge()), Some(e.state()))
             };
-            let result = Self::init_sched_dp(&orbit, next_start.1, left_dt, s, ch);            
+            let result = Self::init_sched_dp(&orbit, next_start.1, left_dt, s, ch);
             let target = {
                 let st = result
                     .coverage_slice
@@ -654,10 +653,14 @@ impl TaskController {
                     .get_max_s(Self::map_e_to_dp(next_start_e));
                 (next_start_e, st)
             };
-            self.schedule_switch(FlightState::from_dp_usize(target.1), next_start.0 - t_time_ch).await;
+            self.schedule_switch(
+                FlightState::from_dp_usize(target.1),
+                next_start.0 - t_time_ch,
+            )
+            .await;
             self.sched_opt_orbit_res(next_start.0, result, 0, false, target).await;
         }
-        
+
         let n_tasks = self.task_schedule.read().await.len();
         let dt_tot = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
         info!(
@@ -700,11 +703,11 @@ impl TaskController {
         let p_t_shift = scheduling_start_i.index();
         let comp_start = scheduling_start_i.t();
         let (dt, batt, state) = if let Some(end_c) = end {
-            let end_t = (end_c.end_time() - Utc::now()).num_seconds().max(0) as usize;
+            let end_t = (end_c.time() - Utc::now()).num_seconds().max(0) as usize;
             (
                 Some(end_t),
-                Some(end_c.end_charge()),
-                Some(end_c.end_state()),
+                Some(end_c.charge()),
+                Some(end_c.state()),
             )
         } else {
             (None, None, None)

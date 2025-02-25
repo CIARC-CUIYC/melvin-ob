@@ -8,6 +8,8 @@ use crate::flight_control::{
     task::{
         base_task::{BaseTask, Task},
         TaskController,
+        end_condition::EndCondition,
+        vel_change_task::VelocityChangeTaskRationale::OrbitEscape
     },
 };
 use crate::mode_control::{
@@ -21,11 +23,9 @@ use crate::mode_control::{
 };
 use crate::{error, fatal, info, log, obj};
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
-use crate::flight_control::task::end_condition::EndCondition;
-use crate::flight_control::task::vel_change_task::VelocityChangeTaskRationale::OrbitEscape;
 
 #[derive(Clone)]
 pub struct ZOPrepMode {
@@ -37,7 +37,12 @@ pub struct ZOPrepMode {
 impl ZOPrepMode {
     const MODE_NAME: &'static str = "ZOPrepMode";
 
-    pub async fn from_obj(context: Arc<ModeContext>, zo: KnownImgObjective) -> Self {
+    #[allow(clippy::cast_possible_wrap)]
+    pub async fn from_obj(
+        context: Arc<ModeContext>,
+        zo: KnownImgObjective,
+        mut base: BaseMode,
+    ) -> Option<Self> {
         // TODO: dont unwrap exit burn but handle error if no burn is possible
         let exit_burn = if zo.min_images() == 1 {
             let target_pos = zo.get_imaging_points()[0];
@@ -49,17 +54,23 @@ impl ZOPrepMode {
                 due,
             )
             .await
-            .unwrap()
         } else {
             // TODO: multiple imaging points?
             fatal!("Zoned Objective with multiple images not yet supported");
-        };
-
-        Self {
-            base: BaseMode::MappingMode,
-            exit_burn,
-            target: zo,
+        }?;
+        
+        if let BaseMode::BeaconObjectiveScanningMode(_) = base {
+            let burn_start = exit_burn.start_i().t();
+            let worst_case_first_comms_end = {
+                let to_comms = 
+                    FlightComputer::get_to_comms_dt_est(context.k().f_cont()).await;
+                Utc::now() + to_comms.1 + TimeDelta::seconds(TaskController::IN_COMMS_SCHED_SECS as i64)
+            };
+            if worst_case_first_comms_end + TimeDelta::seconds(10) > burn_start {
+                base = BaseMode::MappingMode;
+            }
         }
+        Some(ZOPrepMode { base, exit_burn, target: zo })
     }
 }
 
@@ -73,11 +84,11 @@ impl GlobalMode for ZOPrepMode {
 
     async fn init_mode(&self, context: Arc<ModeContext>) -> OpExitSignal {
         let cancel_task = CancellationToken::new();
-        self.base.handle_sched_preconditions(Arc::clone(&context)).await;
+        let comms_end = self.base.handle_sched_preconditions(Arc::clone(&context)).await;
         let end = EndCondition::from_burn(&self.exit_burn);
         let sched_handle = {
             let cancel_clone = cancel_task.clone();
-            self.base.get_schedule_handle(Arc::clone(&context), cancel_clone, Some(end)).await
+            self.base.get_schedule_handle(Arc::clone(&context), cancel_clone, comms_end, Some(end)).await
         };
         tokio::pin!(sched_handle);
         let safe_mon = context.super_v().safe_mon();
@@ -133,7 +144,12 @@ impl GlobalMode for ZOPrepMode {
             context.k().f_cont().read().await.current_pos(),
             self.safe_mode_rationale(),
         );
-        OpExitSignal::ReInit(Box::new(Self::from_obj(context, self.target.clone()).await))
+        let new = Self::from_obj(context, self.target.clone(), self.base.clone()).await;
+        OpExitSignal::ReInit(
+            new.map_or(Box::new(InOrbitMode::new(self.base.clone())), |b| {
+                Box::new(b)
+            }),
+        )
     }
 
     async fn objective_handler(
