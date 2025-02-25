@@ -1,7 +1,5 @@
-use crate::flight_control::{
-    common::vec2d::Vec2D, flight_computer::FlightComputer,
-};
 use super::beacon_objective::BeaconObjective;
+use crate::flight_control::{common::vec2d::Vec2D, flight_computer::FlightComputer};
 use crate::http_handler::{
     http_client::HTTPClient,
     http_request::{
@@ -13,6 +11,7 @@ use chrono::{DateTime, Utc};
 use fixed::types::I32F32;
 use std::sync::Arc;
 
+#[derive(Clone)]
 pub struct BeaconObjectiveDone {
     id: usize,
     name: String,
