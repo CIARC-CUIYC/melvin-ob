@@ -16,14 +16,14 @@ use crate::flight_control::{
 };
 use crate::keychain::{Keychain, KeychainWithOrbit};
 use crate::mode_control::{
-    mode::global_mode::{GlobalMode, OpExitSignal},
-    mode::in_orbit_mode::InOrbitMode,
+    mode::{global_mode::GlobalMode, in_orbit_mode::InOrbitMode},
+    base_mode::BaseMode,
+    signal::OpExitSignal,
     mode_context::ModeContext,
 };
 use chrono::TimeDelta;
 use fixed::types::I32F32;
-use std::{env, sync::Arc};
-use std::time::Duration;
+use std::{env, sync::Arc, time::Duration};
 
 const DT_MIN: TimeDelta = TimeDelta::seconds(5);
 const DT_0: TimeDelta = TimeDelta::seconds(0);
@@ -39,7 +39,7 @@ async fn main() {
     let base_url = base_url_var.as_ref().map_or("http://localhost:33000", |v| v.as_str());
     let context = Arc::new(init(base_url).await);
     
-    let mut global_mode: Box<dyn GlobalMode> = Box::new(InOrbitMode::new());
+    let mut global_mode: Box<dyn GlobalMode> = Box::new(InOrbitMode::new(BaseMode::MappingMode));
     loop {
         let phase = context.o_ch_clone().await.mode_switches();
         info!("Starting phase {phase} in {}!", global_mode.type_name());

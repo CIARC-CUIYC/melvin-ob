@@ -645,55 +645,6 @@ impl FlightComputer {
         }
     }
 
-    /// Estimates the minimum required charge for a given burn sequence.
-    ///
-    /// # Arguments
-    /// - `burn_sequence`: A reference to the `BurnSequence` containing timing and maneuver data.
-    ///
-    /// # Returns
-    /// - An `I32F32` value representing the estimated minimum charge required.
-    ///
-    /// # Methodology
-    /// - The method calculates the required charge based on acceleration time, detumbling time,
-    ///   and the time spent in acquisition and charge state transitions.
-    /// - It factors in the power consumption rates associated with flight states and maneuvers.
-    ///
-    /// # Behavior
-    /// - Adjusts the maneuver acquisition time based on task controller detumble minimums and
-    ///   transition delays.
-    /// - Multiples the derived travel time with the power rates of the acquisition phase for
-    ///   charge estimation.
-    #[allow(clippy::cast_precision_loss)]
-    pub fn estimate_min_burn_charge(burn_sequence: &BurnSequence) -> I32F32 {
-        let acc_time = burn_sequence.acc_dt();
-        let travel_time = burn_sequence.detumble_dt() + acc_time;
-        let detumble_time = travel_time - acc_time;
-        let maneuver_acq_time = {
-            let trunc_detumble_time = detumble_time - 2 * TaskController::MANEUVER_MIN_DETUMBLE_DT;
-            let acq_charge_dt = i32::try_from(
-                TRANS_DEL[&(FlightState::Acquisition, FlightState::Charge)].as_secs(),
-            )
-            .unwrap_or(i32::MAX);
-            let charge_acq_dt = i32::try_from(
-                TRANS_DEL[&(FlightState::Acquisition, FlightState::Charge)].as_secs(),
-            )
-            .unwrap_or(i32::MAX);
-            let poss_charge_dt = i32::try_from(trunc_detumble_time).unwrap_or(i32::MIN)
-                - acq_charge_dt
-                - charge_acq_dt;
-            if poss_charge_dt < 0 {
-                travel_time
-            } else {
-                // TODO: this probably only works because we do *2 later :)
-                acc_time + 2 * TaskController::MANEUVER_MIN_DETUMBLE_DT
-            }
-        };
-        // TODO: this should be calculated in regards of the return path
-        (I32F32::from_num(maneuver_acq_time) * FlightState::Acquisition.get_charge_rate()
-            + I32F32::from_num(burn_sequence.acc_dt()) * FlightState::ACQ_ACC_ADDITION)
-            * I32F32::lit("-2.0")
-    }
-
     /// Predicts the satellite’s position after a specified time interval.
     ///
     /// # Arguments

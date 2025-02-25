@@ -46,7 +46,7 @@ impl Display for Task {
             BaseTask::ChangeVelocity(task) => {
                 let res_vel = task.burn().sequence_vel().last().unwrap();
                 let res_pos = task.burn().sequence_pos().last().unwrap();
-                let angle_dev = task.burn().res_angle_dev();
+                let angle_dev = task.burn().rem_angle_dev();
                 &*format!(
                     "Burn to velocity {res_vel} at pos {res_pos}, \
                 angle deviation will be {angle_dev}",

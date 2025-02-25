@@ -360,7 +360,7 @@ impl TaskController {
         f_cont_lock: Arc<RwLock<FlightComputer>>,
         target_pos: Vec2D<I32F32>,
         target_end_time: DateTime<Utc>,
-    ) -> (BurnSequence, I32F32) {
+    ) -> Option<BurnSequence> {
         info!("Starting to calculate single target burn towards {target_pos}");
 
         // Calculate maximum allowed time delta for the maneuver
@@ -401,7 +401,7 @@ impl TaskController {
 
         // Define range for evaluation and initialize best burn sequence tracker
         let remaining_range = Self::OBJECTIVE_SCHEDULE_MIN_DT..=last_possible_dt;
-        let mut best_burn_sequence: Option<(BurnSequence, I32F32)> = None;
+        let mut best_burn_sequence: Option<BurnSequence> = None;
 
         // Calculate the maximum allowable angle deviation
         let max_angle_dev = {
@@ -502,6 +502,7 @@ impl TaskController {
                 I32F32::from_num(max_off_orbit_t),
             )
             .unwrap_or(I32F32::zero());
+            
             let normalized_angle_dev =
                 math::normalize_fixed32(fin_angle_dev.abs(), I32F32::zero(), max_angle_dev)
                     .unwrap_or(I32F32::zero());
@@ -519,26 +520,24 @@ impl TaskController {
                 add_dt,
                 fin_dt - dt - add_dt,
                 burn_sequence_cost,
-                fin_angle_dev,
+                fin_angle_dev, 
+                
             );
-
-            // Estimate the minimum required battery charge for the sequence
-            let min_charge = FlightComputer::estimate_min_burn_charge(&burn_sequence);
 
             // Update the best burn sequence if a cheaper and feasible one is found
             if best_burn_sequence.is_none()
-                || burn_sequence_cost < best_burn_sequence.as_ref().unwrap().0.cost()
+                || burn_sequence_cost < best_burn_sequence.as_ref().unwrap().cost()
             {
-                if min_charge < Self::MAX_BATTERY_THRESHOLD {
-                    best_burn_sequence = Some((burn_sequence, min_charge));
+                if burn_sequence.min_charge() < Self::MAX_BATTERY_THRESHOLD {
+                    best_burn_sequence = Some(burn_sequence);
                 } else {
-                    println!("Cheaper maneuver found but min charge {min_charge} is too high!");
+                    println!("Cheaper maneuver found but min charge {} is too high!", burn_sequence.min_charge());
                 }
             }
         }
 
         // Return the best burn sequence, panicking if none was found
-        best_burn_sequence.unwrap()
+        best_burn_sequence
     }
 
     /// Schedules a zoned objective, calculating the necessary burn maneuvers and updating the task schedule.
@@ -570,7 +569,8 @@ impl TaskController {
             "Calculating schedule for Retrieval of Objective {}",
             objective.id()
         );
-        let (burn_sequence, min_charge) = if objective.min_images() == 1 {
+        
+        let burn_sequence = if objective.min_images() == 1 {
             let target_pos = objective.get_imaging_points()[0];
             let due = objective.end();
             Self::calculate_single_target_burn_sequence(
@@ -579,11 +579,13 @@ impl TaskController {
                 target_pos,
                 due,
             )
-            .await
+            .await.unwrap()
         } else {
             // TODO
             fatal!("Zoned Objective with multiple images not yet supported");
         };
+        
+        
         let comp_time = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
         info!("Maneuver calculation completed after {comp_time}s!");
 
@@ -607,11 +609,12 @@ impl TaskController {
                 after_dp.index(),
                 Some(dt),
                 Some(FlightState::Acquisition),
-                Some(min_charge),
+                Some(burn_sequence.min_charge()),
             )
         };
         info!(
-            "Calculating optimal orbit schedule to be at {min_charge} and in {} in {dt}s.",
+            "Calculating optimal orbit schedule to be at {} and in {} in {dt}s.",
+            burn_sequence.start_i().pos(),
             <&'static str>::from(FlightState::Acquisition)
         );
         let after_sched_calc_i = {

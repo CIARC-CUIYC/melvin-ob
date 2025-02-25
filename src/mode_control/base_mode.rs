@@ -229,7 +229,7 @@ impl BaseMode {
                 },
                 // If the timeout expires, exit
                 () = &mut fut => {
-                    log!("Comms Timeout reached after {}s. Stopping listener.",
+                    log!("Comms Deadline reached after {}s. Stopping listener.",
                     (Utc::now() - start).num_seconds());
                     break;
                 },

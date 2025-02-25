@@ -403,7 +403,7 @@ impl CameraController {
         start_index: usize,
     ) -> Vec<(isize, isize)> {
         log!(
-            "Starting acquisition cycle. Timeout: {}",
+            "Starting acquisition cycle. Delay: {}",
             end_time.format("%H:%M:%S")
         );
 
