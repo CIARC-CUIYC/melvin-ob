@@ -34,7 +34,7 @@ impl Supervisor {
     /// Constant update interval for observation updates in the `run()` method
     const OBS_UPDATE_INTERVAL: Duration = Duration::from_millis(500);
     /// Constant update interval for objective updates in the `run()` method
-    const OBJ_UPDATE_INTERVAL: TimeDelta = TimeDelta::seconds(300);
+    const OBJ_UPDATE_INTERVAL: TimeDelta = TimeDelta::seconds(15);
     /// Constant minimum time delta to the objective start for sending the objective to `main`
     const B_O_MIN_DT: TimeDelta = TimeDelta::minutes(20);
     /// Creates a new instance of `Supervisor`
@@ -197,9 +197,8 @@ impl Supervisor {
                     }
                 }
                 for b_o in objective_list.beacon_objectives() {
-                    let obj_about =
-                        b_o.start() < Utc::now() + TimeDelta::minutes(20) && b_o.end() > Utc::now();
-                    if obj_about && !id_list.contains(&b_o.id()) {
+                    let obj_on = b_o.start() < Utc::now() && b_o.end() > Utc::now();
+                    if obj_on && !id_list.contains(&b_o.id()) {
                         send_objs.push(ObjectiveBase::from(b_o.clone()));
                     }
                 }

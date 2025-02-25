@@ -1,7 +1,7 @@
 use super::{
     camera_state::CameraAngle,
     common::{math::MAX_DEC, vec2d::Vec2D},
-    flight_state::{FlightState, TRANSITION_DELAY_LOOKUP},
+    flight_state::{FlightState, TRANS_DEL},
 };
 use crate::flight_control::{
     orbit::{BurnSequence, IndexedOrbitPosition},
@@ -16,7 +16,7 @@ use crate::http_handler::{
         reset_get::ResetRequest,
     },
 };
-use crate::{error, fatal, info, log};
+use crate::{error, fatal, info, log, warn};
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::{I32F32, I64F64};
 use num::{ToPrimitive, Zero};
@@ -336,7 +336,7 @@ impl FlightComputer {
     /// Waits for a condition to be met within a specified timeout.
     ///
     /// # Arguments
-    /// - `locked_self`: A `RwLock<Self>` reference to the active flight computer.
+    /// - `self_lock`: A `RwLock<Self>` reference to the active flight computer.
     /// - `condition`: A closure that takes a reference to `Self` and returns a `bool`.
     /// - `rationale`: A string describing the purpose of the wait.
     /// - `timeout_millis`: Maximum time in milliseconds to wait for the condition to be met.
@@ -348,7 +348,7 @@ impl FlightComputer {
     ///   - The timeout expires.
     /// - Logs the rationale and results of the wait.
     async fn wait_for_condition<F>(
-        locked_self: &RwLock<Self>,
+        self_lock: &RwLock<Self>,
         (condition, rationale): (F, String),
         timeout_millis: u16,
         poll_interval: u16,
@@ -358,7 +358,7 @@ impl FlightComputer {
         log!("Waiting for condition: {rationale}");
         let start_time = Instant::now();
         while start_time.elapsed().as_millis() < u128::from(timeout_millis) {
-            let cond = { condition(&*locked_self.read().await) };
+            let cond = { condition(&*self_lock.read().await) };
             if cond {
                 log!(
                     "Condition met after {} ms",
@@ -371,9 +371,9 @@ impl FlightComputer {
         log!("Condition not met after {timeout_millis} ms");
     }
 
-    pub async fn escape_safe(locked_self: Arc<RwLock<Self>>) {
+    pub async fn escape_safe(self_lock: Arc<RwLock<Self>>) {
         let target_state = {
-            let init_batt = locked_self.read().await.current_battery();
+            let init_batt = self_lock.read().await.current_battery();
             if init_batt <= Self::AFTER_SAFE_MIN_BATT {
                 FlightState::Charge
             } else {
@@ -388,27 +388,49 @@ impl FlightComputer {
             format!("State is not {}", FlightState::Transition),
         );
         Self::wait_for_condition(
-            &locked_self,
+            &self_lock,
             cond_not_trans,
             Self::DEF_COND_TO,
             Self::DEF_COND_PI,
         )
         .await;
+        let state = self_lock.read().await.state();
+        if state != FlightState::Safe {
+            error!("State is not safe but {}", state);
+        }
         let cond_min_charge = (
             |cont: &FlightComputer| cont.current_battery() >= Self::EXIT_SAFE_MIN_BATT,
             format!("Battery level is higher than {}", Self::EXIT_SAFE_MIN_BATT),
         );
-        Self::wait_for_condition(&locked_self, cond_min_charge, 15000, Self::DEF_COND_PI).await;
-        Self::set_state_wait(locked_self, target_state).await;
+        Self::wait_for_condition(&self_lock, cond_min_charge, 30000, Self::DEF_COND_PI).await;
+        Self::set_state_wait(self_lock, target_state).await;
+    }
+
+    pub async fn get_to_comms(self_lock: Arc<RwLock<Self>>) {
+        let charge_dt = {
+            let batt_diff = (self_lock.read().await.current_battery()
+                - TaskController::MIN_COMMS_START_CHARGE)
+                .min(I32F32::zero());
+            (- batt_diff / FlightState::Charge.get_charge_rate()).ceil().to_num::<u64>()
+        };
+        log!("Charge time for comms: {}", charge_dt);
+        
+        if charge_dt > 0 {
+            FlightComputer::set_state_wait(Arc::clone(&self_lock), FlightState::Charge).await;
+            FlightComputer::wait_for_duration(Duration::from_secs(charge_dt)).await;
+            FlightComputer::set_state_wait(self_lock, FlightState::Comms).await;
+        } else {
+            FlightComputer::set_state_wait(self_lock, FlightState::Comms).await;
+        }
     }
 
     /// Transitions the satellite to a new operational state and waits for transition completion.
     ///
     /// # Arguments
-    /// - `locked_self`: A `RwLock<Self>` reference to the active flight computer.
+    /// - `self_lock`: A `RwLock<Self>` reference to the active flight computer.
     /// - `new_state`: The target operational state.
-    pub async fn set_state_wait(locked_self: Arc<RwLock<Self>>, new_state: FlightState) {
-        let init_state = { locked_self.read().await.current_state };
+    pub async fn set_state_wait(self_lock: Arc<RwLock<Self>>, new_state: FlightState) {
+        let init_state = { self_lock.read().await.current_state };
         if new_state == init_state {
             log!("State already set to {new_state}");
             return;
@@ -417,31 +439,30 @@ impl FlightComputer {
         } else if init_state == FlightState::Transition {
             fatal!(" State cant be changed when in {init_state}");
         }
-        locked_self.write().await.target_state = Some(new_state);
-        locked_self.read().await.set_state(new_state).await;
+        self_lock.write().await.target_state = Some(new_state);
+        self_lock.read().await.set_state(new_state).await;
 
-        let transition_t =
-            TRANSITION_DELAY_LOOKUP.get(&(init_state, new_state)).unwrap_or_else(|| {
-                fatal!("({init_state}, {new_state}) not in TRANSITION_DELAY_LOOKUP")
-            });
+        let transition_t = TRANS_DEL.get(&(init_state, new_state)).unwrap_or_else(|| {
+            fatal!("({init_state}, {new_state}) not in TRANSITION_DELAY_LOOKUP")
+        });
 
         Self::wait_for_duration(*transition_t).await;
         let cond = (
             |cont: &FlightComputer| cont.state() == new_state,
             format!("State equals {new_state}"),
         );
-        Self::wait_for_condition(&locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
-        locked_self.write().await.target_state = None;
+        Self::wait_for_condition(&self_lock, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
+        self_lock.write().await.target_state = None;
     }
 
     /// Adjusts the velocity of the satellite and waits until the target velocity is reached.
     ///
     /// # Arguments
-    /// - `locked_self`: A `RwLock<Self>` reference to the active flight computer.
+    /// - `self_lock`: A `RwLock<Self>` reference to the active flight computer.
     /// - `new_vel`: The target velocity vector.
-    pub async fn set_vel_wait(locked_self: Arc<RwLock<Self>>, new_vel: Vec2D<I32F32>) {
+    pub async fn set_vel_wait(self_lock: Arc<RwLock<Self>>, new_vel: Vec2D<I32F32>) {
         let (current_state, current_vel) = {
-            let f_cont_read = locked_self.read().await;
+            let f_cont_read = self_lock.read().await;
             (f_cont_read.state(), f_cont_read.current_vel())
         };
         if current_state != FlightState::Acquisition {
@@ -450,7 +471,7 @@ impl FlightComputer {
         let vel_change_dt = Duration::from_secs_f32(
             (new_vel.to(&current_vel).abs() / Self::ACC_CONST).to_num::<f32>(),
         );
-        locked_self.read().await.set_vel(new_vel).await;
+        self_lock.read().await.set_vel(new_vel).await;
 
         Self::wait_for_duration(vel_change_dt).await;
         let (comp_new_vel, _) = Self::round_vel(new_vel);
@@ -458,13 +479,13 @@ impl FlightComputer {
             |cont: &FlightComputer| cont.current_vel() == comp_new_vel,
             format!("Vel equals {new_vel}"),
         );
-        Self::wait_for_condition(&locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
+        Self::wait_for_condition(&self_lock, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
     }
 
     /// Adjusts the satellite's camera angle and waits until the target angle is reached.
     ///
     /// # Arguments
-    /// - `locked_self`: A `RwLock<Self>` reference to the active flight computer.
+    /// - `self_lock`: A `RwLock<Self>` reference to the active flight computer.
     /// - `new_angle`: The target camera angle.
     ///
     /// # Behavior
@@ -472,9 +493,9 @@ impl FlightComputer {
     /// - Checks if the current state permits changing the camera angle.
     ///   If not, it panics with a fatal error.
     /// - Sets the new angle and waits until the system confirms it has been applied.
-    pub async fn set_angle_wait(locked_self: Arc<RwLock<Self>>, new_angle: CameraAngle) {
+    pub async fn set_angle_wait(self_lock: Arc<RwLock<Self>>, new_angle: CameraAngle) {
         let (current_angle, current_state) = {
-            let f_cont_read = locked_self.read().await;
+            let f_cont_read = self_lock.read().await;
             (f_cont_read.current_angle, f_cont_read.state())
         };
         if current_angle == new_angle {
@@ -485,24 +506,24 @@ impl FlightComputer {
             fatal!("Angle cant be changed in state {current_state}");
         }
 
-        locked_self.read().await.set_angle(new_angle).await;
+        self_lock.read().await.set_angle(new_angle).await;
         let cond = (
             |cont: &FlightComputer| cont.current_angle() == new_angle,
             format!("Lens equals {new_angle}"),
         );
-        Self::wait_for_condition(&locked_self, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
+        Self::wait_for_condition(&self_lock, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
     }
 
     /// Executes a sequence of thruster burns that affect the trajectory of MELVIN.
     ///
     /// # Arguments
-    /// - `locked_self`: A `RwLock<Self>` reference to the active flight computer.
+    /// - `self_lock`: A `RwLock<Self>` reference to the active flight computer.
     /// - `burn_sequence`: A reference to the sequence of executed thruster burns.
-    pub async fn execute_burn(locked_self: Arc<RwLock<Self>>, burn: &BurnSequence) {
+    pub async fn execute_burn(self_lock: Arc<RwLock<Self>>, burn: &BurnSequence) {
         for vel_change in burn.sequence_vel() {
             let st = tokio::time::Instant::now();
             let dt = Duration::from_secs(1);
-            FlightComputer::set_vel_wait(Arc::clone(&locked_self), *vel_change).await;
+            FlightComputer::set_vel_wait(Arc::clone(&self_lock), *vel_change).await;
             let el = st.elapsed();
             if el < dt {
                 tokio::time::sleep(dt).await;
@@ -522,12 +543,12 @@ impl FlightComputer {
     ///   - The current velocity of the satellite after evaluating the burn sequence.
     ///   - The deviation of the projected position from the target position.
     pub async fn evaluate_burn(
-        locked_self: Arc<RwLock<Self>>,
+        self_lock: Arc<RwLock<Self>>,
         burn_sequence: &BurnSequence,
         target_pos: Vec2D<I32F32>,
     ) -> (Vec2D<I32F32>, Vec2D<I32F32>) {
         let (act_pos, act_vel) = {
-            let f_cont = locked_self.read().await;
+            let f_cont = self_lock.read().await;
             (f_cont.current_pos(), f_cont.current_vel())
         };
         let projected_res_pos = act_pos + act_vel * I32F32::from_num(burn_sequence.detumble_dt());
@@ -650,11 +671,11 @@ impl FlightComputer {
         let maneuver_acq_time = {
             let trunc_detumble_time = detumble_time - 2 * TaskController::MANEUVER_MIN_DETUMBLE_DT;
             let acq_charge_dt = i32::try_from(
-                TRANSITION_DELAY_LOOKUP[&(FlightState::Acquisition, FlightState::Charge)].as_secs(),
+                TRANS_DEL[&(FlightState::Acquisition, FlightState::Charge)].as_secs(),
             )
             .unwrap_or(i32::MAX);
             let charge_acq_dt = i32::try_from(
-                TRANSITION_DELAY_LOOKUP[&(FlightState::Acquisition, FlightState::Charge)].as_secs(),
+                TRANS_DEL[&(FlightState::Acquisition, FlightState::Charge)].as_secs(),
             )
             .unwrap_or(i32::MAX);
             let poss_charge_dt = i32::try_from(trunc_detumble_time).unwrap_or(i32::MIN)
@@ -683,7 +704,8 @@ impl FlightComputer {
     pub fn pos_in_dt(&self, now: IndexedOrbitPosition, dt: TimeDelta) -> IndexedOrbitPosition {
         let pos = self.current_pos
             + (self.current_vel * I32F32::from_num(dt.num_seconds())).wrap_around_map();
-        now.new_from_future_pos(pos, dt)
+        let t = Utc::now() + dt;
+        now.new_from_future_pos(pos, t)
     }
 
     pub fn batt_in_dt(&self, dt: TimeDelta) -> I32F32 {

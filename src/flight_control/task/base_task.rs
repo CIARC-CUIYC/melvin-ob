@@ -117,7 +117,7 @@ impl Task {
     /// Returns an immutable reference to the task's time delay.
     ///
     /// # Returns
-    /// - An immutable reference to the `PinnedTimeDelay`.
+    /// - An `DateTime<Utc>` representing the tasks due time.
     pub fn dt(&self) -> DateTime<Utc> { self.dt }
 
     /// Returns an immutable reference to the task's type.

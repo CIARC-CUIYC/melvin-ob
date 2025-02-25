@@ -1,5 +1,5 @@
-use chrono::{DateTime, TimeDelta, Utc};
 use crate::flight_control::common::vec2d::Vec2D;
+use chrono::{DateTime, Utc};
 use fixed::types::I32F32;
 
 /// Represents a position in an orbit with associated metadata.
@@ -35,24 +35,16 @@ impl IndexedOrbitPosition {
     }
 
     /// Returns the timestamp of the position.
-    pub fn t(&self) -> DateTime<Utc> {
-        self.t
-    }
+    pub fn t(&self) -> DateTime<Utc> { self.t }
 
     /// Returns the 2D positional vector of the orbit.
-    pub fn pos(&self) -> Vec2D<I32F32> {
-        self.pos
-    }
+    pub fn pos(&self) -> Vec2D<I32F32> { self.pos }
 
     /// Returns the current index in the orbit.
-    pub fn index(&self) -> usize {
-        self.index
-    }
+    pub fn index(&self) -> usize { self.index }
 
     /// Returns the period of the orbit.
-    pub fn period(&self) -> usize {
-        self.period
-    }
+    pub fn period(&self) -> usize { self.period }
 
     /// Calculates the ranges from the current index to now, optionally applying a shift.
     ///
@@ -124,10 +116,10 @@ impl IndexedOrbitPosition {
     ///
     /// # Returns
     /// A new `IndexedOrbitPosition` instance with updated position and future timestamp.
-    pub fn new_from_future_pos(&self, pos: Vec2D<I32F32>, dt: TimeDelta) -> Self {
+    pub fn new_from_future_pos(&self, pos: Vec2D<I32F32>, t: DateTime<Utc>) -> Self {
         Self {
-            t: self.t + dt,
-            index: self.index_then(dt),
+            t,
+            index: self.index_then(t),
             pos,
             period: self.period,
         }
@@ -150,7 +142,7 @@ impl IndexedOrbitPosition {
     /// # Returns
     /// The future index in the orbit.
     #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-    fn index_then(&self, dt: TimeDelta) -> usize {
-        (self.index + dt.num_seconds() as usize) % self.period
+    pub(crate) fn index_then(&self, t: DateTime<Utc>) -> usize {
+        (self.index + (t - self.t).num_seconds() as usize) % self.period
     }
 }

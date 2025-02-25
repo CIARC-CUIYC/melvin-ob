@@ -47,6 +47,22 @@ impl FlightState {
             FlightState::Safe => I32F32::lit("0.05"),
         }
     }
+
+    pub fn from_dp_usize(i: usize) -> Self {
+        match i {
+            1 => FlightState::Acquisition,
+            0 => FlightState::Charge,
+            _ => panic!("Invalid state"),
+        }
+    }
+    pub fn to_dp_usize(self) -> usize {
+        match self {
+            FlightState::Charge => 0,
+            FlightState::Acquisition => 1,
+            FlightState::Comms => 2,
+            _ => panic!("Invalid state"),
+        }
+    }
 }
 
 impl From<&str> for FlightState {
@@ -96,7 +112,7 @@ impl From<FlightState> for &'static str {
 /// for transitioning between different flight states.
 ///
 /// The delay for each transition is represented as a `Duration`.
-pub static TRANSITION_DELAY_LOOKUP: LazyLock<HashMap<(FlightState, FlightState), Duration>> =
+pub static TRANS_DEL: LazyLock<HashMap<(FlightState, FlightState), Duration>> =
     LazyLock::new(|| {
         let mut lookup = HashMap::new();
         let transition_times = vec![

@@ -13,6 +13,9 @@ pub struct SquareSlice {
 }
 
 impl SquareSlice {
+    
+    const HEX_PACK_SPACING_FACTOR: f32 = 0.93;
+    
     pub fn new(pos: Vec2D<I32F32>, max_dist: Vec2D<I32F32>) -> Self {
         let offset = (pos - max_dist).wrap_around_map();
         Self {
@@ -113,9 +116,9 @@ impl SquareSlice {
     fn generate_hex_grid(&self) -> (ImmutableKdTree<f64, 2>, Vec<Vec2D<f64>>) {
         let r = BayesianSet::MAX_RES_UNCERTAINTY_RAD;
         let mut centers = Vec::new();
-        let dx = (3.0 * r / 2.0) as i32;
-        let dy = ((r * 3.0f32.sqrt()) / 2.0) as i32;
-
+        let dx = ((3.0 * r / 2.0) * Self::HEX_PACK_SPACING_FACTOR) as i32;
+        let dy = ((r * 3.0f32.sqrt() / 2.0) * Self::HEX_PACK_SPACING_FACTOR) as i32;
+        
         let side_x = self.side_length.x().to_num::<i32>();
         let side_y = self.side_length.y().to_num::<i32>();
 

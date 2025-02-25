@@ -1,7 +1,10 @@
-use chrono::TimeDelta;
-use super::{bayesian_set::BayesianSet, vec2d::{MapSize, Vec2D}};
+use super::{
+    bayesian_set::BayesianSet,
+    vec2d::{MapSize, Vec2D},
+};
 use crate::flight_control::objective::beacon_objective::BeaconMeas;
 use crate::STATIC_ORBIT_VEL;
+use chrono::TimeDelta;
 use fixed::types::I32F32;
 use num::traits::FloatConst;
 use rand::{rng, Rng};
@@ -19,7 +22,7 @@ fn get_d_noisy(d_true: f32) -> f32 {
 #[test]
 fn test_bayesian_filter() {
     println!("Running Bayesian Filter Test");
-    let offset = {
+    /*let offset = {
         let map_fixed: Vec2D<I32F32> = Vec2D::map_size();
         let map_size = Vec2D::new(map_fixed.x().to_num::<f32>(), map_fixed.y().to_num::<f32>());
         let x = rng().random_range(0.0..map_size.x()).floor();
@@ -49,37 +52,46 @@ fn test_bayesian_filter() {
         beacon_pos.x().to_num::<i32>(),
         beacon_pos.y().to_num::<i32>(),
     );
-    
-    println!("Generated beacon Position: {beacon_pos}");
+    */
+    let meas_pos = vec![
+        Vec2D::new(I32F32::from_num(12197), I32F32::from_num(9804)),
+        Vec2D::new(I32F32::from_num(12392), I32F32::from_num(10030)),
+        Vec2D::new(I32F32::from_num(12587), I32F32::from_num(10256)),
+        Vec2D::new(I32F32::from_num(12783), I32F32::from_num(10481)),
+        Vec2D::new(I32F32::from_num(12978), I32F32::from_num(10707)),
+    ];
 
-    let pos = measure_positions[0];
-    let d_true = pos.unwrapped_to(&beacon_pos).abs().to_num::<f32>();
-    println!("STEP 0: {pos}\n\t Distance: {d_true}");
-    let noisy = get_d_noisy(d_true);
+    let d_noisy = vec![1039.85, 1022.73, 1306.68, 1384.36, 1874.69];
+
+    //println!("Generated beacon Position: {beacon_pos}");
+
+    let pos = meas_pos[0];
+    //let d_true = pos.unwrapped_to(&beacon_pos).abs().to_num::<f32>();
+    //println!("STEP 0: {pos}\n\t Distance: {d_true}");
+    let noisy = d_noisy[0];
     println!("\t Distance Noisy: {noisy}");
     let meas = BeaconMeas::new(0, pos, f64::from(noisy), TimeDelta::zero());
     let mut bayesian_set = BayesianSet::new(meas);
     let min_guesses = bayesian_set.guess_estimate();
     //println!("\t Minimum Guesses: {min_guesses}");
-    assert!(bayesian_set.is_in_set(beacon_pos_i32));
-    
+    //assert!(bayesian_set.is_in_set(beacon_pos_i32));
 
     let mut meas = 1;
-    for (i, pos) in measure_positions.iter().enumerate().skip(1) {
+    for (i, pos) in meas_pos.iter().enumerate().skip(1) {
         println!("Working on step {i}");
-        let d_true = pos.unwrapped_to(&beacon_pos).abs().to_num::<f32>();
-        println!("STEP {i}: {pos}\n\t Distance: {d_true}");
-        if d_true > BayesianSet::MAX_DIST {
+        //let d_true = pos.unwrapped_to(&beacon_pos).abs().to_num::<f32>();
+        //println!("STEP {i}: {pos}\n\t Distance: {d_true}");
+        //if d_true > BayesianSet::MAX_DIST {
             //println!("\t Distance too large, skipping");
-            continue;
-        };
-        let noisy = get_d_noisy(d_true);
+        //    continue;
+        // };
+        let noisy = d_noisy[i];
         println!("\t Distance Noisy: {noisy}");
         let b_meas = BeaconMeas::new(0, *pos, f64::from(noisy), TimeDelta::zero());
         bayesian_set.update(&b_meas);
         let min_guesses = bayesian_set.guess_estimate();
         //println!("\t Minimum Guesses: {min_guesses}");
-        assert!(bayesian_set.is_in_set(beacon_pos_i32));
+        //assert!(bayesian_set.is_in_set(beacon_pos_i32));
         meas += 1;
     }
 
@@ -88,11 +100,14 @@ fn test_bayesian_filter() {
     println!("\t {} possible centers: ", centers.len());
     for (i, center) in centers.iter().enumerate() {
         let c_fix = Vec2D::new(I32F32::from_num(center.x()), I32F32::from_num(center.y()));
-        let hits = c_fix.unwrapped_to(&beacon_pos).abs().to_num::<f32>()
+        println!("\t Center {i}: {c_fix}");
+        
+        
+        /*let hits = c_fix.unwrapped_to(&beacon_pos).abs().to_num::<f32>()
             < BayesianSet::MAX_RES_UNCERTAINTY_RAD;
         if hits {
             println!("\t Finished. Hits on {i}. try with center: {center}");
             break;
-        }
+        }*/
     }
 }

@@ -5,6 +5,7 @@ use super::{
     score_grid::ScoreGrid,
     vel_change_task::{VelocityChangeTaskRationale, VelocityChangeTaskRationale::OrbitEscape},
 };
+use crate::flight_control::flight_state::TRANS_DEL;
 use crate::flight_control::{
     common::{linked_box::LinkedBox, math, vec2d::Vec2D},
     flight_computer::FlightComputer,
@@ -12,8 +13,9 @@ use crate::flight_control::{
     objective::known_img_objective::KnownImgObjective,
     orbit::{BurnSequence, ClosedOrbit, IndexedOrbitPosition},
 };
-use crate::{fatal, info, log};
+use crate::{error, fatal, info, log};
 use bitvec::prelude::BitRef;
+use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use num::Zero;
 use std::{
@@ -21,7 +23,6 @@ use std::{
     fmt::Debug,
     sync::{Arc, Condvar},
 };
-use chrono::{DateTime, TimeDelta, Utc};
 use tokio::sync::RwLock;
 
 /// `TaskController` manages and schedules tasks for MELVIN.
@@ -91,6 +92,14 @@ impl TaskController {
     /// A constant representing a 90-degree angle, in fixed-point format.
     const NINETY_DEG: I32F32 = I32F32::lit("90.0");
 
+    const IN_COMMS_SCHED_SECS: usize = 585;
+    const COMMS_SCHED_PERIOD: usize = 1025;
+    #[allow(clippy::cast_possible_wrap)]
+    const COMMS_SCHED_USABLE_TIME: TimeDelta =
+        TimeDelta::seconds((Self::COMMS_SCHED_PERIOD - 2 * 180) as i64);
+    pub const COMMS_CHARGE_USAGE: I32F32 = I32F32::lit("48.6");
+    pub const MIN_COMMS_START_CHARGE: I32F32 = I32F32::lit("58.6");
+
     /// Creates a new instance of the `TaskController` struct.
     ///
     /// # Returns
@@ -116,19 +125,19 @@ impl TaskController {
     ///
     /// # Returns
     /// * `OptimalOrbitResult` - The final result containing calculated decisions and coverage slice used in the optimization.
-    fn init_orbit_sched_calc(
+    fn init_sched_dp(
         orbit: &ClosedOrbit,
         p_t_shift: usize,
         dt: Option<usize>,
-        end_status: Option<(FlightState, I32F32)>,
+        end_state: Option<FlightState>,
+        end_batt: Option<I32F32>,
     ) -> OptimalOrbitResult {
         // List of potential states during the orbit scheduling process.
         let states = [FlightState::Charge, FlightState::Acquisition];
         // Calculate the usable battery range based on the fixed thresholds.
         let usable_batt_range = Self::MAX_BATTERY_THRESHOLD - Self::MIN_BATTERY_THRESHOLD;
         // Determine the maximum number of battery levels that can be represented.
-        let max_battery =
-            (usable_batt_range / Self::BATTERY_RESOLUTION).round().to_num::<usize>();
+        let max_battery = (usable_batt_range / Self::BATTERY_RESOLUTION).round().to_num::<usize>();
         // Determine the prediction duration in seconds, constrained by the orbit period or `dt` if provided.
         let prediction_secs = {
             let max_pred_secs =
@@ -140,7 +149,7 @@ impl TaskController {
                 max_pred_secs
             }
         };
-        info!("Calculating optimal orbit schedule for {prediction_secs} seconds");
+
         // Retrieve a reordered iterator over the orbit's completion bitvector to optimize scheduling.
         let p_t_iter = orbit.get_p_t_reordered(
             p_t_shift,
@@ -152,16 +161,10 @@ impl TaskController {
         let cov_dt_temp = ScoreGrid::new(max_battery + 1, states.len());
         // Initialize the first coverage grid based on the end status or use a default grid.
         let cov_dt_first = {
-            if let Some(end) = end_status {
-                let end_batt_clamp = end.1.clamp(Self::MIN_BATTERY_THRESHOLD, Self::MAX_BATTERY_THRESHOLD);
-                let end_batt =
-                    (end_batt_clamp / Self::BATTERY_RESOLUTION).round().to_num::<usize>();
-                let end_state = end.0 as usize;
-                let end_cast = (end_state, end_batt);
-                ScoreGrid::new_from_condition(max_battery + 1, states.len(), end_cast)
-            } else {
-                cov_dt_temp.clone()
-            }
+            let batt = end_batt.map_or(max_battery + 1, Self::map_e_to_dp);
+            let state = end_state.map(|o| o as usize);
+            let end_cast = (state, batt);
+            ScoreGrid::new_from_condition(max_battery + 1, states.len(), end_cast)
         };
         // Initialize a linked list of score cubes with a fixed size and push the initial coverage grid.
         let mut score_cube = LinkedBox::new(180);
@@ -361,7 +364,8 @@ impl TaskController {
         info!("Starting to calculate single target burn towards {target_pos}");
 
         // Calculate maximum allowed time delta for the maneuver
-        let time_left = target_end_time - Utc::now();
+        let comp_start = Utc::now();
+        let time_left = target_end_time - comp_start;
         let max_dt = {
             let max = usize::try_from(time_left.num_seconds()).unwrap_or(0);
             max - Self::OBJECTIVE_MIN_RETRIEVAL_TOL
@@ -412,7 +416,7 @@ impl TaskController {
             // Calculate the next position and initialize the burn sequence
             let mut next_pos = (curr_i.pos() + orbit_vel * I32F32::from_num(dt)).wrap_around_map();
             let burn_sequence_i =
-                curr_i.new_from_future_pos(next_pos, TimeDelta::seconds(dt as i64));
+                curr_i.new_from_future_pos(next_pos, comp_start + TimeDelta::seconds(dt as i64));
             let direction_vec = next_pos.unwrapped_to(&target_pos);
 
             // Skip iterations where the current velocity is too far off-target
@@ -554,7 +558,7 @@ impl TaskController {
     /// # Panics
     /// - Panics if the objective requires more than one image as multi-image scheduling is not yet supported.
     #[allow(clippy::cast_precision_loss)]
-    pub async fn schedule_zoned_objective(
+    pub async fn sched_z_o(
         self: Arc<TaskController>,
         orbit_lock: Arc<RwLock<ClosedOrbit>>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
@@ -562,7 +566,8 @@ impl TaskController {
         objective: KnownImgObjective,
     ) {
         let computation_start = Utc::now();
-        info!("Calculating schedule for Retrieval of Objective {}",
+        info!(
+            "Calculating schedule for Retrieval of Objective {}",
             objective.id()
         );
         let (burn_sequence, min_charge) = if objective.min_images() == 1 {
@@ -589,7 +594,7 @@ impl TaskController {
             burn_sequence.acc_dt(),
             burn_sequence.detumble_dt()
         );
-        let after_burn_calc_i = {
+        let after_dp = {
             let pos = f_cont_lock.read().await.current_pos();
             scheduling_start_i.new_from_pos(pos)
         };
@@ -597,44 +602,121 @@ impl TaskController {
             usize::try_from((burn_sequence.start_i().t() - Utc::now()).num_seconds()).unwrap_or(0);
         let result = {
             let orbit = orbit_lock.read().await;
-
-            Self::init_orbit_sched_calc(
+            Self::init_sched_dp(
                 &orbit,
-                after_burn_calc_i.index(),
+                after_dp.index(),
                 Some(dt),
-                Some((FlightState::Acquisition, min_charge)),
+                Some(FlightState::Acquisition),
+                Some(min_charge),
             )
         };
-        info!("Calculating optimal orbit schedule to be at {min_charge} and in {} in {dt}s.",
+        info!(
+            "Calculating optimal orbit schedule to be at {min_charge} and in {} in {dt}s.",
             <&'static str>::from(FlightState::Acquisition)
         );
         let after_sched_calc_i = {
             let pos = f_cont_lock.read().await.current_pos();
             scheduling_start_i.new_from_pos(pos)
         };
-        let dt_shift = after_sched_calc_i.index() - after_burn_calc_i.index();
-        self.schedule_optimal_orbit_result(
-            f_cont_lock,
-            after_burn_calc_i.t(),
-            result,
-            dt_shift,
-            true,
-        )
-        .await;
+        let dt_shift = after_sched_calc_i.index() - after_dp.index();
+        let st_batt = Self::get_batt_and_state(&f_cont_lock).await;
+        self.sched_opt_orbit_res(after_dp.t(), result, dt_shift, true, st_batt).await;
         let n_tasks = self.schedule_vel_change(burn_sequence, OrbitEscape).await;
         let dt_tot = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
-        info!("Number of tasks after scheduling: {n_tasks}. \
-            Calculation and processing took {dt_tot:.2}",
-        );
+        info!("Tasks after scheduling: {n_tasks}. Calculation and processing took {dt_tot:.2}");
 
         {
             let sched = self.task_schedule.read().await;
             for task in &*sched {
-                log!("{task} in {}s.",
-                    (task.dt() - Utc::now()).num_seconds()
-                );
+                log!("{task} in {}s.", (task.dt() - Utc::now()).num_seconds());
             }
         }
+    }
+
+    #[allow(clippy::cast_possible_wrap)]
+    async fn sched_single_comms_cycle(
+        &self,
+        c_end: (DateTime<Utc>, I32F32),
+        sched_start: (DateTime<Utc>, usize),
+        orbit: &ClosedOrbit,
+        strict_end: (DateTime<Utc>, usize),
+    ) -> Option<(DateTime<Utc>, I32F32)> {
+        let t_time = *TRANS_DEL.get(&(FlightState::Charge, FlightState::Comms)).unwrap();
+        let sched_end = sched_start.0 + Self::COMMS_SCHED_USABLE_TIME;
+        let t_ch = Self::MIN_COMMS_START_CHARGE;
+
+        if sched_end + t_time > strict_end.0 {
+            let dt = usize::try_from((strict_end.0 - sched_start.0).num_seconds()).unwrap_or(0);
+            let result = Self::init_sched_dp(orbit, sched_start.1, Some(dt), None, None);
+            let target = {
+                let st =
+                    result.coverage_slice.front().unwrap().get_max_s(Self::map_e_to_dp(c_end.1));
+                (c_end.1, st)
+            };
+            self.schedule_switch(FlightState::from_dp_usize(target.1), c_end.0).await;
+            self.sched_opt_orbit_res(sched_start.0, result, 0, false, target).await;
+            None
+        } else {
+            
+            let dt = usize::try_from((sched_end - sched_start.0).num_seconds()).unwrap_or(0);
+            let result = Self::init_sched_dp(orbit, sched_start.1, Some(dt), None, Some(t_ch));
+            let target = {
+                let st =
+                    result.coverage_slice.front().unwrap().get_max_s(Self::map_e_to_dp(c_end.1));
+                (c_end.1, st)
+            };
+            self.schedule_switch(FlightState::from_dp_usize(target.1), c_end.0).await;
+            let (_, batt) = self.sched_opt_orbit_res(sched_start.0, result, 0, false, target).await;
+            self.schedule_switch(FlightState::Comms, sched_end).await;
+            let next_c_end =
+                sched_end + t_time + TimeDelta::seconds(Self::IN_COMMS_SCHED_SECS as i64);
+            Some((next_c_end, batt - Self::COMMS_CHARGE_USAGE))
+        }
+    }
+
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
+        clippy::cast_possible_wrap
+    )]
+    pub async fn sched_opt_orbit_w_comms(
+        self: Arc<TaskController>,
+        orbit_lock: Arc<RwLock<ClosedOrbit>>,
+        f_cont_lock: Arc<RwLock<FlightComputer>>,
+        scheduling_start_i: IndexedOrbitPosition,
+        end_t: DateTime<Utc>,
+    ) {
+        log!("Calculating/Scheduling optimal orbit with passive beacon scanning.");
+        let computation_start = Utc::now();
+        // TODO: later maybe this shouldnt be cleared here anymore
+        self.clear_schedule().await;
+        let t_time = *TRANS_DEL.get(&(FlightState::Charge, FlightState::Comms)).unwrap();
+        let strict_end = (end_t, scheduling_start_i.index_then(end_t));
+
+        let mut curr_comms_end = {
+            let dt = TimeDelta::seconds(Self::IN_COMMS_SCHED_SECS as i64);
+            let batt = f_cont_lock.read().await.batt_in_dt(dt);
+            Some((Utc::now() + dt, batt))
+        };
+
+        let orbit = orbit_lock.read().await;
+        while let Some(end) = curr_comms_end {
+            let next_start = {
+                let t = end.0 + TimeDelta::from_std(t_time).unwrap();
+                let i = scheduling_start_i.index_then(t);
+                (t, i)
+            };
+            curr_comms_end =
+                self.sched_single_comms_cycle(end, next_start, &orbit, strict_end).await;
+        }
+
+        let n_tasks = self.task_schedule.read().await.len();
+        let dt_tot = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
+        info!(
+            "Number of tasks after scheduling: {n_tasks}. \
+            Calculation and processing took {dt_tot:.2}",
+        );
     }
 
     /// Calculates and schedules the optimal orbit trajectory based on the current position and state.
@@ -659,29 +741,55 @@ impl TaskController {
         clippy::cast_precision_loss,
         clippy::cast_possible_wrap
     )]
-    pub async fn schedule_optimal_orbit(
+    pub async fn sched_opt_orbit(
         self: Arc<TaskController>,
         orbit_lock: Arc<RwLock<ClosedOrbit>>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
         scheduling_start_i: IndexedOrbitPosition,
     ) {
+        log!("Calculating/Scheduling optimal orbit.");
+        self.clear_schedule().await;
         let p_t_shift = scheduling_start_i.index();
-        let computation_start = scheduling_start_i.t();
+        let comp_start = scheduling_start_i.t();
         let result = {
             let orbit = orbit_lock.read().await;
-            Self::init_orbit_sched_calc(&orbit, p_t_shift, None, None)
+            Self::init_sched_dp(&orbit, p_t_shift, None, None, None)
         };
-        let dt_calc = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
-        info!("Optimal Orbit Calculation complete after {dt_calc:.2}s.");
+        let dt_calc = (Utc::now() - comp_start).num_milliseconds() as f32 / 1000.0;
         let dt_shift = dt_calc.ceil() as usize;
+        
+        let (st_batt, dt_sh) = {
+            let (batt, st) = Self::get_batt_and_state(&f_cont_lock).await;
+            if st == 2 {
+                let best_st = result.coverage_slice.back().unwrap().get_max_s(Self::map_e_to_dp(batt));
+                self.schedule_switch(FlightState::from_dp_usize(best_st), comp_start).await;
+                ((batt, best_st), dt_shift + 180)
+            } else {
+                ((batt, st), dt_shift)
+            }
+        };
+        let (n_tasks, _) =
+            self.sched_opt_orbit_res(comp_start, result, dt_sh, false, st_batt).await;
+        let dt_tot = (Utc::now() - comp_start).num_milliseconds() as f32 / 1000.0;
+        info!("Tasks after scheduling: {n_tasks}. Calculation and processing took {dt_tot:.2}");
+    }
 
-        let n_tasks = self
-            .schedule_optimal_orbit_result(f_cont_lock, computation_start, result, dt_shift, true)
-            .await;
-        let dt_tot = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
-        info!("Number of tasks after scheduling: {n_tasks}. \
-            Calculation and processing took {dt_tot:.2}",
-        );
+    async fn get_batt_and_state(f_cont_lock: &Arc<RwLock<FlightComputer>>) -> (I32F32, usize) {
+        // Retrieve the current battery level and satellite state
+        let f_cont = f_cont_lock.read().await;
+        let batt: I32F32 = f_cont.current_battery();
+        (batt, f_cont.state().to_dp_usize())
+    }
+
+    fn map_e_to_dp(e: I32F32) -> usize {
+        let e_clamp = e.clamp(Self::MIN_BATTERY_THRESHOLD, Self::MAX_BATTERY_THRESHOLD);
+
+        ((e_clamp - Self::MIN_BATTERY_THRESHOLD) / Self::BATTERY_RESOLUTION).round().to_num::<usize>()
+    }
+
+    fn map_dp_to_e(dp: usize) -> I32F32 {
+        (Self::MIN_BATTERY_THRESHOLD + (I32F32::from_num(dp) * Self::BATTERY_RESOLUTION))
+            .min(Self::MAX_BATTERY_THRESHOLD)
     }
 
     #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -704,42 +812,24 @@ impl TaskController {
     /// - Tasks are dynamically scheduled based on the required transitions and predicted durations.
     /// - Adjusts the state and battery level during simulation.
     /// - Handles transitions between charging and acquisition states with proper time delays.
-    async fn schedule_optimal_orbit_result(
+    async fn sched_opt_orbit_res(
         &self,
-        f_cont_lock: Arc<RwLock<FlightComputer>>,
         base_t: DateTime<Utc>,
         res: OptimalOrbitResult,
         dt_sh: usize,
         trunc: bool,
-    ) -> usize {
-        info!("Scheduling optimal orbit result...");
+        (batt_f32, mut state): (I32F32, usize),
+    ) -> (usize, I32F32) {
         if trunc {
             // Clear the existing schedule if truncation is requested.
             self.clear_schedule().await;
         }
 
-        // Retrieve the current battery level and satellite state
-        let (batt_f32, mut state) = {
-            let f_cont = f_cont_lock.read().await;
-            let batt: I32F32 = f_cont.current_battery();
-            let st: usize = match f_cont.state() {
-                FlightState::Acquisition => 1,
-                FlightState::Charge => 0,
-                // TODO: implement comms state here
-                state => fatal!("Unexpected flight state: {state}"),
-            };
-            (batt, st)
-        };
-
         let mut dt = dt_sh;
-        let (min_batt, max_batt) = (Self::MIN_BATTERY_THRESHOLD, Self::MAX_BATTERY_THRESHOLD); // Battery thresholds
-        let max_mapped = (max_batt / Self::BATTERY_RESOLUTION
-            - min_batt / Self::BATTERY_RESOLUTION)
-            .round()
-            .to_num::<i32>();
+        let max_mapped = Self::map_e_to_dp(Self::MAX_BATTERY_THRESHOLD);
 
         // Map the current battery level into a discrete range.
-        let mut batt = ((batt_f32 - min_batt) / Self::BATTERY_RESOLUTION).to_num::<usize>();
+        let mut batt = Self::map_e_to_dp(batt_f32);
         let pred_secs = res.decisions.dt_len();
         let decisions = &res.decisions;
 
@@ -751,13 +841,18 @@ impl TaskController {
                 AtomicDecision::StayInCharge => {
                     // Stay in the charge state, increment battery level.
                     state = 0;
-                    batt = (batt + 1).min(max_mapped as usize);
+                    batt = (batt + 1).min(max_mapped);
                     dt += 1;
                 }
                 AtomicDecision::StayInAcquisition => {
                     // Stay in the acquisition state, decrement battery level.
                     state = 1;
-                    batt -= 1;
+                    if batt == 0 {
+                        error!("Battery level is already at 0!");
+                        error!("current: {dt} max: {pred_secs} init_batt: {batt_f32}");
+                    } else {
+                        batt -= 1;
+                    }
                     dt += 1;
                 }
                 AtomicDecision::SwitchToCharge => {
@@ -777,7 +872,10 @@ impl TaskController {
             }
         }
         // Return the final number of tasks in the schedule.
-        self.task_schedule.read().await.len()
+        (
+            self.task_schedule.read().await.len(),
+            Self::map_dp_to_e(batt),
+        )
     }
 
     /// Provides a reference to the image task schedule.
