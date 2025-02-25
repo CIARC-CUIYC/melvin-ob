@@ -45,7 +45,7 @@ impl GlobalMode for InOrbitMode {
         self.base.handle_sched_preconditions(Arc::clone(&context)).await;
         let sched_handle = {
             let cancel_clone = cancel_task.clone();
-            self.base.get_schedule_handle(Arc::clone(&context), cancel_clone).await
+            self.base.get_schedule_handle(Arc::clone(&context), cancel_clone, None).await
         };
         tokio::pin!(sched_handle);
         let safe_mon = context.super_v().safe_mon();

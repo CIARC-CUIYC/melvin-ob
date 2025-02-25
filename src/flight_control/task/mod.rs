@@ -6,5 +6,6 @@ mod score_grid;
 pub(crate) mod switch_state_task;
 mod task_controller;
 pub(crate) mod vel_change_task;
+pub(crate) mod end_condition;
 
 pub use task_controller::TaskController;

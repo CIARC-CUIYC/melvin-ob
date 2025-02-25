@@ -4,20 +4,28 @@ use crate::flight_control::{
         beacon_objective::BeaconObjective, known_img_objective::KnownImgObjective,
         objective_base::ObjectiveBase, objective_type::ObjectiveType,
     },
-    task::{TaskController, base_task::{BaseTask, Task}},
     orbit::BurnSequence,
+    task::{
+        base_task::{BaseTask, Task},
+        TaskController,
+    },
 };
 use crate::mode_control::{
     base_mode::{BaseMode, BaseWaitExitSignal},
-    mode::{in_orbit_mode::InOrbitMode, global_mode::{GlobalMode, OrbitalMode}},
-    signal::{ExecExitSignal, OpExitSignal, WaitExitSignal},
+    mode::{
+        global_mode::{GlobalMode, OrbitalMode},
+        in_orbit_mode::InOrbitMode,
+    },
     mode_context::ModeContext,
+    signal::{ExecExitSignal, OpExitSignal, WaitExitSignal},
 };
-use crate::{error, fatal, log, obj};
+use crate::{error, fatal, info, log, obj};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use std::{pin::Pin, sync::Arc};
+use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
+use crate::flight_control::task::end_condition::EndCondition;
+use crate::flight_control::task::vel_change_task::VelocityChangeTaskRationale::OrbitEscape;
 
 #[derive(Clone)]
 pub struct ZOPrepMode {
@@ -66,14 +74,17 @@ impl GlobalMode for ZOPrepMode {
     async fn init_mode(&self, context: Arc<ModeContext>) -> OpExitSignal {
         let cancel_task = CancellationToken::new();
         self.base.handle_sched_preconditions(Arc::clone(&context)).await;
+        let end = EndCondition::from_burn(&self.exit_burn);
         let sched_handle = {
             let cancel_clone = cancel_task.clone();
-            self.base.get_schedule_handle(Arc::clone(&context), cancel_clone).await
+            self.base.get_schedule_handle(Arc::clone(&context), cancel_clone, Some(end)).await
         };
         tokio::pin!(sched_handle);
         let safe_mon = context.super_v().safe_mon();
         tokio::select!(
             _ = &mut sched_handle => {
+                info!("Additionally scheduling Orbit Escape Burn Sequence!");
+                context.k().t_cont().schedule_vel_change(self.exit_burn.clone(), OrbitEscape).await;
                 context.k().con().send_tasklist().await;
             },
             () = safe_mon.notified() => {
@@ -86,8 +97,12 @@ impl GlobalMode for ZOPrepMode {
         );
         OpExitSignal::Continue
     }
-    
-    async fn exec_task_wait(&self, context: Arc<ModeContext>, due: DateTime<Utc>) -> WaitExitSignal {
+
+    async fn exec_task_wait(
+        &self,
+        context: Arc<ModeContext>,
+        due: DateTime<Utc>,
+    ) -> WaitExitSignal {
         <Self as OrbitalMode>::exec_task_wait(self, context, due).await
     }
 

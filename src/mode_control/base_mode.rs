@@ -12,6 +12,7 @@ use crate::flight_control::{
 use crate::http_handler::http_client::HTTPClient;
 use crate::{event, fatal, info, log, obj, warn};
 
+use crate::flight_control::task::end_condition::EndCondition;
 use crate::mode_control::base_mode::TaskEndSignal::{Join, Timestamp};
 use crate::mode_control::mode_context::ModeContext;
 use chrono::{DateTime, TimeDelta, Utc};
@@ -255,6 +256,7 @@ impl BaseMode {
         &self,
         context: Arc<ModeContext>,
         c_tok: CancellationToken,
+        end: Option<EndCondition>,
     ) -> JoinHandle<()> {
         let k = Arc::clone(context.k());
         let o_ch = context.o_ch_clone().await;
@@ -264,6 +266,7 @@ impl BaseMode {
                 k.c_orbit(),
                 k.f_cont(),
                 o_ch.i_entry(),
+                end,
             )),
             BaseMode::BeaconObjectiveScanningMode(obj_m) => {
                 let last_obj_end = obj_m
@@ -279,6 +282,7 @@ impl BaseMode {
                     k.f_cont(),
                     o_ch.i_entry(),
                     last_obj_end,
+                    end,
                 ))
             }
         };
@@ -415,7 +419,10 @@ impl BaseMode {
     ) -> BaseWaitExitSignal {
         for b_o in b_o_done {
             if b_o.guesses().is_empty() {
-                obj!("Beacon Objective {} has no guesses. Not submitting!", b_o.id());
+                obj!(
+                    "Beacon Objective {} has no guesses. Not submitting!",
+                    b_o.id()
+                );
             } else {
                 obj!("Submitting Beacon Objective: {}", b_o.id());
                 b_o.guess_max(cl.clone()).await;
