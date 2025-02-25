@@ -2,7 +2,6 @@ use super::{
     atomic_decision::AtomicDecision, atomic_decision_cube::AtomicDecisionCube, base_task::Task,
     score_grid::ScoreGrid, vel_change_task::VelocityChangeTaskRationale,
 };
-use crate::flight_control::flight_state::TRANS_DEL;
 use crate::flight_control::task::end_condition::EndCondition;
 use crate::flight_control::{
     common::{linked_box::LinkedBox, math, vec2d::Vec2D},
@@ -547,7 +546,7 @@ impl TaskController {
         orbit: &ClosedOrbit,
         strict_end: (DateTime<Utc>, usize),
     ) -> Option<(DateTime<Utc>, I32F32)> {
-        let t_time = *TRANS_DEL.get(&(FlightState::Charge, FlightState::Comms)).unwrap();
+        let t_time = FlightState::Charge.dt_to(&FlightState::Comms);
         let sched_end = sched_start.0 + Self::COMMS_SCHED_USABLE_TIME;
         let t_ch = Self::MIN_COMMS_START_CHARGE;
 
@@ -598,7 +597,7 @@ impl TaskController {
         let computation_start = Utc::now();
         // TODO: later maybe this shouldnt be cleared here anymore
         self.clear_schedule().await;
-        let t_time = *TRANS_DEL.get(&(FlightState::Charge, FlightState::Comms)).unwrap();
+        let t_time = FlightState::Charge.dt_to(&FlightState::Comms);
         let t_time_ch = TimeDelta::from_std(t_time).unwrap();
         let strict_end = (last_bo_end_t, scheduling_start_i.index_then(last_bo_end_t));
 

@@ -57,7 +57,7 @@ impl KnownImgObjective {
 
         let min_area_required = total_zone_area_size * self.coverage_required;
 
-        let min_number_of_images_required = (min_area_required / lens_area_size).ceil();
+        let min_number_of_images_required = (min_area_required / lens_area_size).round();
         min_number_of_images_required.to_i32().unwrap()
     }
 }
