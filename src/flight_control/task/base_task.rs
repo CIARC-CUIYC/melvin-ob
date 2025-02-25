@@ -46,7 +46,7 @@ impl Display for Task {
             BaseTask::ChangeVelocity(task) => {
                 let res_vel = task.burn().sequence_vel().last().unwrap();
                 let res_pos = task.burn().sequence_pos().last().unwrap();
-                let angle_dev = task.burn().res_angle_dev();
+                let angle_dev = task.burn().rem_angle_dev();
                 &*format!(
                     "Burn to velocity {res_vel} at pos {res_pos}, \
                 angle deviation will be {angle_dev}",
@@ -117,7 +117,7 @@ impl Task {
     /// Returns an immutable reference to the task's time delay.
     ///
     /// # Returns
-    /// - An immutable reference to the `PinnedTimeDelay`.
+    /// - An `DateTime<Utc>` representing the tasks due time.
     pub fn dt(&self) -> DateTime<Utc> { self.dt }
 
     /// Returns an immutable reference to the task's type.

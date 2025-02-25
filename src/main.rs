@@ -16,14 +16,14 @@ use crate::flight_control::{
 };
 use crate::keychain::{Keychain, KeychainWithOrbit};
 use crate::mode_control::{
-    mode::global_mode::{GlobalMode, OpExitSignal},
-    mode::in_orbit_mode::InOrbitMode,
+    mode::{global_mode::GlobalMode, in_orbit_mode::InOrbitMode},
+    base_mode::BaseMode,
+    signal::OpExitSignal,
     mode_context::ModeContext,
 };
 use chrono::TimeDelta;
 use fixed::types::I32F32;
-use std::time::Duration;
-use std::{env, sync::Arc};
+use std::{env, sync::Arc, time::Duration};
 
 const DT_MIN: TimeDelta = TimeDelta::seconds(5);
 const DT_0: TimeDelta = TimeDelta::seconds(0);
@@ -38,12 +38,12 @@ async fn main() {
     let base_url_var = env::var("DRS_BASE_URL");
     let base_url = base_url_var.as_ref().map_or("http://localhost:33000", |v| v.as_str());
     let context = Arc::new(init(base_url).await);
-
-    let mut global_mode: Box<dyn GlobalMode> = Box::new(InOrbitMode::new());
+    
+    let mut global_mode: Box<dyn GlobalMode> = Box::new(InOrbitMode::new(BaseMode::MappingMode));
     loop {
         let phase = context.o_ch_clone().await.mode_switches();
         info!("Starting phase {phase} in {}!", global_mode.type_name());
-        match global_mode.init_mode(Arc::clone(&context)).await {
+        match global_mode.init_mode(Arc::clone(&context)).await{
             OpExitSignal::ReInit(mode) => {
                 global_mode = mode;
                 continue;
@@ -58,14 +58,17 @@ async fn main() {
             OpExitSignal::Continue => {
                 global_mode = global_mode.exit_mode(Arc::clone(&context)).await;
                 continue;
-            }
+            },
         }
+        
     }
     // drop(console_messenger);
 }
 
 #[allow(clippy::cast_precision_loss)]
-async fn init(url: &str) -> ModeContext {
+async fn init(
+    url: &str,
+) -> ModeContext {
     let init_k = Keychain::new(url).await;
     init_k.f_cont().write().await.reset().await;
     let init_k_f_cont_clone = init_k.f_cont();

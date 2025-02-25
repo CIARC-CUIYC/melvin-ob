@@ -94,7 +94,6 @@ impl FlightComputer {
     /// Minimum battery used in decision-making for after safe transition
     const AFTER_SAFE_MIN_BATT: I32F32 = I32F32::lit("50");
     const EXIT_SAFE_MIN_BATT: I32F32 = I32F32::lit("1.0");
-    const MIN_COMMS_START_CHARGE: I32F32 = I32F32::lit("40");
     /// Constant minimum delay between requests
     pub(crate) const STD_REQUEST_DELAY: Duration = Duration::from_millis(100);
     /// Legal Target States for State Change
@@ -395,26 +394,66 @@ impl FlightComputer {
             Self::DEF_COND_PI,
         )
         .await;
+        let state = self_lock.read().await.state();
+        if state != FlightState::Safe {
+            error!("State is not safe but {}", state);
+        }
         let cond_min_charge = (
             |cont: &FlightComputer| cont.current_battery() >= Self::EXIT_SAFE_MIN_BATT,
             format!("Battery level is higher than {}", Self::EXIT_SAFE_MIN_BATT),
         );
-        Self::wait_for_condition(&self_lock, cond_min_charge, 15000, Self::DEF_COND_PI).await;
+        Self::wait_for_condition(&self_lock, cond_min_charge, 30000, Self::DEF_COND_PI).await;
         Self::set_state_wait(self_lock, target_state).await;
     }
-    
-    pub async fn get_to_comms(self_lock: Arc<RwLock<Self>>) {
-        let charge_dt = {
-            let batt_diff = (self_lock.read().await.current_battery - Self::MIN_COMMS_START_CHARGE).max(I32F32::zero());
-            (batt_diff / FlightState::Charge.get_charge_rate()).ceil().to_num::<u64>()
-        };
-        if charge_dt > I32F32::zero() {
+
+    #[allow(clippy::cast_possible_wrap)]
+    pub async fn get_to_comms(self_lock: Arc<RwLock<Self>>) -> DateTime<Utc> {
+        if self_lock.read().await.state() == FlightState::Comms {
+            let batt_diff =
+                self_lock.read().await.current_battery() - TaskController::MIN_COMMS_START_CHARGE;
+            let rem_t = (batt_diff / FlightState::Comms.get_charge_rate()).abs().ceil();
+            return Utc::now() + TimeDelta::seconds(rem_t.to_num::<i64>());
+        }
+        let charge_dt = Self::get_charge_dt(&self_lock).await;
+        log!("Charge time for comms: {}", charge_dt);
+
+        if charge_dt > 0 {
             FlightComputer::set_state_wait(Arc::clone(&self_lock), FlightState::Charge).await;
             FlightComputer::wait_for_duration(Duration::from_secs(charge_dt)).await;
             FlightComputer::set_state_wait(self_lock, FlightState::Comms).await;
         } else {
             FlightComputer::set_state_wait(self_lock, FlightState::Comms).await;
         }
+        Utc::now() + TimeDelta::seconds(TaskController::IN_COMMS_SCHED_SECS as i64)
+    }
+
+    #[allow(clippy::cast_possible_wrap)]
+    pub async fn get_to_comms_dt_est(self_lock: Arc<RwLock<Self>>) -> (u64, TimeDelta) {
+        let t_time = TimeDelta::from_std(
+            *TRANS_DEL.get(&(FlightState::Charge, FlightState::Comms)).unwrap(),
+        )
+        .unwrap();
+        if self_lock.read().await.state() == FlightState::Comms {
+            let batt_diff =
+                self_lock.read().await.current_battery() - TaskController::MIN_COMMS_START_CHARGE;
+            let rem_t = (batt_diff / FlightState::Comms.get_charge_rate()).abs().ceil();
+            return (0, TimeDelta::seconds(rem_t.to_num::<i64>()));
+        }
+        let charge_dt = Self::get_charge_dt(&self_lock).await;
+        log!("Charge time for comms: {}", charge_dt);
+
+        if charge_dt > 0 {
+            (charge_dt, TimeDelta::seconds(charge_dt as i64) + t_time * 2)
+        } else {
+            (0, t_time)
+        }
+    }
+
+    async fn get_charge_dt(self_lock: &Arc<RwLock<Self>>) -> u64 {
+        let batt_diff = (self_lock.read().await.current_battery()
+            - TaskController::MIN_COMMS_START_CHARGE)
+            .min(I32F32::zero());
+        (-batt_diff / FlightState::Charge.get_charge_rate()).ceil().to_num::<u64>()
     }
 
     /// Transitions the satellite to a new operational state and waits for transition completion.
@@ -435,10 +474,9 @@ impl FlightComputer {
         self_lock.write().await.target_state = Some(new_state);
         self_lock.read().await.set_state(new_state).await;
 
-        let transition_t =
-            TRANS_DEL.get(&(init_state, new_state)).unwrap_or_else(|| {
-                fatal!("({init_state}, {new_state}) not in TRANSITION_DELAY_LOOKUP")
-            });
+        let transition_t = TRANS_DEL.get(&(init_state, new_state)).unwrap_or_else(|| {
+            fatal!("({init_state}, {new_state}) not in TRANSITION_DELAY_LOOKUP")
+        });
 
         Self::wait_for_duration(*transition_t).await;
         let cond = (
@@ -639,55 +677,6 @@ impl FlightComputer {
         }
     }
 
-    /// Estimates the minimum required charge for a given burn sequence.
-    ///
-    /// # Arguments
-    /// - `burn_sequence`: A reference to the `BurnSequence` containing timing and maneuver data.
-    ///
-    /// # Returns
-    /// - An `I32F32` value representing the estimated minimum charge required.
-    ///
-    /// # Methodology
-    /// - The method calculates the required charge based on acceleration time, detumbling time,
-    ///   and the time spent in acquisition and charge state transitions.
-    /// - It factors in the power consumption rates associated with flight states and maneuvers.
-    ///
-    /// # Behavior
-    /// - Adjusts the maneuver acquisition time based on task controller detumble minimums and
-    ///   transition delays.
-    /// - Multiples the derived travel time with the power rates of the acquisition phase for
-    ///   charge estimation.
-    #[allow(clippy::cast_precision_loss)]
-    pub fn estimate_min_burn_charge(burn_sequence: &BurnSequence) -> I32F32 {
-        let acc_time = burn_sequence.acc_dt();
-        let travel_time = burn_sequence.detumble_dt() + acc_time;
-        let detumble_time = travel_time - acc_time;
-        let maneuver_acq_time = {
-            let trunc_detumble_time = detumble_time - 2 * TaskController::MANEUVER_MIN_DETUMBLE_DT;
-            let acq_charge_dt = i32::try_from(
-                TRANS_DEL[&(FlightState::Acquisition, FlightState::Charge)].as_secs(),
-            )
-            .unwrap_or(i32::MAX);
-            let charge_acq_dt = i32::try_from(
-                TRANS_DEL[&(FlightState::Acquisition, FlightState::Charge)].as_secs(),
-            )
-            .unwrap_or(i32::MAX);
-            let poss_charge_dt = i32::try_from(trunc_detumble_time).unwrap_or(i32::MIN)
-                - acq_charge_dt
-                - charge_acq_dt;
-            if poss_charge_dt < 0 {
-                travel_time
-            } else {
-                // TODO: this probably only works because we do *2 later :)
-                acc_time + 2 * TaskController::MANEUVER_MIN_DETUMBLE_DT
-            }
-        };
-        // TODO: this should be calculated in regards of the return path
-        (I32F32::from_num(maneuver_acq_time) * FlightState::Acquisition.get_charge_rate()
-            + I32F32::from_num(burn_sequence.acc_dt()) * FlightState::ACQ_ACC_ADDITION)
-            * I32F32::lit("-2.0")
-    }
-
     /// Predicts the satellite’s position after a specified time interval.
     ///
     /// # Arguments
@@ -698,7 +687,8 @@ impl FlightComputer {
     pub fn pos_in_dt(&self, now: IndexedOrbitPosition, dt: TimeDelta) -> IndexedOrbitPosition {
         let pos = self.current_pos
             + (self.current_vel * I32F32::from_num(dt.num_seconds())).wrap_around_map();
-        now.new_from_future_pos(pos, dt)
+        let t = Utc::now() + dt;
+        now.new_from_future_pos(pos, t)
     }
 
     pub fn batt_in_dt(&self, dt: TimeDelta) -> I32F32 {

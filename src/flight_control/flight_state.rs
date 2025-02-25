@@ -55,10 +55,11 @@ impl FlightState {
             _ => panic!("Invalid state"),
         }
     }
-    pub fn to_dp_usize(&self) -> usize {
+    pub fn to_dp_usize(self) -> usize {
         match self {
-            FlightState::Acquisition => 1,
             FlightState::Charge => 0,
+            FlightState::Acquisition => 1,
+            FlightState::Comms => 2,
             _ => panic!("Invalid state"),
         }
     }

@@ -42,13 +42,18 @@ impl ScoreGrid {
     pub fn new_from_condition(
         e_len: usize,
         s_len: usize,
-        (end_s, end_min_e): (usize, usize),
+        (end_s, end_min_e): (Option<usize>, usize),
     ) -> Self {
+        let (end_st, step) = if let Some(s) = end_s {
+            (s, s_len)
+        } else {
+            (0, 1)
+        };
         let mut min_score = vec![i32::MIN; e_len * s_len].into_boxed_slice();
-        if end_s < s_len && end_min_e < e_len {
-            let start_ind = end_min_e * s_len + end_s;
+        if end_st < s_len && end_min_e < e_len {
+            let start_ind = end_min_e * s_len + end_st;
             let end_ind = s_len * e_len;
-            for i in (start_ind..end_ind).step_by(s_len) {
+            for i in (start_ind..end_ind).step_by(step) {
                 min_score[i] = 0;
             }
         }
