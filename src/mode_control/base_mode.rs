@@ -415,7 +415,7 @@ impl BaseMode {
     ) -> BaseWaitExitSignal {
         for b_o in b_o_done {
             if b_o.guesses().is_empty() {
-                obj!("Beacon Objective {} has no guesses.", b_o.id());
+                obj!("Beacon Objective {} has no guesses. Not submitting!", b_o.id());
             } else {
                 obj!("Submitting Beacon Objective: {}", b_o.id());
                 b_o.guess_max(cl.clone()).await;
@@ -463,7 +463,6 @@ impl BaseMode {
                 continue;
             } else if let Some(meas) = obj.1.measurements() {
                 let min_guesses = meas.guess_estimate();
-                obj!("ID {} has {} min guesses.", obj.0, min_guesses);
                 if min_guesses < 15 {
                     let beac_done = BeaconObjectiveDone::from(obj.1);
                     obj!(
