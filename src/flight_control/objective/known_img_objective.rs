@@ -48,15 +48,17 @@ impl KnownImgObjective {
     #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
     pub fn min_images(&self) -> i32 {
         let lens_square_side_length = self.optic_required().get_square_side_length();
-
+        println!("Lens square side length: {}", lens_square_side_length);
         let zone_width = self.zone[2] - self.zone[0];
         let zone_height = self.zone[3] - self.zone[1];
 
         let total_zone_area_size = (zone_width * zone_height) as f32;
         let lens_area_size = f32::from(lens_square_side_length.pow(2));
-
+        println!("Total Zone Area Size: {}", total_zone_area_size);
+        println!("Lens Area Size: {}", lens_area_size);
         let min_area_required = total_zone_area_size * self.coverage_required;
-
+        println!("Min Area Required: {}", min_area_required);
+        println!("Coverage Required: {}", self.coverage_required);
         let min_number_of_images_required = (min_area_required / lens_area_size).round();
         min_number_of_images_required.to_i32().unwrap()
     }
