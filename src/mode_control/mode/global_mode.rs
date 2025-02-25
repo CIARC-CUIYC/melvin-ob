@@ -134,23 +134,12 @@ pub trait OrbitalMode: GlobalMode {
                 fut.await.ok();
                 WaitExitSignal::SafeEvent
             },
-            obj = async move {
+            msg =  obj_mon.recv() => {
                 // TODO: later we shouldn't block zoned objectives anymore
-                while let Some(msg) = obj_mon.recv().await {
-                    match msg.obj_type() {
-                        ObjectiveType::Beacon { .. } => {
-                            return WaitExitSignal::NewObjectiveEvent(msg);
-                        },
-                        ObjectiveType::KnownImage { .. } => {
-                            continue;
-                        }
-                    }
-                }
-                fatal!("Objective monitor hung up!")
-                } => {
+                let obj = msg.expect("[FATAL] Objective monitor hung up!");
                 cancel_task.cancel();
-                //fut.await.ok();
-                obj
+                fut.await.ok();
+                WaitExitSignal::NewObjectiveEvent(obj)
             }
         }
     }
