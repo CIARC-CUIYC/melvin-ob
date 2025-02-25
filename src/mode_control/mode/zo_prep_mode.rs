@@ -43,7 +43,6 @@ impl ZOPrepMode {
         zo: KnownImgObjective,
         mut base: BaseMode,
     ) -> Option<Self> {
-        // TODO: dont unwrap exit burn but handle error if no burn is possible
         let exit_burn = if zo.min_images() == 1 {
             let target_pos = zo.get_imaging_points()[0];
             let due = zo.end();
@@ -58,7 +57,15 @@ impl ZOPrepMode {
             // TODO: multiple imaging points?
             fatal!("Zoned Objective with multiple images not yet supported");
         }?;
-        
+        let entry_pos = exit_burn.sequence_pos().first().unwrap();
+        let exit_pos = exit_burn.sequence_pos().last().unwrap();
+        let entry_t = exit_burn.start_i().t().format("%H:%M:%S").to_string();
+        let exit_vel = exit_burn.sequence_vel().last().unwrap();
+        let tar = zo.get_imaging_points()[0];
+        info!("Calculated Burn Sequence for Zoned Objective: {}", zo.id());
+        log!("Entry at {entry_t}, Position will be {entry_pos}");
+        log!("Exit after {}s, Position will be {exit_pos}", exit_burn.acc_dt());
+        log!("Exit Velocity will be {exit_vel} aiming for target at {tar}. Detumble time is {}s.",  exit_burn.detumble_dt());
         if let BaseMode::BeaconObjectiveScanningMode(_) = base {
             let burn_start = exit_burn.start_i().t();
             let worst_case_first_comms_end = {

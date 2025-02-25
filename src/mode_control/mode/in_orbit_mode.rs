@@ -137,8 +137,6 @@ impl GlobalMode for InOrbitMode {
                     context.k().f_cont().read().await.current_pos(),
                     self.new_zo_rationale(),
                 );
-                // TODO: return ZonedObjectivePrepMode
-                todo!();
                 ZOPrepMode::from_obj(context, k_obj, self.base.clone())
                     .await
                     .map(|mode| OpExitSignal::ReInit(Box::new(mode)))
