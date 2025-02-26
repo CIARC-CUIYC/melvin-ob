@@ -410,9 +410,12 @@ impl FlightComputer {
     pub async fn get_to_comms(self_lock: Arc<RwLock<Self>>) -> DateTime<Utc> {
         if self_lock.read().await.state() == FlightState::Comms {
             let batt_diff =
-                self_lock.read().await.current_battery() - TaskController::MIN_COMMS_START_CHARGE;
+                self_lock.read().await.current_battery() - TaskController::MIN_BATTERY_THRESHOLD;
             let rem_t = (batt_diff / FlightState::Comms.get_charge_rate()).abs().ceil();
-            return Utc::now() + TimeDelta::seconds(rem_t.to_num::<i64>());
+            let add_t = TimeDelta::seconds(rem_t.to_num::<i64>()).min(
+                TimeDelta::seconds(TaskController::IN_COMMS_SCHED_SECS as i64)
+            );
+            return Utc::now() + add_t;
         }
         let charge_dt = Self::get_charge_dt(&self_lock).await;
         log!("Charge time for comms: {}", charge_dt);
