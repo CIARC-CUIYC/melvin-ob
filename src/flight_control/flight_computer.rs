@@ -86,14 +86,14 @@ impl FlightComputer {
     /// Maximum decimal places that are used in the observation endpoint for velocity
     pub const VEL_BE_MAX_DECIMAL: u8 = MAX_DEC;
     /// Constant timeout for the `wait_for_condition`-method
-    const DEF_COND_TO: u16 = 3000;
+    const DEF_COND_TO: u32 = 3000;
     /// Constant timeout for the `wait_for_condition`-method
     const DEF_COND_PI: u16 = 500;
     /// Constant transition to SAFE sleep time for all states
     const TO_SAFE_SLEEP: Duration = Duration::from_secs(60);
     /// Minimum battery used in decision-making for after safe transition
     const AFTER_SAFE_MIN_BATT: I32F32 = I32F32::lit("50");
-    const EXIT_SAFE_MIN_BATT: I32F32 = I32F32::lit("1.0");
+    const EXIT_SAFE_MIN_BATT: I32F32 = I32F32::lit("10.0");
     /// Constant minimum delay between requests
     pub(crate) const STD_REQUEST_DELAY: Duration = Duration::from_millis(100);
     /// Legal Target States for State Change
@@ -350,7 +350,7 @@ impl FlightComputer {
     async fn wait_for_condition<F>(
         self_lock: &RwLock<Self>,
         (condition, rationale): (F, String),
-        timeout_millis: u16,
+        timeout_millis: u32,
         poll_interval: u16,
     ) where
         F: Fn(&Self) -> bool,
@@ -368,7 +368,7 @@ impl FlightComputer {
             }
             tokio::time::sleep(Duration::from_millis(u64::from(poll_interval))).await;
         }
-        log!("Condition not met after {timeout_millis} ms");
+        log!("Condition not met after {timeout_millis:#?} ms");
     }
 
     pub async fn escape_safe(self_lock: Arc<RwLock<Self>>) {
@@ -399,10 +399,10 @@ impl FlightComputer {
             error!("State is not safe but {}", state);
         }
         let cond_min_charge = (
-            |cont: &FlightComputer| cont.current_battery() >= Self::EXIT_SAFE_MIN_BATT,
+            |cont: &FlightComputer| cont.current_battery() > Self::EXIT_SAFE_MIN_BATT,
             format!("Battery level is higher than {}", Self::EXIT_SAFE_MIN_BATT),
         );
-        Self::wait_for_condition(&self_lock, cond_min_charge, 30000, Self::DEF_COND_PI).await;
+        Self::wait_for_condition(&self_lock, cond_min_charge, 450_000, Self::DEF_COND_PI).await;
         Self::set_state_wait(self_lock, target_state).await;
     }
 
