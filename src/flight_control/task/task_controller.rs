@@ -458,8 +458,8 @@ impl TaskController {
                     (fin_dt, fin_angle_dev) = {
                         let last_to_target = last_pos.unwrapped_to(&target_pos);
                         let last_angle_deviation = last_vel.angle_to(&last_to_target);
-                        let this_angle_deviation = next_vel.angle_to(&next_to_target);
-
+                        let this_angle_deviation = - next_vel.angle_to(&next_to_target);
+                                                
                         let corr_burn_perc = math::interpolate(
                             last_angle_deviation,
                             this_angle_deviation,
@@ -467,6 +467,7 @@ impl TaskController {
                             I32F32::lit("1.0"),
                             I32F32::zero(),
                         );
+                        
                         let acc = (next_vel - *last_vel) * corr_burn_perc;
                         let (corr_vel, _) = FlightComputer::trunc_vel(next_vel + acc);
                         let corr_pos = *last_pos + corr_vel;
