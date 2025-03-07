@@ -44,7 +44,7 @@ impl FlightState {
             FlightState::Transition => I32F32::zero(),
             FlightState::Acquisition => I32F32::lit("-0.1"),
             FlightState::Charge => I32F32::lit("0.1"),
-            FlightState::Comms => I32F32::lit("-0.08333"),
+            FlightState::Comms => I32F32::lit("-0.008"),
             FlightState::Safe => I32F32::lit("0.025"),
         }
     }
