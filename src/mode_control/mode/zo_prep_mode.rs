@@ -66,6 +66,7 @@ impl ZOPrepMode {
         log!("Entry at {entry_t}, Position will be {entry_pos}");
         log!("Exit after {}s, Position will be {exit_pos}", exit_burn.acc_dt());
         log!("Exit Velocity will be {exit_vel} aiming for target at {tar}. Detumble time is {}s.",  exit_burn.detumble_dt());
+        log!("Whole BS: {:?}", exit_burn);
         if let BaseMode::BeaconObjectiveScanningMode(_) = base {
             let burn_start = exit_burn.start_i().t();
             let worst_case_first_comms_end = {
