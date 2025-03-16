@@ -1,3 +1,4 @@
+use fixed::prelude::ToFixed;
 use fixed::types::{I32F32, I64F64};
 use fixed::{
     traits::{Fixed, FixedSigned},
@@ -9,7 +10,6 @@ use std::{
     fmt::Display,
     ops::{Add, Deref, Div, Mul, Rem, Sub},
 };
-use fixed::prelude::ToFixed;
 
 /// A 2D vector generic over any numeric type.
 ///
@@ -196,14 +196,16 @@ where T: FixedSigned + NumAssignOps
 
     pub fn abs_sq(&self) -> T { self.x * self.x + self.y * self.y }
 
-    pub fn round(&self) -> Vec2D<T> { Vec2D::new(self.x.round(), self.y.round()) }
-    
-    pub fn floor(&self) -> Vec2D<T> { Vec2D::new(self.x.floor(), self.y.floor()) }
-    
+    pub fn round(&self) -> Self { Vec2D::new(self.x.round(), self.y.round()) }
+
+    pub fn floor(&self) -> Self { Vec2D::new(self.x.floor(), self.y.floor()) }
+
     pub fn from_real<R>(&other: &Vec2D<R>) -> Self
-    where R: Copy + ToFixed,
-    {
-       Self {x: T::from_num(other.x()), y: T::from_num(other.y())}
+    where R: Copy + ToFixed {
+        Self {
+            x: T::from_num(other.x()),
+            y: T::from_num(other.y()),
+        }
     }
 
     /// Creates a vector pointing from the current vector (`self`) to another vector (`other`).
@@ -213,9 +215,7 @@ where T: FixedSigned + NumAssignOps
     ///
     /// # Returns
     /// A new vector representing the direction from `self` to `other`.
-    pub fn to(&self, other: &Vec2D<T>) -> Vec2D<T> {
-        Vec2D::new(other.x - self.x, other.y - self.y)
-    }
+    pub fn to(&self, other: &Self) -> Self { Vec2D::new(other.x - self.x, other.y - self.y) }
 
     /// Computes an "unwrapped" vector pointing from the current vector (`self`) to another vector (`other`).
     ///
@@ -228,55 +228,38 @@ where T: FixedSigned + NumAssignOps
     ///
     /// # Returns
     /// A `Vec2D` representing the shortest unwrapped direction from `self` to `other`.
-    pub fn unwrapped_to(&self, other: &Vec2D<T>) -> Vec2D<T> {
+    pub fn unwrapped_to(&self, other: &Self) -> Self {
+        let options = self.get_projected_in_range(other, (&[1, 0, -1], &[1, 0, -1]));
+        options.iter().min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Less)).unwrap().0
+    }
+
+    pub fn unwrapped_to_top_right(&self, other: &Self) -> Self {
+        let options = self.get_projected_in_range(other, (&[1, 0], &[1, 0]));
+        options.iter().min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Less)).unwrap().0
+    }
+
+    pub fn unwrapped_to_bottom_right(&self, other: &Self) -> Self {
+        let options = self.get_projected_in_range(other, (&[1, 0], &[-1, 0]));
+        options.iter().min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Less)).unwrap().0
+    }
+
+    fn get_projected_in_range(&self, to: &Self, range: (&[i8], &[i8])) -> Vec<(Self, I64F64)> {
         let mut options = Vec::new();
-        for x_sign in [1, 0, -1] {
-            for y_sign in [1, 0, -1] {
+        for x_sign in range.0 {
+            for y_sign in range.1 {
                 let target: Vec2D<T> = Vec2D::new(
-                    other.x + T::from_num(u32::map_size().x()) * T::from_num(x_sign),
-                    other.y + T::from_num(u32::map_size().y()) * T::from_num(y_sign),
+                    to.x + T::from_num(u32::map_size().x()) * T::from_num(*x_sign),
+                    to.y + T::from_num(u32::map_size().y()) * T::from_num(*y_sign),
                 );
                 let to_target = self.to(&target);
-                let tt_scale = Vec2D::new(I64F64::from_num(to_target.x), I64F64::from_num(to_target.y));
+                let tt_scale =
+                    Vec2D::new(I64F64::from_num(to_target.x), I64F64::from_num(to_target.y));
                 let to_target_abs_sq = tt_scale.abs_sq();
                 options.push((to_target, to_target_abs_sq));
             }
         }
-        options.iter().min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Less)).unwrap().0
+        options
     }
-
-    pub fn unwrapped_to_top_right(&self, other: &Vec2D<T>) -> Vec2D<T> {
-        let mut options = Vec::new();
-        for x_sign in [1, 0] {
-            for y_sign in [1, 0] {
-                let target: Vec2D<T> = Vec2D::new(
-                    other.x + T::from_num(u32::map_size().x()) * T::from_num(x_sign),
-                    other.y + T::from_num(u32::map_size().y()) * T::from_num(y_sign),
-                );
-                let to_target = self.to(&target);
-                let to_target_abs = to_target.abs();
-                options.push((to_target, to_target_abs));
-            }
-        }
-        options.iter().min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Less)).unwrap().0
-    }
-
-    pub fn unwrapped_to_bottom_right(&self, other: &Vec2D<T>) -> Vec2D<T> {
-        let mut options = Vec::new();
-        for x_sign in [1, 0] {
-            for y_sign in [-1, 0] {
-                let target: Vec2D<T> = Vec2D::new(
-                    other.x + T::from_num(u32::map_size().x()) * T::from_num(x_sign),
-                    other.y + T::from_num(u32::map_size().y()) * T::from_num(y_sign),
-                );
-                let to_target = self.to(&target);
-                let to_target_abs = to_target.abs();
-                options.push((to_target, to_target_abs));
-            }
-        }
-        options.iter().min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Less)).unwrap().0
-    }
-    
 
     /// Computes a perpendicular unit vector pointing to another vector (`other`).
     ///
@@ -289,10 +272,10 @@ where T: FixedSigned + NumAssignOps
     /// # Returns
     /// A unit `Vec2D` perpendicular to `self` pointing towards `other`.
     /// Returns a zero vector if `self` and `other` are collinear.
-    pub fn perp_unit_to(&self, other: &Vec2D<T>) -> Vec2D<T> {
+    pub fn perp_unit_to(&self, other: &Self) -> Self {
         match self.is_clockwise_to(other) {
             Some(dir) => self.perp_unit(dir),
-            None => Vec2D::zero(),
+            None => Self::zero(),
         }
     }
 
@@ -305,9 +288,8 @@ where T: FixedSigned + NumAssignOps
     ///
     /// # Returns
     /// A normalized perpendicular `Vec2D`.
-    pub fn perp_unit(&self, clockwise: bool) -> Vec2D<T> {
-        let perp =
-            if clockwise { Vec2D::new(self.y, -self.x) } else { Vec2D::new(-self.y, self.x) };
+    pub fn perp_unit(&self, clockwise: bool) -> Self {
+        let perp = if clockwise { Self::new(self.y, -self.x) } else { Self::new(-self.y, self.x) };
         perp.normalize()
     }
 
@@ -317,8 +299,8 @@ where T: FixedSigned + NumAssignOps
     ///
     /// # Returns
     /// A normalized flipped collinear `Vec2D`.
-    pub fn flip_unit(&self) -> Vec2D<T> {
-        let flip = Vec2D::new(-self.y, -self.x);
+    pub fn flip_unit(&self) -> Self {
+        let flip = Self::new(-self.y, -self.x);
         flip.normalize()
     }
 
@@ -334,7 +316,7 @@ where T: FixedSigned + NumAssignOps
     ///
     /// # Returns
     /// An `Option<bool>` indicating the relative direction.
-    pub fn is_clockwise_to(&self, other: &Vec2D<T>) -> Option<bool> {
+    pub fn is_clockwise_to(&self, other: &Self) -> Option<bool> {
         let cross = self.cross(other);
         match cross.partial_cmp(&T::zero()) {
             Some(Ordering::Less) => Some(true),
@@ -353,7 +335,7 @@ where T: FixedSigned + NumAssignOps
     ///
     /// # Returns
     /// The angle in degrees as a scalar of type `T`.
-    pub fn angle_to(&self, other: &Vec2D<T>) -> T {
+    pub fn angle_to(&self, other: &Self) -> T {
         let dot = self.dot(other);
 
         let a_abs = self.abs();
@@ -375,11 +357,7 @@ where T: FixedSigned + NumAssignOps
     /// A normalized vector.
     pub fn normalize(self) -> Self {
         let magnitude = self.abs();
-        if magnitude.is_zero() {
-            self
-        } else {
-            Self::new(self.x / magnitude, self.y / magnitude)
-        }
+        if magnitude.is_zero() { self } else { Self::new(self.x / magnitude, self.y / magnitude) }
     }
 
     /// Rotates the vector by a given angle in degrees.
@@ -444,7 +422,7 @@ impl<T: Fixed + Copy> Vec2D<T> {
     ///
     /// # Returns
     /// A scalar value of type `T` that represents the dot product of the two vectors.
-    pub fn dot(self, other: &Vec2D<T>) -> T { self.x * other.x + self.y * other.y }
+    pub fn dot(self, other: &Self) -> T { self.x * other.x + self.y * other.y }
 
     /// Computes the cross product of the current vector with another vector.
     ///
@@ -459,7 +437,7 @@ impl<T: Fixed + Copy> Vec2D<T> {
     ///
     /// # Returns
     /// A scalar value of type `T` that represents the cross product of the two vectors.
-    pub fn cross(self, other: &Vec2D<T>) -> T { self.x * other.y - self.y * other.x }
+    pub fn cross(self, other: &Self) -> T { self.x * other.y - self.y * other.x }
 
     /// Computes the magnitude (absolute value) of the vector as an `f64`.
     /// This enables magnitude calculation for integer types `T`.
@@ -636,7 +614,7 @@ impl<T: Num> From<Vec2D<T>> for (T, T) {
     fn from(value: Vec2D<T>) -> Self { (value.x, value.y) }
 }
 
-impl<T> From<&[T; 2]> for Vec2D<T> 
+impl<T> From<&[T; 2]> for Vec2D<T>
 where T: Copy
 {
     /// Creates a `Vec2D` from a slice of (x, y) values.
@@ -646,5 +624,10 @@ where T: Copy
     ///
     /// # Returns
     /// A new `Vec2D` created from the slice.
-    fn from(slice: &[T; 2]) -> Self { Self{x: slice[0], y: slice[1]} }
+    fn from(slice: &[T; 2]) -> Self {
+        Self {
+            x: slice[0],
+            y: slice[1],
+        }
+    }
 }

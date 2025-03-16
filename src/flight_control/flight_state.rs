@@ -66,12 +66,12 @@ impl FlightState {
         }
     }
 
-    pub fn dt_to(&self, other: &Self) -> Duration {
-        *TRANS_DEL.get(&(self.clone(), other.clone())).unwrap()
+    pub fn dt_to(self, other: Self) -> Duration {
+        *TRANS_DEL.get(&(self, other)).unwrap()
     }
 
-    pub fn td_dt_to(&self, other: &Self) -> TimeDelta {
-        TimeDelta::from_std(*TRANS_DEL.get(&(self.clone(), other.clone())).unwrap()).unwrap()
+    pub fn td_dt_to(self, other: Self) -> TimeDelta {
+        TimeDelta::from_std(*TRANS_DEL.get(&(self, other)).unwrap()).unwrap()
     }
 }
 

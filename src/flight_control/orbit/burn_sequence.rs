@@ -52,8 +52,8 @@ impl BurnSequence {
         let detumble_time = travel_time - acc_dt;
         let maneuver_acq_time = {
             let trunc_detumble_time = detumble_time - 2 * TaskController::MANEUVER_MIN_DETUMBLE_DT;
-            let acq_charge_dt = i32::try_from(FlightState::Acquisition.dt_to(&FlightState::Charge).as_secs()).unwrap_or(i32::MAX);
-            let charge_acq_dt = i32::try_from(FlightState::Acquisition.dt_to(&FlightState::Charge).as_secs()).unwrap_or(i32::MAX);
+            let acq_charge_dt = i32::try_from(FlightState::Acquisition.dt_to(FlightState::Charge).as_secs()).unwrap_or(i32::MAX);
+            let charge_acq_dt = i32::try_from(FlightState::Acquisition.dt_to(FlightState::Charge).as_secs()).unwrap_or(i32::MAX);
             let poss_charge_dt = i32::try_from(trunc_detumble_time).unwrap_or(i32::MIN)
                 - acq_charge_dt
                 - charge_acq_dt;

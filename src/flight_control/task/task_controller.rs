@@ -457,7 +457,7 @@ impl TaskController {
                     let last_vel = fin_sequence_vel.last().unwrap();
                     (fin_dt, fin_angle_dev) = {
                         let last_to_target = last_pos.unwrapped_to(&target_pos);
-                        let last_angle_deviation = - last_vel.angle_to(&last_to_target);
+                        let last_angle_deviation = -last_vel.angle_to(&last_to_target);
                         let this_angle_deviation = next_vel.angle_to(&next_to_target);
 
                         let corr_burn_perc = math::interpolate(
@@ -546,7 +546,7 @@ impl TaskController {
         orbit: &ClosedOrbit,
         strict_end: (DateTime<Utc>, usize),
     ) -> Option<(DateTime<Utc>, I32F32)> {
-        let t_time = FlightState::Charge.dt_to(&FlightState::Comms);
+        let t_time = FlightState::Charge.dt_to(FlightState::Comms);
         let sched_end = sched_start.0 + Self::COMMS_SCHED_USABLE_TIME;
         let t_ch = Self::MIN_COMMS_START_CHARGE;
 
@@ -597,7 +597,7 @@ impl TaskController {
         let computation_start = Utc::now();
         // TODO: later maybe this shouldnt be cleared here anymore
         self.clear_schedule().await;
-        let t_time = FlightState::Charge.dt_to(&FlightState::Comms);
+        let t_time = FlightState::Charge.dt_to(FlightState::Comms);
         let t_time_ch = TimeDelta::from_std(t_time).unwrap();
         let strict_end = (last_bo_end_t, scheduling_start_i.index_then(last_bo_end_t));
 
@@ -606,7 +606,8 @@ impl TaskController {
                 let dt = end.min_charge_time() + t_time_ch * 2;
                 Box::new(move |comms_end: DateTime<Utc>| -> bool {
                     let n_end = comms_end
-                        + TaskController::COMMS_SCHED_USABLE_TIME + t_time_ch * 2
+                        + TaskController::COMMS_SCHED_USABLE_TIME
+                        + t_time_ch * 2
                         + TimeDelta::seconds(TaskController::IN_COMMS_SCHED_SECS as i64);
                     n_end + dt <= end.time()
                 })
@@ -703,11 +704,7 @@ impl TaskController {
         let comp_start = scheduling_start_i.t();
         let (dt, batt, state) = if let Some(end_c) = end {
             let end_t = (end_c.time() - Utc::now()).num_seconds().max(0) as usize;
-            (
-                Some(end_t),
-                Some(end_c.charge()),
-                Some(end_c.state()),
-            )
+            (Some(end_t), Some(end_c.charge()), Some(end_c.state()))
         } else {
             (None, None, None)
         };
