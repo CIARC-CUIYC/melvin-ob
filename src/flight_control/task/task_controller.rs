@@ -439,10 +439,10 @@ impl TaskController {
 
             'inner: for atomic_turn in turns_in_dir {
                 // Update position and velocity based on turns
-                next_pos = (next_pos + atomic_turn.0).wrap_around_map();
+                let next_seq_pos = (next_pos + atomic_turn.0).wrap_around_map();
                 let next_vel = atomic_turn.1;
 
-                let next_to_target = next_pos.unwrapped_to(&target_pos);
+                let next_to_target = next_seq_pos.unwrapped_to(&target_pos);
                 let min_dt =
                     (next_to_target.abs() / next_vel.abs()).abs().round().to_num::<usize>();
 
@@ -480,7 +480,7 @@ impl TaskController {
                     };
                     break 'inner;
                 }
-                fin_sequence_pos.push(next_pos);
+                fin_sequence_pos.push(next_seq_pos);
                 fin_sequence_vel.push(next_vel);
                 add_dt += 1;
             }
