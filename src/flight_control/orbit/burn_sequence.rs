@@ -170,13 +170,9 @@ impl BurnSequenceEvaluator {
         };
         if let Some(b) = self.build_burn_sequence(bs_i, turns_in_dir, break_cond) {
             let cost = self.get_bs_cost(&b);
-            match &self.best_burn {
-                Some((_, curr_cost)) => {
-                    if *curr_cost > cost || b.min_charge() <= max_needed_batt {
-                        self.best_burn = Some((b, cost));
-                    }
-                }
-                None => self.best_burn = Some((b, cost)),
+            let curr_cost = self.best_burn.as_ref().map_or(I32F32::MAX, |(_, c)| *c);
+            if curr_cost > cost && b.min_charge() <= max_needed_batt {
+                self.best_burn = Some((b, cost));
             }
         }
     }
