@@ -227,7 +227,7 @@ impl BurnSequenceEvaluator {
                     let corr_pos = *last_pos + corr_vel;
                     let corr_to_target = corr_pos.unwrapped_to(&self.target_pos);
                     let corr_angle_dev = corr_vel.angle_to(&corr_to_target);
-                    fin_sequence_pos.push(corr_pos);
+                    fin_sequence_pos.push(corr_pos.round());
                     fin_sequence_vel.push(corr_vel);
                     add_dt += 1;
                     (min_dt + dt + add_dt, corr_angle_dev)

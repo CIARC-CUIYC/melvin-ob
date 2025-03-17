@@ -502,6 +502,7 @@ impl TaskController {
         if let Some(e) = &end_cond {
             let (left_dt, ch, s) = {
                 let dt = usize::try_from((e.time() - next_start.0).num_seconds()).unwrap_or(0);
+                log!("Time left for end condition: {dt}, end charge is {} and start charge is {}.", e.charge(), next_start_e);
                 (Some(dt), Some(e.charge()), Some(e.state()))
             };
             let result = Self::init_sched_dp(&orbit, next_start.1, left_dt, s, ch);
