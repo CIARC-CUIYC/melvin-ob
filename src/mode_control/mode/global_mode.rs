@@ -71,9 +71,6 @@ pub trait GlobalMode: Sync {
                 ExecExitSignal::NewObjectiveEvent(_) => {
                     fatal!("Unexpected task exit signal!");
                 }
-                ExecExitSignal::ExitedOrbit(zo) => {
-                    todo!()
-                }
             };
             tasks += 1;
         }

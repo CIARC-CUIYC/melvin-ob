@@ -245,7 +245,7 @@ impl BaseMode {
 
     pub async fn handle_sched_preconditions(&self, context: Arc<ModeContext>) -> DateTime<Utc> {
         match self {
-            BaseMode::MappingMode => Utc::now(),
+            BaseMode::MappingMode => FlightComputer::escape_if_comms(context.k().f_cont()).await,
             BaseMode::BeaconObjectiveScanningMode(_) => {
                 FlightComputer::get_to_comms(context.k().f_cont()).await
             }

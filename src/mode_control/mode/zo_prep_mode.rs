@@ -26,16 +26,19 @@ use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
+use crate::mode_control::mode::zo_retrieval_mode::ZORetrievalMode;
 
 #[derive(Clone)]
 pub struct ZOPrepMode {
     base: BaseMode,
     exit_burn: BurnSequence,
     target: KnownImgObjective,
+    left_orbit: bool,
 }
 
 impl ZOPrepMode {
     const MODE_NAME: &'static str = "ZOPrepMode";
+    const MIN_REPLANNING_DT: TimeDelta = TimeDelta::seconds(500);
 
     #[allow(clippy::cast_possible_wrap)]
     pub async fn from_obj(
@@ -79,7 +82,16 @@ impl ZOPrepMode {
                 base = BaseMode::MappingMode;
             }
         }
-        Some(ZOPrepMode { base, exit_burn, target: zo })
+        Some(ZOPrepMode { base, exit_burn, target: zo, left_orbit: false })
+    }
+    
+    fn new_base(&self, base: BaseMode) -> Self {
+        Self {
+            base,
+            exit_burn: self.exit_burn.clone(),
+            target: self.target.clone(),
+            left_orbit: self.left_orbit,
+        }
     }
 }
 
@@ -136,7 +148,6 @@ impl GlobalMode for ZOPrepMode {
                     vel_change.burn().sequence_pos()[0]
                 );
                 FlightComputer::execute_burn(context.k().f_cont(), vel_change.burn()).await;
-                return ExecExitSignal::ExitedOrbit(self.target.clone());
             }
             BaseTask::TakeImage(_) => fatal!(
                 "Illegal task type {} for state {}!",
@@ -181,7 +192,7 @@ impl GlobalMode for ZOPrepMode {
                         context.k().f_cont().read().await.current_pos(),
                         self.new_bo_rationale(),
                     );
-                    Some(OpExitSignal::ReInit(Box::new(self.clone())))
+                    Some(OpExitSignal::ReInit(Box::new(self.new_base(base))))
                 } else {
                     None
                 }
@@ -205,9 +216,15 @@ impl GlobalMode for ZOPrepMode {
                     context.k().f_cont().read().await.current_pos(),
                     self.new_zo_rationale(),
                 );
-                // TODO: return ZonedObjectivePrepMode
+                let burn_dt_cond = self.exit_burn.start_i().t() - Utc::now() > Self::MIN_REPLANNING_DT;
+                if k_obj.end() < self.target.end() && burn_dt_cond {
+                    let new_obj_mode = Self::from_obj(context, k_obj, self.base.clone()).await;
+                    if let Some(prep_mode) = new_obj_mode {
+                        // TODO: store current zoned objective for later retrieval
+                        return Some(OpExitSignal::ReInit(Box::new(prep_mode)));
+                    }
+                }
                 None
-                //OpExitSignal::ReInit(Box::New())
             }
         }
     }
@@ -229,6 +246,7 @@ impl GlobalMode for ZOPrepMode {
                     base: BaseMode::MappingMode,
                     exit_burn: self.exit_burn.clone(),
                     target: self.target.clone(),
+                    left_orbit: self.left_orbit,
                 }))
             }
             BaseWaitExitSignal::ReturnSomeLeft => {
@@ -242,8 +260,13 @@ impl GlobalMode for ZOPrepMode {
     }
 
     async fn exit_mode(&self, c: Arc<ModeContext>) -> Box<dyn GlobalMode> {
-        error!("This mode should never be ended manually!");
         let handler = c.k().f_cont().read().await.client();
-        Box::new(InOrbitMode::new(self.base.exit_base(handler).await))
+        if self.left_orbit {
+            Box::new(ZORetrievalMode::new(self.target.clone()))
+        } else {
+            error!("ZOPrepMode::exit_mode called without left_orbit flag set!");
+            Box::new(InOrbitMode::new(self.base.exit_base(handler).await))
+        }
+        
     }
 }

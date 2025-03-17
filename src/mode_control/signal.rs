@@ -12,7 +12,6 @@ pub enum ExecExitSignal {
     Continue,
     SafeEvent,
     NewObjectiveEvent(ObjectiveBase),
-    ExitedOrbit(KnownImgObjective),
 }
 
 pub enum WaitExitSignal {

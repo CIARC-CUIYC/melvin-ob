@@ -412,9 +412,9 @@ impl FlightComputer {
             let batt_diff =
                 self_lock.read().await.current_battery() - TaskController::MIN_BATTERY_THRESHOLD;
             let rem_t = (batt_diff / FlightState::Comms.get_charge_rate()).abs().ceil();
-            let add_t = TimeDelta::seconds(rem_t.to_num::<i64>()).min(
-                TimeDelta::seconds(TaskController::IN_COMMS_SCHED_SECS as i64)
-            );
+            let add_t = TimeDelta::seconds(rem_t.to_num::<i64>()).min(TimeDelta::seconds(
+                TaskController::IN_COMMS_SCHED_SECS as i64,
+            ));
             return Utc::now() + add_t;
         }
         let charge_dt = Self::get_charge_dt(&self_lock).await;
@@ -428,6 +428,25 @@ impl FlightComputer {
             FlightComputer::set_state_wait(self_lock, FlightState::Comms).await;
         }
         Utc::now() + TimeDelta::seconds(TaskController::IN_COMMS_SCHED_SECS as i64)
+    }
+
+    #[allow(clippy::cast_possible_wrap)]
+    pub async fn escape_if_comms(self_lock: Arc<RwLock<Self>>) -> DateTime<Utc> {
+        let (state, batt) = {
+            let f_cont = self_lock.read().await;
+            (f_cont.state(), f_cont.current_battery())
+        };
+        if state == FlightState::Comms {
+            let half_batt =
+                (TaskController::MAX_BATTERY_THRESHOLD + TaskController::MIN_BATTERY_THRESHOLD) / 2;
+            if batt > half_batt {
+                FlightComputer::set_state_wait(Arc::clone(&self_lock), FlightState::Acquisition)
+                    .await;
+            } else {
+                FlightComputer::set_state_wait(Arc::clone(&self_lock), FlightState::Charge).await;
+            }
+        }
+        Utc::now()
     }
 
     #[allow(clippy::cast_possible_wrap)]
