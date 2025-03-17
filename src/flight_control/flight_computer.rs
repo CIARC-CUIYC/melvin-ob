@@ -26,7 +26,7 @@ use std::{
 };
 use tokio::sync::RwLock;
 
-type TurnsClockCClockTup = (
+pub type TurnsClockCClockTup = (
     Vec<(Vec2D<I32F32>, Vec2D<I32F32>)>,
     Vec<(Vec2D<I32F32>, Vec2D<I32F32>)>,
 );

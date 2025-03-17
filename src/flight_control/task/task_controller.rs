@@ -20,6 +20,7 @@ use std::{
     sync::{Arc, Condvar},
 };
 use tokio::sync::RwLock;
+use crate::flight_control::orbit::BurnSequenceEvaluator;
 
 /// `TaskController` manages and schedules tasks for MELVIN.
 /// It leverages a thread-safe task queue and notifies waiting threads when
@@ -70,23 +71,11 @@ impl TaskController {
     /// The minimum delta time required for detumble maneuvers, in seconds.
     pub(crate) const MANEUVER_MIN_DETUMBLE_DT: usize = 50;
 
-    /// Weight assigned to off-orbit delta time in optimization calculations.
-    const OFF_ORBIT_DT_WEIGHT: I32F32 = I32F32::lit("3.0");
-
-    /// Weight assigned to fuel consumption in optimization calculations.
-    const FUEL_CONSUMPTION_WEIGHT: I32F32 = I32F32::lit("1.0");
-
-    /// Weight assigned to angle deviation in optimization calculations.
-    const ANGLE_DEV_WEIGHT: I32F32 = I32F32::lit("2.0");
-
     /// Default maximum time duration for burn sequences, in seconds.
     const DEF_MAX_BURN_SEQUENCE_TIME: i64 = 1_000_000_000;
 
     /// Maximum allowable absolute deviation after a correction burn.
     const MAX_AFTER_CB_DEV: I32F32 = I32F32::lit("1.0");
-
-    /// A constant representing a 90-degree angle, in fixed-point format.
-    const NINETY_DEG: I32F32 = I32F32::lit("90.0");
 
     pub const IN_COMMS_SCHED_SECS: usize = 585;
     const COMMS_SCHED_PERIOD: usize = 1025;
@@ -322,6 +311,26 @@ impl TaskController {
         (best_burn_sequence, best_vel_hold_dt, best_min_dev)
     }
 
+    fn find_last_possible_dt(
+        i: &IndexedOrbitPosition,
+        vel: &Vec2D<I32F32>,
+        target_pos: &Vec2D<I32F32>,
+        max_dt: usize
+    ) -> usize {
+        let orbit_vel_abs = vel.abs();
+
+        for dt in (Self::OBJECTIVE_SCHEDULE_MIN_DT..max_dt).rev() {
+            let pos = (i.pos() + *vel * I32F32::from_num(dt)).wrap_around_map();
+            let to_target = pos.unwrapped_to(target_pos);
+            let min_dt = (to_target.abs() / orbit_vel_abs).abs().round().to_num::<usize>();
+
+            if min_dt + dt < max_dt {
+                return dt;
+            }
+        }
+        Self::OBJECTIVE_SCHEDULE_MIN_DT
+    }
+
     /// Calculates the optimal burn sequence to reach a single target position
     /// within a specified end time.
     ///
@@ -353,189 +362,40 @@ impl TaskController {
     )]
     pub async fn calculate_single_target_burn_sequence(
         curr_i: IndexedOrbitPosition,
-        f_cont_lock: Arc<RwLock<FlightComputer>>,
+        curr_vel: Vec2D<I32F32>,
         target_pos: Vec2D<I32F32>,
         target_end_time: DateTime<Utc>,
     ) -> Option<BurnSequence> {
         info!("Starting to calculate single target burn towards {target_pos}");
 
         // Calculate maximum allowed time delta for the maneuver
-        let comp_start = Utc::now();
-        let time_left = target_end_time - comp_start;
+        let time_left = target_end_time - curr_i.t();
         let max_dt = {
             let max = usize::try_from(time_left.num_seconds()).unwrap_or(0);
             max - Self::OBJECTIVE_MIN_RETRIEVAL_TOL
         };
 
-        // Retrieve the current orbital velocity
-        let orbit_vel = {
-            let f_cont = f_cont_lock.read().await;
-            f_cont.current_vel()
-        };
-
-        let max_off_orbit_t = max_dt - Self::OBJECTIVE_SCHEDULE_MIN_DT;
+        let max_off_orbit_dt = max_dt - Self::OBJECTIVE_SCHEDULE_MIN_DT;
 
         // Spawn a task to compute possible turns asynchronously
         let turns_handle =
-            tokio::spawn(async move { FlightComputer::compute_possible_turns(orbit_vel) });
-
-        let orbit_vel_abs = orbit_vel.abs();
-        let mut last_possible_dt = 0;
-
-        // Determine the last possible time delta where a maneuver is feasible
-        for dt in (Self::OBJECTIVE_SCHEDULE_MIN_DT..max_dt).rev() {
-            let pos = (curr_i.pos() + orbit_vel * I32F32::from_num(dt)).wrap_around_map();
-            let to_target = pos.unwrapped_to(&target_pos);
-            let min_dt = (to_target.abs() / orbit_vel_abs).abs().round().to_num::<usize>();
-
-            if min_dt + dt < max_dt {
-                last_possible_dt = dt;
-                break;
-            }
-        }
+            tokio::spawn(async move { FlightComputer::compute_possible_turns(curr_vel) });
+        
+        let last_possible_dt = Self::find_last_possible_dt(&curr_i, &curr_vel, &target_pos, max_dt);
         info!("Done skipping impossible start times. Last possible dt: {last_possible_dt}");
-
+        
         // Define range for evaluation and initialize best burn sequence tracker
-        let remaining_range = Self::OBJECTIVE_SCHEDULE_MIN_DT..=last_possible_dt;
-        let mut best_burn_sequence: Option<BurnSequence> = None;
-
-        // Calculate the maximum allowable angle deviation
-        let max_angle_dev = {
-            let vel_perp = orbit_vel.perp_unit(true) * FlightComputer::ACC_CONST;
-            orbit_vel.angle_to(&vel_perp).abs()
-        };
-
+        let remaining_range = Self::OBJECTIVE_SCHEDULE_MIN_DT..=last_possible_dt;        
+        
         // Await the result of possible turn computations
         let turns = turns_handle.await.unwrap();
-
-        'outer: for dt in remaining_range.rev() {
-            // Calculate the next position and initialize the burn sequence
-            let mut next_pos = (curr_i.pos() + orbit_vel * I32F32::from_num(dt)).wrap_around_map();
-            let burn_sequence_i =
-                curr_i.new_from_future_pos(next_pos, comp_start + TimeDelta::seconds(dt as i64));
-            let direction_vec = next_pos.unwrapped_to(&target_pos);
-
-            // Skip iterations where the current velocity is too far off-target
-            if orbit_vel.angle_to(&direction_vec).abs() > Self::NINETY_DEG {
-                continue;
-            }
-
-            // Determine the turn sequence based on the relative direction to the target
-            let (turns_in_dir, break_cond) = {
-                if direction_vec.is_clockwise_to(&orbit_vel).unwrap_or(false) {
-                    (&turns.0, false)
-                } else {
-                    (&turns.1, true)
-                }
-            };
-
-            // Initialize variables to calculate the final burn sequence
-            let mut add_dt = 0;
-            let mut fin_sequence_pos: Vec<Vec2D<I32F32>> = vec![next_pos];
-            let mut fin_sequence_vel: Vec<Vec2D<I32F32>> = vec![orbit_vel];
-            let mut fin_angle_dev = I32F32::zero();
-            let mut fin_dt = 0;
-            let max_add_dt = turns_in_dir.len();
-
-            'inner: for atomic_turn in turns_in_dir {
-                // Update position and velocity based on turns
-                let next_seq_pos = (next_pos + atomic_turn.0).wrap_around_map();
-                let next_vel = atomic_turn.1;
-
-                let next_to_target = next_seq_pos.unwrapped_to(&target_pos);
-                let min_dt =
-                    (next_to_target.abs() / next_vel.abs()).abs().round().to_num::<usize>();
-
-                // Check if the maneuver exceeds the maximum allowed time
-                if min_dt + dt + add_dt > max_dt {
-                    continue 'outer;
-                }
-
-                // Break and finalize the burn sequence if close enough to the target
-                if next_to_target.is_clockwise_to(&next_vel).unwrap_or(break_cond) == break_cond {
-                    let last_pos = fin_sequence_pos.last().unwrap();
-                    let last_vel = fin_sequence_vel.last().unwrap();
-                    (fin_dt, fin_angle_dev) = {
-                        let last_to_target = last_pos.unwrapped_to(&target_pos);
-                        let last_angle_deviation = -last_vel.angle_to(&last_to_target);
-                        let this_angle_deviation = next_vel.angle_to(&next_to_target);
-
-                        let corr_burn_perc = math::interpolate(
-                            last_angle_deviation,
-                            this_angle_deviation,
-                            I32F32::zero(),
-                            I32F32::lit("1.0"),
-                            I32F32::zero(),
-                        );
-
-                        let acc = (next_vel - *last_vel) * corr_burn_perc;
-                        let (corr_vel, _) = FlightComputer::trunc_vel(next_vel + acc);
-                        let corr_pos = *last_pos + corr_vel;
-                        let corr_to_target = corr_pos.unwrapped_to(&target_pos);
-                        let corr_angle_dev = corr_vel.angle_to(&corr_to_target);
-                        fin_sequence_pos.push(corr_pos);
-                        fin_sequence_vel.push(corr_vel);
-                        add_dt += 1;
-                        (min_dt + dt + add_dt, corr_angle_dev)
-                    };
-                    break 'inner;
-                }
-                fin_sequence_pos.push(next_seq_pos);
-                fin_sequence_vel.push(next_vel);
-                add_dt += 1;
-            }
-
-            // Normalize the factors contributing to burn sequence cost
-            let normalized_fuel_consumption = math::normalize_fixed32(
-                I32F32::from_num(add_dt) * FlightComputer::FUEL_CONST,
-                I32F32::zero(),
-                I32F32::from_num(max_add_dt) * FlightComputer::FUEL_CONST,
-            )
-            .unwrap_or(I32F32::zero());
-
-            let normalized_off_orbit_t = math::normalize_fixed32(
-                I32F32::from_num(fin_dt - dt),
-                I32F32::zero(),
-                I32F32::from_num(max_off_orbit_t),
-            )
-            .unwrap_or(I32F32::zero());
-
-            let normalized_angle_dev =
-                math::normalize_fixed32(fin_angle_dev.abs(), I32F32::zero(), max_angle_dev)
-                    .unwrap_or(I32F32::zero());
-
-            // Compute the total cost of the burn sequence
-            let burn_sequence_cost = Self::OFF_ORBIT_DT_WEIGHT * normalized_off_orbit_t
-                + Self::FUEL_CONSUMPTION_WEIGHT * normalized_fuel_consumption
-                + Self::ANGLE_DEV_WEIGHT * normalized_angle_dev;
-
-            // Create the burn sequence object
-            let burn_sequence = BurnSequence::new(
-                burn_sequence_i,
-                fin_sequence_pos.into_boxed_slice(),
-                fin_sequence_vel.into_boxed_slice(),
-                add_dt,
-                fin_dt - dt - add_dt,
-                burn_sequence_cost,
-                fin_angle_dev,
-            );
-
-            // Update the best burn sequence if a cheaper and feasible one is found
-            if best_burn_sequence.is_none()
-                || burn_sequence_cost < best_burn_sequence.as_ref().unwrap().cost()
-            {
-                if burn_sequence.min_charge() < Self::MAX_BATTERY_THRESHOLD {
-                    best_burn_sequence = Some(burn_sequence);
-                } else {
-                    println!(
-                        "Cheaper maneuver found but min charge {} is too high!",
-                        burn_sequence.min_charge()
-                    );
-                }
-            }
+        let mut evaluator = BurnSequenceEvaluator::new(curr_i, curr_vel, target_pos, max_dt, max_off_orbit_dt, turns);
+        
+        for dt in remaining_range.rev() {
+            evaluator.process_dt(dt, Self::MAX_BATTERY_THRESHOLD);
         }
         // Return the best burn sequence, panicking if none was found
-        best_burn_sequence
+        evaluator.get_best_burn().map(|(burn, _) | burn)
     }
 
     #[allow(clippy::cast_possible_wrap)]

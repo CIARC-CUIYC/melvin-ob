@@ -46,9 +46,10 @@ impl ZOPrepMode {
         let exit_burn = if zo.min_images() == 1 {
             let target_pos = zo.get_imaging_points()[0];
             let due = zo.end();
+            let current_vel = context.k().f_cont().read().await.current_vel();
             TaskController::calculate_single_target_burn_sequence(
                 context.o_ch_clone().await.i_entry(),
-                Arc::clone(&context.k().f_cont()),
+                current_vel,
                 target_pos,
                 due,
             )
