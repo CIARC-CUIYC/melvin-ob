@@ -66,7 +66,6 @@ impl BurnSequence {
             if poss_charge_dt < 0 {
                 travel_time
             } else {
-                // TODO: this probably only works because we do *2 later :)
                 acc_dt + 2 * TaskController::MANEUVER_MIN_DETUMBLE_DT
             }
         };
