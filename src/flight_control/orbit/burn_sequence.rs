@@ -155,7 +155,7 @@ impl BurnSequenceEvaluator {
 
     #[allow(clippy::cast_possible_wrap)]
     pub fn process_dt(&mut self, dt: usize, max_needed_batt: I32F32) {
-        let pos = (self.i.pos() + self.vel * I32F32::from_num(dt)).wrap_around_map();
+        let pos = (self.i.pos() + self.vel * I32F32::from_num(dt)).wrap_around_map().round();
         let bs_i = self.i.new_from_future_pos(pos, self.i.t() + TimeDelta::seconds(dt as i64));
         let shortest_dir = pos.unwrapped_to(&self.target_pos);
         if self.vel.angle_to(&shortest_dir).abs() > Self::NINETY_DEG {
@@ -172,15 +172,8 @@ impl BurnSequenceEvaluator {
             let cost = self.get_bs_cost(&b);
             match &self.best_burn {
                 Some((_, curr_cost)) => {
-                    if *curr_cost > cost {
-                        if b.min_charge() <= max_needed_batt {
-                            self.best_burn = Some((b, cost));
-                        } else {
-                            println!(
-                                "Cheaper maneuver found but min charge {} is too high!",
-                                b.min_charge()
-                            );
-                        }
+                    if *curr_cost > cost || b.min_charge() <= max_needed_batt {
+                        self.best_burn = Some((b, cost));
                     }
                 }
                 None => self.best_burn = Some((b, cost)),
@@ -211,7 +204,9 @@ impl BurnSequenceEvaluator {
             let dt = (burn_i.t() - Utc::now()).num_seconds() as usize;
             // Check if the maneuver exceeds the maximum allowed time
             add_dt += 1;
-            if min_dt + dt + add_dt > self.max_dt || min_dt < TaskController::MANEUVER_MIN_DETUMBLE_DT {
+            if min_dt + dt + add_dt > self.max_dt
+                || min_dt < TaskController::MANEUVER_MIN_DETUMBLE_DT
+            {
                 return None;
             }
 

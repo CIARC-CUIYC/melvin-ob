@@ -193,7 +193,7 @@ impl FlightComputer {
             let i_last = (start_x / step_x).ceil().abs().to_num::<i32>();
             let mut next_pos = Vec2D::new(I32F32::zero(), I32F32::zero());
             let mut next_vel = init_vel + step;
-            x_pos_vel.push((next_pos, next_vel));
+            x_pos_vel.push((next_pos.round(), next_vel.round_to_2()));
             for i in 0..i_last {
                 next_pos = next_pos + next_vel;
                 if i == i_last - 1 {
@@ -201,7 +201,7 @@ impl FlightComputer {
                 } else {
                     next_vel = next_vel + step;
                 }
-                x_pos_vel.push((next_pos, next_vel));
+                x_pos_vel.push((next_pos.round(), next_vel.round_to_2()));
             }
             x_pos_vel
         };
@@ -213,7 +213,7 @@ impl FlightComputer {
             let i_last = (start_y / step_y).ceil().abs().to_num::<i32>();
             let mut next_pos = Vec2D::new(I32F32::zero(), I32F32::zero());
             let mut next_vel = init_vel + step;
-            y_pos_vel.push((next_pos, next_vel));
+            y_pos_vel.push((next_pos.round(), next_vel.round_to_2()));
             for i in 0..i_last {
                 next_pos = next_pos + next_vel;
                 if i == i_last - 1 {
@@ -221,7 +221,7 @@ impl FlightComputer {
                 } else {
                     next_vel = next_vel + step;
                 }
-                y_pos_vel.push((next_pos, next_vel));
+                y_pos_vel.push((next_pos.round(), next_vel.round_to_2()));
             }
             y_pos_vel
         };

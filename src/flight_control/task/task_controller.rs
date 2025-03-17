@@ -69,7 +69,7 @@ impl TaskController {
     const MANEUVER_INIT_BATT_TOL: I32F32 = I32F32::lit("10.0");
 
     /// The minimum delta time required for detumble maneuvers, in seconds.
-    pub(crate) const MANEUVER_MIN_DETUMBLE_DT: usize = 50;
+    pub(crate) const MANEUVER_MIN_DETUMBLE_DT: usize = 100;
 
     /// Default maximum time duration for burn sequences, in seconds.
     const DEF_MAX_BURN_SEQUENCE_TIME: i64 = 1_000_000_000;
@@ -380,17 +380,17 @@ impl TaskController {
         // Spawn a task to compute possible turns asynchronously
         let turns_handle =
             tokio::spawn(async move { FlightComputer::compute_possible_turns(curr_vel) });
-        
+
         let last_possible_dt = Self::find_last_possible_dt(&curr_i, &curr_vel, &target_pos, max_dt);
         info!("Done skipping impossible start times. Last possible dt: {last_possible_dt}");
-        
+
         // Define range for evaluation and initialize best burn sequence tracker
-        let remaining_range = Self::OBJECTIVE_SCHEDULE_MIN_DT..=last_possible_dt;        
-        
+        let remaining_range = Self::OBJECTIVE_SCHEDULE_MIN_DT..=last_possible_dt;
+
         // Await the result of possible turn computations
         let turns = turns_handle.await.unwrap();
         let mut evaluator = BurnSequenceEvaluator::new(curr_i, curr_vel, target_pos, max_dt, max_off_orbit_dt, turns);
-        
+
         for dt in remaining_range.rev() {
             evaluator.process_dt(dt, Self::MAX_BATTERY_THRESHOLD);
         }

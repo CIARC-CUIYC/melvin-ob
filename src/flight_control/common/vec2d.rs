@@ -196,7 +196,19 @@ where T: FixedSigned + NumAssignOps
 
     pub fn abs_sq(&self) -> T { self.x * self.x + self.y * self.y }
 
-    pub fn round(&self) -> Self { Vec2D::new(self.x.round(), self.y.round()) }
+    pub fn round(&self) -> Self {
+        Self {
+            x: self.x.round(),
+            y: self.y.round(),
+        }
+    }
+
+    pub fn round_to_2(&self) -> Self {
+        let factor = T::from_num(100);
+        let new_x = (self.x * factor).round() / factor;
+        let new_y = (self.y * factor).round() / factor;
+        Self { x: new_x, y: new_y }
+    }
 
     pub fn floor(&self) -> Self { Vec2D::new(self.x.floor(), self.y.floor()) }
 
