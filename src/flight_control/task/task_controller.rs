@@ -463,7 +463,7 @@ impl TaskController {
 
         let is_next_possible: Box<dyn Fn(DateTime<Utc>) -> bool + Send> =
             if let Some(end) = &end_cond {
-                let dt = end.min_charge_time() + t_time_ch * 2;
+                let dt = end.abs_charge_dt() + t_time_ch * 2;
                 Box::new(move |comms_end: DateTime<Utc>| -> bool {
                     let n_end = comms_end
                         + TaskController::COMMS_SCHED_USABLE_TIME
