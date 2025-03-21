@@ -3,7 +3,6 @@ use super::imaging::map_image::{
     EncodedImageExtract, FullsizeMapImage, MapImage, OffsetZOImage, ThumbnailMapImage,
 };
 use crate::console_communication::ConsoleMessenger;
-use crate::flight_control::common::bayesian_set::SquareSlice;
 use crate::flight_control::{
     camera_state::CameraAngle, common::vec2d::Vec2D, flight_computer::FlightComputer,
 };
@@ -24,7 +23,6 @@ use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use futures::StreamExt;
 use image::{GenericImageView, ImageReader, Pixel, RgbImage, imageops::Lanczos3};
-use std::collections::HashSet;
 use std::{
     path::Path,
     {io::Cursor, sync::Arc},
@@ -203,7 +201,7 @@ impl CameraController {
         angle: CameraAngle,
         buffer: &mut OffsetZOImage,
     ) -> Result<Vec2D<I32F32>, Box<dyn std::error::Error + Send + Sync>> {
-        let (pos, offset, decoded_image) = self.get_image(f_cont_locked, angle).await?;
+        let (pos, _, decoded_image) = self.get_image(f_cont_locked, angle).await?;
         let angle_const = I32F32::from_num(angle.get_square_side_length() / 2);
         let bottom_left = (pos - Vec2D::new(angle_const, angle_const)).wrap_around_map();
         if let Some((img, abs_offset)) = buffer.cut_image(decoded_image, bottom_left) {

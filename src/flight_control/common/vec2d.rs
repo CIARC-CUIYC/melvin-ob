@@ -229,7 +229,7 @@ where T: FixedSigned + NumAssignOps
     /// A new vector representing the direction from `self` to `other`.
     pub fn to(&self, other: &Self) -> Self { Vec2D::new(other.x - self.x, other.y - self.y) }
     
-    pub fn to_num<R: FromFixed + Copy>(&self) -> Vec2D<R> {
+    pub fn to_num<R: FromFixed + Copy>(self) -> Vec2D<R> {
         Vec2D::new(self.x.to_num::<R>(), self.y.to_num::<R>())
     }
 

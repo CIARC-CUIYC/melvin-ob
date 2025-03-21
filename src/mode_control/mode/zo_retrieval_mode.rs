@@ -1,7 +1,6 @@
 use crate::flight_control::common::vec2d::Vec2D;
 use crate::flight_control::flight_computer::FlightComputer;
 use crate::flight_control::imaging::map_image::OffsetZOImage;
-use crate::flight_control::task::TaskController;
 use crate::flight_control::task::base_task::BaseTask;
 use crate::flight_control::{
     objective::{known_img_objective::KnownImgObjective, objective_base::ObjectiveBase},
@@ -18,7 +17,6 @@ use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use std::sync::Arc;
-use std::time::Duration;
 use crate::mode_control::mode::orbit_return_mode::OrbitReturnMode;
 
 #[derive(Clone)]
@@ -79,7 +77,7 @@ impl GlobalMode for ZORetrievalMode {
 
     async fn exec_task(&self, context: Arc<ModeContext>, task: Task) -> ExecExitSignal {
         match task.task_type() {
-            BaseTask::TakeImage(task) => {
+            BaseTask::TakeImage(img) => {
                 let bottom_left = Vec2D::new(
                     I32F32::from_num(self.target.zone()[0]),
                     I32F32::from_num(self.target.zone()[1]),

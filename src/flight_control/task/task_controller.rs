@@ -5,7 +5,7 @@ use super::{
 use crate::flight_control::orbit::BurnSequenceEvaluator;
 use crate::flight_control::task::end_condition::EndCondition;
 use crate::flight_control::{
-    common::{linked_box::LinkedBox, math, vec2d::Vec2D},
+    common::{linked_box::LinkedBox, vec2d::Vec2D},
     flight_computer::FlightComputer,
     flight_state::FlightState,
     orbit::{BurnSequence, ClosedOrbit, IndexedOrbitPosition},
@@ -13,14 +13,12 @@ use crate::flight_control::{
 use crate::{error, info, log};
 use bitvec::prelude::BitRef;
 use chrono::{DateTime, TimeDelta, Utc};
-use fixed::FixedI64;
-use fixed::types::extra::U32;
-use fixed::types::{I32F32, I64F64};
+use fixed::types::I32F32;
 use num::Zero;
 use std::{
     collections::VecDeque,
     fmt::Debug,
-    sync::{Arc, Condvar},
+    sync::Arc,
 };
 use tokio::sync::RwLock;
 use crate::flight_control::camera_state::CameraAngle;
@@ -231,7 +229,7 @@ impl TaskController {
             coverage_slice: score_cube,
         }
     }
-
+    /*
     #[allow(clippy::cast_possible_truncation)]
     /// Calculates the optimal sequence of thrust burns needed to correct the orbit
     /// based on the current velocity and the desired deviation.
@@ -326,7 +324,7 @@ impl TaskController {
             acc_secs += 1;
         }
         (best_burn_sequence, best_hold_dt, best_res_dev)
-    }
+    }*/
 
     fn find_last_possible_dt(
         i: &IndexedOrbitPosition,
@@ -421,7 +419,8 @@ impl TaskController {
         // Return the best burn sequence, panicking if none was found
         evaluator.get_best_burn().map(|(burn, _)| burn)
     }
-
+    
+    /*
     pub async fn sched_zo_retrieval_burn(
         self: Arc<TaskController>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
@@ -450,7 +449,7 @@ impl TaskController {
         );
         let (burn, hold, dev) = TaskController::calculate_orbit_correction_burn(vel, deviation, t);
         log!("Calculated burn! Hold time is {hold}s. Resulting deviation will be {dev}.");
-    }
+    }*/
 
     #[allow(clippy::cast_possible_wrap)]
     async fn sched_single_comms_cycle(

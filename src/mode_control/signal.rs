@@ -1,6 +1,4 @@
-use crate::flight_control::objective::{
-    known_img_objective::KnownImgObjective, objective_base::ObjectiveBase,
-};
+use crate::flight_control::objective::objective_base::ObjectiveBase;
 use crate::mode_control::{base_mode::BaseWaitExitSignal, mode::global_mode::GlobalMode};
 
 pub enum OpExitSignal {

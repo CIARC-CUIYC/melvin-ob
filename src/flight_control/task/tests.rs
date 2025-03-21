@@ -5,7 +5,6 @@ use crate::flight_control::orbit::IndexedOrbitPosition;
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use rand::Rng;
-use crate::flight_control::flight_computer::FlightComputer;
 
 const STATIC_PERIOD: usize = 54000;
 

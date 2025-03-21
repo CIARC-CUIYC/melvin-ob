@@ -1,6 +1,6 @@
 use crate::flight_control::{objective::objective_base::ObjectiveBase, task::base_task::Task};
 use crate::mode_control::{
-    base_mode::{BaseMode, BaseWaitExitSignal},
+    base_mode::BaseWaitExitSignal,
     mode::global_mode::GlobalMode,
     mode_context::ModeContext,
     signal::{ExecExitSignal, OpExitSignal, WaitExitSignal},

@@ -7,9 +7,7 @@ use fixed::types::I32F32;
 use image::{codecs::png::{CompressionType, FilterType, PngDecoder, PngEncoder}, imageops, DynamicImage, EncodableLayout, GenericImage, GenericImageView, ImageBuffer, Pixel, PixelWithColorType, Rgb, RgbImage, Rgba, RgbaImage};
 use tokio::{fs::File, io::AsyncReadExt};
 use crate::fatal;
-use crate::flight_control::camera_state::CameraAngle;
 use crate::flight_control::common::{bitmap::Bitmap, vec2d::{Vec2D, MapSize}};
-use crate::flight_control::common::bayesian_set::SquareSlice;
 use super::{file_based_buffer::FileBackedBuffer, sub_buffer::SubBuffer};
 
 
@@ -209,7 +207,7 @@ impl OffsetZOImage {
         }
     }
 
-    pub fn cut_image(&self, image: RgbImage, img_bot_left: Vec2D<I32F32>) -> Option<(RgbImage, Vec2D<u32>)> {
+    pub fn cut_image(&self, mut image: RgbImage, img_bot_left: Vec2D<I32F32>) -> Option<(RgbImage, Vec2D<u32>)> {
         let corr_offs = self.offset + self.offset.unwrapped_to_top_right(&img_bot_left);
         let start_x = self.offset.x().max(corr_offs.x()).to_num::<u32>();
         let start_y = self.offset.y().max(corr_offs.y()).to_num::<u32>();
@@ -234,8 +232,8 @@ impl OffsetZOImage {
         let rgb_start_y = image.height() - mapped_end_y;
 
         if rgb_start_y < image.height() && mapped_start_x < image.width() {
-            let img = imageops::crop_imm(
-                &image,
+            let img = imageops::crop(
+                &mut image,
                 mapped_start_x,
                 rgb_start_y,
                 crop_width,
@@ -511,7 +509,7 @@ impl ThumbnailMapImage {
     /// A `ThumbnailMapImage` containing the scaled-down image.
     pub(crate) fn from_fullsize(fullsize_map_image: &FullsizeMapImage) -> Self {
         Self {
-            image_buffer: image::imageops::thumbnail(
+            image_buffer: imageops::thumbnail(
                 fullsize_map_image,
                 Self::thumbnail_size().x(),
                 Self::thumbnail_size().y(),
