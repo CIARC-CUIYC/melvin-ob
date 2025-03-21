@@ -1,4 +1,4 @@
-use fixed::prelude::ToFixed;
+use fixed::prelude::{FromFixed, ToFixed};
 use fixed::types::{I32F32, I64F64};
 use fixed::{
     traits::{Fixed, FixedSigned},
@@ -228,6 +228,10 @@ where T: FixedSigned + NumAssignOps
     /// # Returns
     /// A new vector representing the direction from `self` to `other`.
     pub fn to(&self, other: &Self) -> Self { Vec2D::new(other.x - self.x, other.y - self.y) }
+    
+    pub fn to_num<R: FromFixed + Copy>(&self) -> Vec2D<R> {
+        Vec2D::new(self.x.to_num::<R>(), self.y.to_num::<R>())
+    }
 
     /// Computes an "unwrapped" vector pointing from the current vector (`self`) to another vector (`other`).
     ///

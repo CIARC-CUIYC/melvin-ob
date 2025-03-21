@@ -16,7 +16,7 @@ use crate::http_handler::{
         reset_get::ResetRequest,
     },
 };
-use crate::{error, fatal, info, log};
+use crate::{error, fatal, info, log, warn};
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::{I32F32, I64F64};
 use num::{ToPrimitive, Zero};
@@ -581,34 +581,47 @@ impl FlightComputer {
             }
         }
     }
-
-    /// Evaluates how a sequence of thruster burns has affected the MELVIN's trajectory.
-    ///
-    /// # Arguments
-    /// - `locked_self`: A `RwLock<Self>` reference to the active flight computer.
-    /// - `burn_sequence`: A reference to the sequence of executed thruster burns.
-    /// - `target_pos`: The target position for the satellite.
-    ///
-    /// # Returns
-    /// - A tuple containing:
-    ///   - The current velocity of the satellite after evaluating the burn sequence.
-    ///   - The deviation of the projected position from the target position.
-    pub async fn evaluate_burn(
-        self_lock: Arc<RwLock<Self>>,
-        burn_sequence: &BurnSequence,
-        target_pos: Vec2D<I32F32>,
-    ) -> (Vec2D<I32F32>, Vec2D<I32F32>) {
-        let (act_pos, act_vel) = {
-            let f_cont = self_lock.read().await;
-            (f_cont.current_pos(), f_cont.current_vel())
-        };
-        let projected_res_pos = act_pos + act_vel * I32F32::from_num(burn_sequence.detumble_dt());
-        let deviation = projected_res_pos.to(&target_pos);
-        log!(
-            "Evaluated Velocity change. Expected target position: {target_pos}, \
-            resulting position: {projected_res_pos}, deviation: {deviation}"
-        );
-        (act_vel, deviation)
+    
+    pub async fn detumble_to(self_lock: Arc<RwLock<Self>>, target: Vec2D<I32F32>, lens: CameraAngle) -> DateTime<Utc> {
+        let ticker: i32 = 0;
+        let max_speed = lens.get_max_speed();
+        loop {
+            let (pos, vel) = {
+                let f_locked = self_lock.read().await;
+                (f_locked.current_pos(), f_locked.current_vel())
+            };
+            let to_target = pos.unwrapped_to(&target);
+            let dt = to_target.abs();
+            let dx =  to_target - (vel.normalize() * dt);
+            let acc = dx.normalize() * Self::ACC_CONST;
+            let overspeed = vel.abs() > max_speed;
+            if ticker % 10 == 0 {
+                log!("Detumbling: DX: {dx}, direct DT: {dt:2}s");
+                if overspeed {
+                    let overspeed_amount = vel.abs() - max_speed;
+                    warn!("Overspeeding by {overspeed_amount}");
+                }
+            }
+            let cond = if overspeed {
+                let min_brake_dt = ((vel.abs() - max_speed) / Self::ACC_CONST).to_num::<i64>();
+                overspeed && (dt.to_num::<i64>() < 10 + min_brake_dt)
+            } else {
+                dt.to_num::<i64>() < 10
+            };
+            if dx.abs() < I32F32::lit("1.0") || cond {
+                log!("Detumbling finished with remaining DX: {dx} and dt {dt:2}s");
+                if overspeed {
+                    todo!();
+                } else {
+                    self_lock.write().await.set_vel(vel).await;
+                }
+                FlightComputer::set_angle_wait(Arc::clone(&self_lock), lens).await;
+                return Utc::now() + TimeDelta::seconds(dt.to_num::<i64>());
+            }
+            let (new_vel, _) = FlightComputer::trunc_vel(vel + acc);
+            self_lock.write().await.set_vel(new_vel).await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
     }
 
     /// Updates the satellite's internal fields with the latest observation data.

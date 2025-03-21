@@ -35,6 +35,9 @@ impl KnownImgObjective {
     pub fn zone(&self) -> [i32; 4] { self.zone }
     pub fn optic_required(&self) -> CameraAngle { self.optic_required }
     pub fn coverage_required(&self) -> f64 { self.coverage_required }
+    
+    pub fn width(&self) -> i32 { self.zone[2] - self.zone[0] }
+    pub fn height(&self) -> i32 { self.zone[3] - self.zone[1] }
 
     pub fn get_imaging_points(&self) -> Vec<Vec2D<I32F32>> {
         // TODO: this has to be adapted for multiple imaging points later

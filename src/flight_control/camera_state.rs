@@ -1,4 +1,5 @@
 use std::{collections::HashMap, sync::LazyLock};
+use fixed::types::I32F32;
 use strum_macros::{Display, EnumIter};
 
 /// Represents different camera angles supported by the system.
@@ -23,7 +24,9 @@ impl CameraAngle {
     ///
     /// # Returns
     /// A `u16` representing the side length of the square for the given camera angle.
-    pub fn get_square_side_length(self) -> u16 { CAMERA_SCALE_LOOKUP[&self] }
+    pub fn get_square_side_length(&self) -> u16 { CAMERA_SCALE_LOOKUP[&self] }
+    
+    pub fn get_max_speed(self) -> I32F32 {CAMERA_MAX_SPEED_LOOKUP[&self]}
 }
 
 impl From<&str> for CameraAngle {
@@ -73,6 +76,20 @@ static CAMERA_SCALE_LOOKUP: LazyLock<HashMap<CameraAngle, u16>> = LazyLock::new(
         (CameraAngle::Narrow, 600),
         (CameraAngle::Normal, 800),
         (CameraAngle::Wide, 1000),
+    ];
+
+    for (angle, square_side_length) in transition_widths {
+        lookup.insert(angle, square_side_length);
+    }
+    lookup
+});
+
+static CAMERA_MAX_SPEED_LOOKUP: LazyLock<HashMap<CameraAngle, I32F32>> = LazyLock::new(|| {
+    let mut lookup = HashMap::new();
+    let transition_widths = vec![
+        (CameraAngle::Narrow, I32F32::lit("10.0")),
+        (CameraAngle::Normal, I32F32::lit("50.0")),
+        (CameraAngle::Wide, I32F32::MAX),
     ];
 
     for (angle, square_side_length) in transition_widths {

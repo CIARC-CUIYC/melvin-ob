@@ -1,8 +1,9 @@
 use super::imaging::cycle_state::CycleState;
 use super::imaging::map_image::{
-    EncodedImageExtract, FullsizeMapImage, MapImage, ThumbnailMapImage,
+    EncodedImageExtract, FullsizeMapImage, MapImage, OffsetZOImage, ThumbnailMapImage,
 };
 use crate::console_communication::ConsoleMessenger;
+use crate::flight_control::common::bayesian_set::SquareSlice;
 use crate::flight_control::{
     camera_state::CameraAngle, common::vec2d::Vec2D, flight_computer::FlightComputer,
 };
@@ -17,17 +18,18 @@ use crate::http_handler::{
 };
 use crate::mode_control::base_mode::PeriodicImagingEndSignal;
 use crate::mode_control::base_mode::PeriodicImagingEndSignal::{KillLastImage, KillNow};
-use crate::{error, info, log, DT_0_STD};
+use crate::{DT_0_STD, error, info, log, obj};
 use bitvec::boxed::BitBox;
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use futures::StreamExt;
-use image::{imageops::Lanczos3, GenericImageView, ImageReader, Pixel, RgbImage};
+use image::{GenericImageView, ImageReader, Pixel, RgbImage, imageops::Lanczos3};
+use std::collections::HashSet;
 use std::{
     path::Path,
     {io::Cursor, sync::Arc},
 };
-use tokio::sync::{oneshot, Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, oneshot};
 
 /// A struct for managing camera-related operations and map snapshots.
 pub struct CameraController {
@@ -136,6 +138,28 @@ impl CameraController {
         best_additional_offset
     }
 
+    pub async fn get_image(
+        &self,
+        f_cont_locked: Arc<RwLock<FlightComputer>>,
+        angle: CameraAngle,
+    ) -> Result<(Vec2D<I32F32>, Vec2D<i32>, RgbImage), Box<dyn std::error::Error + Send + Sync>>
+    {
+        let (position, collected_png) = {
+            let mut f_cont = f_cont_locked.write().await;
+            let ((), collected_png) =
+                tokio::join!(f_cont.update_observation(), self.fetch_image_data());
+            (f_cont.current_pos(), collected_png)
+        };
+        let decoded_image = Self::decode_png_data(&collected_png?, angle)?;
+        let angle_const = angle.get_square_side_length() / 2;
+        let offset: Vec2D<i32> = Vec2D::new(
+            position.x().round().to_num::<i32>() - i32::from(angle_const),
+            position.y().round().to_num::<i32>() - i32::from(angle_const),
+        )
+        .wrap_around_map();
+        Ok((position, offset, decoded_image))
+    }
+
     /// Captures an image, processes it, and stores it in the map buffer.
     ///
     /// # Arguments
@@ -151,20 +175,8 @@ impl CameraController {
         &self,
         f_cont_locked: Arc<RwLock<FlightComputer>>,
         angle: CameraAngle,
-    ) -> Result<Vec2D<u32>, Box<dyn std::error::Error + Send + Sync>> {
-        let (position, collected_png) = {
-            let mut f_cont = f_cont_locked.write().await;
-            let ((), collected_png) =
-                tokio::join!(f_cont.update_observation(), self.fetch_image_data());
-            (f_cont.current_pos(), collected_png)
-        };
-        let decoded_image = Self::decode_png_data(&collected_png?, angle)?;
-        let angle_const = angle.get_square_side_length() / 2;
-        let offset: Vec2D<i32> = Vec2D::new(
-            position.x().round().to_num::<i32>() - i32::from(angle_const),
-            position.y().round().to_num::<i32>() - i32::from(angle_const),
-        )
-        .wrap_around_map();
+    ) -> Result<(Vec2D<I32F32>, Vec2D<u32>), Box<dyn std::error::Error + Send + Sync>> {
+        let (pos, offset, decoded_image) = self.get_image(f_cont_locked, angle).await?;
 
         let tot_offset_u32 = {
             let mut fullsize_map_image = self.fullsize_map_image.write().await;
@@ -173,16 +185,32 @@ impl CameraController {
             let tot_offset: Vec2D<u32> =
                 (offset + best_additional_offset).wrap_around_map().to_unsigned();
             fullsize_map_image.update_area(tot_offset, decoded_image);
-
-            fullsize_map_image.coverage.set_region(
-                Vec2D::new(position.x(), position.y()),
-                angle,
-                true,
-            );
+            fullsize_map_image.coverage.set_region(Vec2D::new(pos.x(), pos.y()), angle, true);
             tot_offset
         };
-        self.update_thumbnail_area_from_fullsize(tot_offset_u32, u32::from(angle_const)).await;
-        Ok(tot_offset_u32)
+        self.update_thumbnail_area_from_fullsize(
+            tot_offset_u32,
+            u32::from(angle.get_square_side_length() / 2),
+        )
+        .await;
+        Ok((pos, tot_offset_u32))
+    }
+
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+    pub async fn shoot_image_to_zo_buffer(
+        &self,
+        f_cont_locked: Arc<RwLock<FlightComputer>>,
+        angle: CameraAngle,
+        buffer: &mut OffsetZOImage,
+    ) -> Result<Vec2D<I32F32>, Box<dyn std::error::Error + Send + Sync>> {
+        let (pos, offset, decoded_image) = self.get_image(f_cont_locked, angle).await?;
+        let angle_const = I32F32::from_num(angle.get_square_side_length() / 2);
+        let bottom_left = (pos - Vec2D::new(angle_const, angle_const)).wrap_around_map();
+        if let Some((img, abs_offset)) = buffer.cut_image(decoded_image, bottom_left) {
+            buffer.update_area(abs_offset, img);
+            return Ok(pos);
+        };
+        Ok(pos)
     }
 
     /// Updates the thumbnail area of the map based on the full-size map data.
@@ -399,14 +427,13 @@ impl CameraController {
         console_messenger: Arc<ConsoleMessenger>,
         (end_time, kill): (DateTime<Utc>, oneshot::Receiver<PeriodicImagingEndSignal>),
         image_max_dt: I32F32,
-        lens: CameraAngle,
         start_index: usize,
     ) -> Vec<(isize, isize)> {
         log!(
             "Starting acquisition cycle. Deadline: {}",
             end_time.format("%H:%M:%S")
         );
-
+        let lens = f_cont_lock.read().await.current_angle();
         let mut kill_box = Box::pin(kill);
         let mut last_image_flag = false;
 
@@ -415,9 +442,9 @@ impl CameraController {
 
         loop {
             let (img_t, offset) =
-                Self::exec_capture(&self, &f_cont_lock, &pic_count_lock, lens).await;
+                Self::exec_map_capture(&self, &f_cont_lock, &pic_count_lock, lens).await;
 
-            let mut next_img_due = Self::get_next_img(image_max_dt, end_time);
+            let mut next_img_due = Self::get_next_map_img(image_max_dt, end_time);
             if let Some(off) = offset {
                 console_messenger.send_thumbnail(off, lens);
                 state.update_success(img_t);
@@ -451,16 +478,42 @@ impl CameraController {
         }
     }
 
-    fn get_next_img(img_max_dt: I32F32, end_time: DateTime<Utc>) -> DateTime<Utc> {
-        let next_max_dt = Utc::now() + TimeDelta::seconds(img_max_dt.to_num::<i64>());
-        if next_max_dt > end_time {
-            end_time - Self::LAST_IMG_END_DELAY
-        } else {
-            next_max_dt
+    pub async fn execute_zo_single_target_cycle(
+        self: Arc<Self>,
+        f_cont_lock: Arc<RwLock<FlightComputer>>,
+        buffer: &mut OffsetZOImage,
+        deadline: DateTime<Utc>,
+    ) {
+        obj!("Starting acquisition cycle for objective!");
+        let lens = f_cont_lock.read().await.current_angle();
+        let mut pics = 0;
+
+        loop {
+            let next_img_due = Utc::now() + TimeDelta::seconds(1);
+            let img_init_timestamp = Utc::now();
+            match self.shoot_image_to_zo_buffer(Arc::clone(&f_cont_lock), lens, buffer).await {
+                Ok(pos) => {
+                    pics += 1;
+                    let s = (Utc::now() - img_init_timestamp).num_seconds();
+                    obj!("Took {pics:02}. picture. Processed for {s}s. Position was {pos}");
+                }
+                Err(e) => {
+                    error!("Couldn't take picture: {e}");
+                }
+            }
+            if Utc::now() > deadline {
+                return;
+            }
+            tokio::time::sleep((next_img_due - Utc::now()).to_std().unwrap_or(DT_0_STD)).await;
         }
     }
 
-    async fn exec_capture(
+    fn get_next_map_img(img_max_dt: I32F32, end_time: DateTime<Utc>) -> DateTime<Utc> {
+        let next_max_dt = Utc::now() + TimeDelta::seconds(img_max_dt.to_num::<i64>());
+        if next_max_dt > end_time { end_time - Self::LAST_IMG_END_DELAY } else { next_max_dt }
+    }
+
+    async fn exec_map_capture(
         self: &Arc<Self>,
         f_cont: &Arc<RwLock<FlightComputer>>,
         p_c: &Arc<Mutex<i32>>,
@@ -473,14 +526,14 @@ impl CameraController {
 
         let img_handle = tokio::spawn(async move {
             match self_clone.shoot_image_to_buffer(Arc::clone(&f_cont_clone), lens).await {
-                Ok(offset) => {
+                Ok((pos, offset)) => {
                     let pic_num = {
                         let mut lock = p_c_clone.lock().await;
                         *lock += 1;
                         *lock
                     };
                     let s = (Utc::now() - img_init_timestamp).num_seconds();
-                    info!("Took {pic_num:02}. picture. Processed for {s}s. Position was {offset}");
+                    info!("Took {pic_num:02}. picture. Processed for {s}s. Position was {pos}");
                     Some(offset)
                 }
                 Err(e) => {

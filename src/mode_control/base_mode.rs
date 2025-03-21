@@ -113,7 +113,6 @@ impl BaseMode {
                         k_clone.con(),
                         (end_t, rx),
                         img_dt,
-                        Self::DEF_MAPPING_ANGLE,
                         i_start.index(),
                     )
                     .await

@@ -7,10 +7,10 @@ use crate::mode_control::{
     mode_context::ModeContext,
     signal::{WaitExitSignal, ExecExitSignal, OpExitSignal},
 };
-use crate::{fatal, info, log, warn};
+use crate::{fatal, info, log, warn, DT_0_STD};
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
-use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
+use std::{future::Future, pin::Pin, sync::Arc};
 use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
 
@@ -20,8 +20,9 @@ pub trait GlobalMode: Sync {
     fn new_zo_rationale(&self) -> &'static str { "newly discovered ZO!" }
     fn new_bo_rationale(&self) -> &'static str { "newly discovered BO!" }
     fn tasks_done_rationale(&self) -> &'static str { "tasks list done!" }
+    fn tasks_done_exit_rationale(&self) -> &'static str { "tasks list done and exited orbit for ZO Retrieval!" }
     fn bo_done_rationale(&self) -> &'static str { "BO done or expired!" }
-    fn bo_left_rationale(&self) -> &'static str { "necessary Rescheduling for remaining BOs!" }
+    fn bo_left_rationale(&self) -> &'static str { "necessary rescheduling for remaining BOs!" }
     fn type_name(&self) -> &'static str;
     async fn init_mode(&self, context: Arc<ModeContext>) -> OpExitSignal;
 
@@ -36,20 +37,19 @@ pub trait GlobalMode: Sync {
             drop(sched_lock);
             t
         } {
-            let due_time = task.dt() - Utc::now();
+            let due_time = task.t() - Utc::now();
             let task_type = task.task_type();
             info!("TASK {tasks}: {task_type} in  {}s!", due_time.num_seconds());
-            while task.dt() > Utc::now() + TimeDelta::seconds(2) {
+            while task.t() > Utc::now() + TimeDelta::seconds(2) {
                 let context_clone = Arc::clone(&context);
-                match self.exec_task_wait(context_clone, task.dt()).await {
+                match self.exec_task_wait(context_clone, task.t()).await {
                     WaitExitSignal::Continue => {}
                     WaitExitSignal::SafeEvent => {
                         return self.safe_handler(context_local).await;
                     }
                     WaitExitSignal::NewObjectiveEvent(obj) => {
                         let context_clone = Arc::clone(&context);
-                        let ret = self.objective_handler(context_clone, obj).await;
-                        if let Some(opt) = ret {
+                        if let Some(opt) = self.objective_handler(context_clone, obj).await {
                             return opt;
                         };
                     }
@@ -58,7 +58,7 @@ pub trait GlobalMode: Sync {
                     }
                 };
             }
-            let task_delay = (task.dt() - Utc::now()).num_milliseconds() as f32 / 1000.0;
+            let task_delay = (task.t() - Utc::now()).num_milliseconds() as f32 / 1000.0;
             if task_delay.abs() > 2.0 {
                 log!("Task {tasks} delayed by {task_delay}s!");
             }
@@ -113,7 +113,7 @@ pub trait OrbitalMode: GlobalMode {
             } else {
                 warn!("Task wait time too short. Just waiting!");
                 Box::pin(async {
-                    let sleep = (due - Utc::now()).to_std().unwrap_or(Duration::from_secs(0));
+                    let sleep = (due - Utc::now()).to_std().unwrap_or(DT_0_STD);
                     tokio::time::timeout(sleep, cancel_task.cancelled()).await.ok().unwrap_or(());
                     Ok(BaseWaitExitSignal::Continue)
                 })

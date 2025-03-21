@@ -25,7 +25,9 @@ use crate::{error, fatal, info, log, obj};
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use std::sync::Arc;
+use fixed::types::I32F32;
 use tokio_util::sync::CancellationToken;
+use crate::flight_control::common::vec2d::Vec2D;
 use crate::mode_control::mode::zo_retrieval_mode::ZORetrievalMode;
 
 #[derive(Clone)]
@@ -33,6 +35,7 @@ pub struct ZOPrepMode {
     base: BaseMode,
     exit_burn: BurnSequence,
     target: KnownImgObjective,
+    targets: Vec<Vec2D<I32F32>>,
     left_orbit: bool,
 }
 
@@ -46,14 +49,14 @@ impl ZOPrepMode {
         zo: KnownImgObjective,
         mut base: BaseMode,
     ) -> Option<Self> {
+        let targets = zo.get_imaging_points();
         let exit_burn = if zo.min_images() == 1 {
-            let target_pos = zo.get_imaging_points()[0];
             let due = zo.end();
             let current_vel = context.k().f_cont().read().await.current_vel();
             TaskController::calculate_single_target_burn_sequence(
                 context.o_ch_clone().await.i_entry(),
                 current_vel,
-                target_pos,
+                targets[0],
                 due,
             )
             .await
@@ -82,12 +85,13 @@ impl ZOPrepMode {
                 base = BaseMode::MappingMode;
             }
         }
-        Some(ZOPrepMode { base, exit_burn, target: zo, left_orbit: false })
+        Some(ZOPrepMode { base, exit_burn, target: zo, left_orbit: false , targets})
     }
     
     fn new_base(&self, base: BaseMode) -> Self {
         Self {
             base,
+            targets: self.targets.clone(),
             exit_burn: self.exit_burn.clone(),
             target: self.target.clone(),
             left_orbit: self.left_orbit,
@@ -242,12 +246,7 @@ impl GlobalMode for ZOPrepMode {
                     context.k().f_cont().read().await.current_pos(),
                     self.bo_done_rationale(),
                 );
-                OpExitSignal::ReInit(Box::new(Self {
-                    base: BaseMode::MappingMode,
-                    exit_burn: self.exit_burn.clone(),
-                    target: self.target.clone(),
-                    left_orbit: self.left_orbit,
-                }))
+                OpExitSignal::ReInit(Box::new(self.new_base(BaseMode::MappingMode)))
             }
             BaseWaitExitSignal::ReturnSomeLeft => {
                 context.o_ch_lock().write().await.finish(
@@ -259,10 +258,14 @@ impl GlobalMode for ZOPrepMode {
         }
     }
 
-    async fn exit_mode(&self, c: Arc<ModeContext>) -> Box<dyn GlobalMode> {
-        let handler = c.k().f_cont().read().await.client();
+    async fn exit_mode(&self, context: Arc<ModeContext>) -> Box<dyn GlobalMode> {
+        let handler = context.k().f_cont().read().await.client();
+        context.o_ch_lock().write().await.finish(
+            context.k().f_cont().read().await.current_pos(),
+            self.tasks_done_exit_rationale(),
+        );
         if self.left_orbit {
-            Box::new(ZORetrievalMode::new(self.target.clone()))
+            Box::new(ZORetrievalMode::new(self.target.clone(), self.targets.clone()))
         } else {
             error!("ZOPrepMode::exit_mode called without left_orbit flag set!");
             Box::new(InOrbitMode::new(self.base.exit_base(handler).await))

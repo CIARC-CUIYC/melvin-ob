@@ -190,7 +190,7 @@ impl ConsoleMessenger {
             .await
             .iter()
             .map(|task| melvin_messages::Task {
-                scheduled_on: task.dt().timestamp_millis(),
+                scheduled_on: task.t().timestamp_millis(),
                 task: Some(match task.task_type() {
                     BaseTask::TakeImage(take_image) => {
                         let actual_position = if let ImageTaskStatus::Done { actual_pos, .. } =
