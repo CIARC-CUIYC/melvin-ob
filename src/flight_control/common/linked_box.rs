@@ -7,7 +7,7 @@ pub struct LinkedBox<T> {
     /// `VecDeque` holding the actual data
     list: VecDeque<T>,
     /// `max_size` represents the maximum length of the queue
-    max_size: usize,
+    size: usize,
 }
 
 impl<T> LinkedBox<T> {
@@ -19,10 +19,10 @@ impl<T> LinkedBox<T> {
     ///
     /// # Returns
     /// A new, empty `LinkedBox` instance.
-    pub fn new(max_size: usize) -> Self {
+    pub fn new(size: usize) -> Self {
         Self {
             list: VecDeque::new(),
-            max_size,
+            size,
         }
     }
 
@@ -34,7 +34,7 @@ impl<T> LinkedBox<T> {
     /// * `item` - The element to be added to the front of the list.
     pub fn push(&mut self, item: T) {
         self.list.push_front(item);
-        if self.len() > self.max_size {
+        if self.len() > self.size {
             self.list.pop_back();
         }
     }
@@ -56,6 +56,12 @@ impl<T> LinkedBox<T> {
     /// # Returns
     /// The number of elements in the list as a `usize`.
     pub fn len(&self) -> usize { self.list.len() }
+
+    /// Returns the maximum number of elements in the list.
+    ///
+    /// # Returns
+    /// The capacity of the list as a `usize`.
+    pub fn size(&self) -> usize { self.size }
 
     /// Checks if the list is empty.
     ///

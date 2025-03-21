@@ -586,6 +586,7 @@ impl FlightComputer {
     /// - `self_lock`: A `RwLock<Self>` reference to the active flight computer.
     /// - `burn_sequence`: A reference to the sequence of executed thruster burns.
     pub async fn execute_burn(self_lock: Arc<RwLock<Self>>, burn: &BurnSequence) {
+        let burn_start = Utc::now();
         for vel_change in burn.sequence_vel() {
             let st = tokio::time::Instant::now();
             let dt = Duration::from_secs(1);
@@ -601,7 +602,8 @@ impl FlightComputer {
             let f_cont = self_lock.read().await;
             (f_cont.current_pos(), f_cont.current_vel())
         };
-        log!("Burn sequence executed! Position: {pos}, Velocity: {vel}, expected Position: {target_pos}, expected Velocity: {target_vel}.");
+        let burn_dt = (Utc::now() - burn_start).num_seconds();
+        log!("Burn sequence finished after {burn_dt}s! Position: {pos}, Velocity: {vel}, expected Position: {target_pos}, expected Velocity: {target_vel}.");
     }
 
     pub async fn detumble_to(
@@ -611,6 +613,7 @@ impl FlightComputer {
     ) -> DateTime<Utc> {
         let ticker: i32 = 0;
         let max_speed = lens.get_max_speed();
+        let detumble_start = Utc::now();
         loop {
             let (pos, vel) = {
                 let f_locked = self_lock.read().await;
@@ -635,7 +638,8 @@ impl FlightComputer {
                 dt.to_num::<i64>() < 10
             };
             if dx.abs() < I32F32::lit("1.0") || cond {
-                log!("Detumbling finished with remaining DX: {dx} and dt {dt:2}s");
+                let detumble_dt = (Utc::now() - detumble_start).num_seconds();
+                log!("Detumbling finished after {detumble_dt}s with remaining DX: {dx} and dt {dt:2}s");
                 if overspeed {
                     todo!();
                 } else {

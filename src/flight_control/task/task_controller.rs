@@ -2,6 +2,8 @@ use super::{
     atomic_decision::AtomicDecision, atomic_decision_cube::AtomicDecisionCube, base_task::Task,
     score_grid::ScoreGrid, vel_change_task::VelocityChangeTaskRationale,
 };
+use crate::flight_control::camera_state::CameraAngle;
+use crate::flight_control::flight_state::TRANS_DEL;
 use crate::flight_control::orbit::BurnSequenceEvaluator;
 use crate::flight_control::task::end_condition::EndCondition;
 use crate::flight_control::{
@@ -15,14 +17,8 @@ use bitvec::prelude::BitRef;
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use num::Zero;
-use std::{
-    collections::VecDeque,
-    fmt::Debug,
-    sync::Arc,
-};
+use std::{collections::VecDeque, fmt::Debug, sync::Arc};
 use tokio::sync::RwLock;
-use crate::flight_control::camera_state::CameraAngle;
-use crate::flight_control::flight_state::TRANS_DEL;
 
 /// `TaskController` manages and schedules tasks for MELVIN.
 /// It leverages a thread-safe task queue and notifies waiting threads when
@@ -126,13 +122,11 @@ impl TaskController {
         let max_battery = (usable_batt_range / Self::BATTERY_RESOLUTION).round().to_num::<usize>();
         // Determine the prediction duration in seconds, constrained by the orbit period or `dt` if provided.
         let prediction_secs = {
-            let max_pred_secs =
-                Self::MAX_ORBIT_PREDICTION_SECS.min(orbit.period().0.to_num::<u32>()) as usize;
             if let Some(pred_secs) = dt {
                 // Ensure the prediction duration does not exceed the maximum prediction length or the provided duration.
-                max_pred_secs.min(pred_secs)
+                pred_secs
             } else {
-                max_pred_secs
+                Self::MAX_ORBIT_PREDICTION_SECS.min(orbit.period().0.to_num::<u32>()) as usize
             }
         };
 
@@ -197,20 +191,24 @@ impl TaskController {
                     let de = if s == 0 { 1 } else { -1 };
                     let new_e = (e as isize + de) as usize;
                     // Compute score for the decision to stay in the current state.
-                    let stay = {
-                        if s == 0 {
-                            // If in charge state, calculate score for staying.
-                            score_cube.front().unwrap().get(new_e.min(max_battery), s)
-                        } else if e > 0 {
-                            // If in acquisition state, consider score and state.
-                            score_cube.front().unwrap().get(new_e, s) + p_dt
-                        } else {
-                            // If battery is depleted, staying is not possible.
-                            i32::MIN
-                        }
+                    let stay = if s == 0 {
+                        // If in charge state, calculate score for staying.
+                        score_cube.front().unwrap().get(new_e.min(max_battery), s)
+                    } else if e > 0 {
+                        // If in acquisition state, consider score and state.
+                        score_cube.front().unwrap().get(new_e, s) + p_dt
+                    } else {
+                        // If battery is depleted, staying is not possible.
+                        i32::MIN
                     };
-                    // Compute score for the decision to switch to the other state.
-                    let switch = score_cube.back().unwrap().get(e, s ^ 1);
+
+                    let switch = if score_cube.len() < score_cube.size() {
+                        // We do not swap here as the time after the maximum prediction time is not predictable
+                        i32::MIN
+                    } else {
+                        // Compute score for the decision to switch to the other state.
+                        score_cube.back().unwrap().get(e, s ^ 1)
+                    };
                     // Choose the better decision and record it.
                     if stay >= switch {
                         dec_cube.set(t, e, s, AtomicDecision::stay(s));
@@ -778,13 +776,23 @@ impl TaskController {
 
     async fn schedule_zo_image(&self, t: DateTime<Utc>, pos: Vec2D<I32F32>, lens: CameraAngle) {
         let pos_u32 = Vec2D::new(pos.x().to_num::<u32>(), pos.y().to_num::<u32>());
-        let t_first = t - Self::ZO_IMAGE_FIRST_DEL;
-        self.enqueue_task(Task::image_task(pos_u32, lens, t_first)).await;
+        self.enqueue_task(Task::image_task(pos_u32, lens, t)).await;
     }
 
-    pub async fn schedule_retrieval_phase(&self, t: DateTime<Utc>, pos: Vec2D<I32F32>, lens: CameraAngle) {
-        self.schedule_zo_image(t, pos, lens).await;
+    pub async fn schedule_retrieval_phase(
+        &self,
+        t: DateTime<Utc>,
+        pos: Vec2D<I32F32>,
+        lens: CameraAngle,
+    ) {
+        let t_first = t - Self::ZO_IMAGE_FIRST_DEL;
+        self.schedule_zo_image(t_first, pos, lens).await;
         let trans_time = TRANS_DEL.get(&(FlightState::Acquisition, FlightState::Charge)).unwrap();
+        if Utc::now() + TimeDelta::from_std(*trans_time).unwrap() * 2 < t_first {
+            self.schedule_switch(FlightState::Charge, Utc::now()).await;
+            let last_charge_leave = t_first - TimeDelta::from_std(*trans_time).unwrap();
+            self.schedule_switch(FlightState::Acquisition, last_charge_leave).await;
+        }
     }
 
     /// Schedules a velocity change task for a given burn sequence.
