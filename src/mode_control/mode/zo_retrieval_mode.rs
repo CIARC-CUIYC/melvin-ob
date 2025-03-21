@@ -45,11 +45,9 @@ impl GlobalMode for ZORetrievalMode {
             self.target.optic_required(),
         )
         .await;
-        context
-            .k()
-            .t_cont()
-            .schedule_zo_image(target_t, self.targets[0], self.target.optic_required())
-            .await;
+        let t_cont = context.k().t_cont();
+        t_cont.clear_schedule().await; // Just to be sure
+        t_cont.schedule_retrieval_phase(target_t, self.targets[0], self.target.optic_required()).await;
         OpExitSignal::Continue
     }
 

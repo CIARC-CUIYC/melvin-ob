@@ -22,6 +22,7 @@ use std::{
 };
 use tokio::sync::RwLock;
 use crate::flight_control::camera_state::CameraAngle;
+use crate::flight_control::flight_state::TRANS_DEL;
 
 /// `TaskController` manages and schedules tasks for MELVIN.
 /// It leverages a thread-safe task queue and notifies waiting threads when
@@ -419,7 +420,7 @@ impl TaskController {
         // Return the best burn sequence, panicking if none was found
         evaluator.get_best_burn().map(|(burn, _)| burn)
     }
-    
+
     /*
     pub async fn sched_zo_retrieval_burn(
         self: Arc<TaskController>,
@@ -775,10 +776,15 @@ impl TaskController {
         self.enqueue_task(Task::switch_target(target, sched_t)).await;
     }
 
-    pub async fn schedule_zo_image(&self, t: DateTime<Utc>, pos: Vec2D<I32F32>, lens: CameraAngle) {
+    async fn schedule_zo_image(&self, t: DateTime<Utc>, pos: Vec2D<I32F32>, lens: CameraAngle) {
         let pos_u32 = Vec2D::new(pos.x().to_num::<u32>(), pos.y().to_num::<u32>());
         let t_first = t - Self::ZO_IMAGE_FIRST_DEL;
         self.enqueue_task(Task::image_task(pos_u32, lens, t_first)).await;
+    }
+
+    pub async fn schedule_retrieval_phase(&self, t: DateTime<Utc>, pos: Vec2D<I32F32>, lens: CameraAngle) {
+        self.schedule_zo_image(t, pos, lens).await;
+        let trans_time = TRANS_DEL.get(&(FlightState::Acquisition, FlightState::Charge)).unwrap();
     }
 
     /// Schedules a velocity change task for a given burn sequence.

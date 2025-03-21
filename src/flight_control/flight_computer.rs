@@ -152,6 +152,12 @@ impl FlightComputer {
         (Vec2D::new(trunc_x, trunc_y), Vec2D::new(dev_x, dev_y))
     }
 
+    pub fn round_vel_expand(vel: Vec2D<I32F32>) -> Vec2D<I32F32> {
+        let factor = I32F32::from_num(10f32.powi(i32::from(Self::VEL_BE_MAX_DECIMAL)));
+        let trunc_x = (vel.x() * factor).round();
+        let trunc_y = (vel.y() * factor).round();
+        Vec2D::new(trunc_x, trunc_y)
+    }
     pub fn round_vel(vel: Vec2D<I32F32>) -> (Vec2D<I32F32>, Vec2D<I64F64>) {
         let factor = I32F32::from_num(10f32.powi(i32::from(Self::VEL_BE_MAX_DECIMAL)));
         let factor_f64 = I64F64::from_num(10f64.powi(i32::from(Self::VEL_BE_MAX_DECIMAL)));
@@ -352,23 +358,30 @@ impl FlightComputer {
         (condition, rationale): (F, String),
         timeout_millis: u32,
         poll_interval: u16,
+        mute: bool,
     ) where
         F: Fn(&Self) -> bool,
     {
-        log!("Waiting for condition: {rationale}");
+        if !mute {
+            log!("Waiting for condition: {rationale}");
+        }
         let start_time = Instant::now();
         while start_time.elapsed().as_millis() < u128::from(timeout_millis) {
             let cond = { condition(&*self_lock.read().await) };
             if cond {
-                log!(
-                    "Condition met after {} ms",
-                    start_time.elapsed().as_millis()
-                );
+                if !mute {
+                    let dt = start_time.elapsed().as_millis();
+                    log!("Condition met after {dt} ms");
+                }
                 return;
             }
             tokio::time::sleep(Duration::from_millis(u64::from(poll_interval))).await;
         }
-        log!("Condition not met after {timeout_millis:#?} ms");
+        if mute {
+            warn!("Condition: {rationale} not met after {timeout_millis:#?} ms");
+        } else {
+            warn!("Condition not met after {timeout_millis:#?} ms");
+        }
     }
 
     pub async fn escape_safe(self_lock: Arc<RwLock<Self>>) {
@@ -392,6 +405,7 @@ impl FlightComputer {
             cond_not_trans,
             Self::DEF_COND_TO,
             Self::DEF_COND_PI,
+            false
         )
         .await;
         let state = self_lock.read().await.state();
@@ -402,7 +416,7 @@ impl FlightComputer {
             |cont: &FlightComputer| cont.current_battery() > Self::EXIT_SAFE_MIN_BATT,
             format!("Battery level is higher than {}", Self::EXIT_SAFE_MIN_BATT),
         );
-        Self::wait_for_condition(&self_lock, cond_min_charge, 450_000, Self::DEF_COND_PI).await;
+        Self::wait_for_condition(&self_lock, cond_min_charge, 450_000, Self::DEF_COND_PI, false).await;
         Self::set_state_wait(self_lock, target_state).await;
     }
 
@@ -502,7 +516,7 @@ impl FlightComputer {
             |cont: &FlightComputer| cont.state() == new_state,
             format!("State equals {new_state}"),
         );
-        Self::wait_for_condition(&self_lock, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
+        Self::wait_for_condition(&self_lock, cond, Self::DEF_COND_TO, Self::DEF_COND_PI, false).await;
         self_lock.write().await.target_state = None;
     }
 
@@ -511,7 +525,7 @@ impl FlightComputer {
     /// # Arguments
     /// - `self_lock`: A `RwLock<Self>` reference to the active flight computer.
     /// - `new_vel`: The target velocity vector.
-    pub async fn set_vel_wait(self_lock: Arc<RwLock<Self>>, new_vel: Vec2D<I32F32>) {
+    pub async fn set_vel_wait(self_lock: Arc<RwLock<Self>>, new_vel: Vec2D<I32F32>, mute: bool) {
         let (current_state, current_vel) = {
             let f_cont_read = self_lock.read().await;
             (f_cont_read.state(), f_cont_read.current_vel())
@@ -523,14 +537,15 @@ impl FlightComputer {
             (new_vel.to(&current_vel).abs() / Self::ACC_CONST).to_num::<f32>(),
         );
         self_lock.read().await.set_vel(new_vel).await;
-
-        Self::wait_for_duration(vel_change_dt).await;
-        let (comp_new_vel, _) = Self::round_vel(new_vel);
+        if vel_change_dt.as_secs() > 0 {
+            Self::wait_for_duration(vel_change_dt).await;
+        }
+        let comp_new_vel = Self::round_vel_expand(new_vel);
         let cond = (
-            |cont: &FlightComputer| cont.current_vel() == comp_new_vel,
-            format!("Vel equals {new_vel}"),
+            |cont: &FlightComputer| Self::round_vel_expand(cont.current_vel()) == comp_new_vel,
+            format!("Scaled Vel equals {new_vel}"),
         );
-        Self::wait_for_condition(&self_lock, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
+        Self::wait_for_condition(&self_lock, cond, Self::DEF_COND_TO, Self::DEF_COND_PI, mute).await;
     }
 
     /// Adjusts the satellite's camera angle and waits until the target angle is reached.
@@ -562,7 +577,7 @@ impl FlightComputer {
             |cont: &FlightComputer| cont.current_angle() == new_angle,
             format!("Lens equals {new_angle}"),
         );
-        Self::wait_for_condition(&self_lock, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
+        Self::wait_for_condition(&self_lock, cond, Self::DEF_COND_TO, Self::DEF_COND_PI, false).await;
     }
 
     /// Executes a sequence of thruster burns that affect the trajectory of MELVIN.
@@ -574,15 +589,26 @@ impl FlightComputer {
         for vel_change in burn.sequence_vel() {
             let st = tokio::time::Instant::now();
             let dt = Duration::from_secs(1);
-            FlightComputer::set_vel_wait(Arc::clone(&self_lock), *vel_change).await;
+            FlightComputer::set_vel_wait(Arc::clone(&self_lock), *vel_change, true).await;
             let el = st.elapsed();
             if el < dt {
                 tokio::time::sleep(dt).await;
             }
         }
+        let target_pos = burn.sequence_pos().last().unwrap();
+        let target_vel = burn.sequence_vel().last().unwrap();
+        let (pos, vel) = {
+            let f_cont = self_lock.read().await;
+            (f_cont.current_pos(), f_cont.current_vel())
+        };
+        log!("Burn sequence executed! Position: {pos}, Velocity: {vel}, expected Position: {target_pos}, expected Velocity: {target_vel}.");
     }
-    
-    pub async fn detumble_to(self_lock: Arc<RwLock<Self>>, target: Vec2D<I32F32>, lens: CameraAngle) -> DateTime<Utc> {
+
+    pub async fn detumble_to(
+        self_lock: Arc<RwLock<Self>>,
+        target: Vec2D<I32F32>,
+        lens: CameraAngle,
+    ) -> DateTime<Utc> {
         let ticker: i32 = 0;
         let max_speed = lens.get_max_speed();
         loop {
@@ -592,7 +618,7 @@ impl FlightComputer {
             };
             let to_target = pos.unwrapped_to(&target);
             let dt = to_target.abs();
-            let dx =  to_target - (vel.normalize() * dt);
+            let dx = to_target - (vel.normalize() * dt);
             let acc = dx.normalize() * Self::ACC_CONST;
             let overspeed = vel.abs() > max_speed;
             if ticker % 10 == 0 {

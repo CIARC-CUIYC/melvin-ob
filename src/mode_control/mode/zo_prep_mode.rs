@@ -25,18 +25,30 @@ use crate::{error, fatal, info, log, obj};
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use fixed::types::I32F32;
 use tokio_util::sync::CancellationToken;
 use crate::flight_control::common::vec2d::Vec2D;
 use crate::mode_control::mode::zo_retrieval_mode::ZORetrievalMode;
 
-#[derive(Clone)]
 pub struct ZOPrepMode {
     base: BaseMode,
     exit_burn: BurnSequence,
     target: KnownImgObjective,
     targets: Vec<Vec2D<I32F32>>,
-    left_orbit: bool,
+    left_orbit: AtomicBool,
+}
+
+impl Clone for ZOPrepMode {
+    fn clone(&self) -> Self {
+        Self {
+            base: self.base.clone(),
+            exit_burn: self.exit_burn.clone(),
+            target: self.target.clone(),
+            targets: self.targets.clone(),
+            left_orbit: AtomicBool::new(self.left_orbit.load(Ordering::Acquire)),
+        }
+    }
 }
 
 impl ZOPrepMode {
@@ -85,7 +97,7 @@ impl ZOPrepMode {
                 base = BaseMode::MappingMode;
             }
         }
-        Some(ZOPrepMode { base, exit_burn, target: zo, left_orbit: false , targets})
+        Some(ZOPrepMode { base, exit_burn, target: zo, left_orbit: AtomicBool::new(false) , targets})
     }
     
     fn new_base(&self, base: BaseMode) -> Self {
@@ -94,7 +106,7 @@ impl ZOPrepMode {
             targets: self.targets.clone(),
             exit_burn: self.exit_burn.clone(),
             target: self.target.clone(),
-            left_orbit: self.left_orbit,
+            left_orbit: AtomicBool::new(self.left_orbit.load(Ordering::Acquire)),
         }
     }
 }
@@ -152,6 +164,7 @@ impl GlobalMode for ZOPrepMode {
                     vel_change.burn().sequence_pos()[0]
                 );
                 FlightComputer::execute_burn(context.k().f_cont(), vel_change.burn()).await;
+                self.left_orbit.store(true, Ordering::Release);
             }
             BaseTask::TakeImage(_) => fatal!(
                 "Illegal task type {} for state {}!",
@@ -264,7 +277,7 @@ impl GlobalMode for ZOPrepMode {
             context.k().f_cont().read().await.current_pos(),
             self.tasks_done_exit_rationale(),
         );
-        if self.left_orbit {
+        if self.left_orbit.load(Ordering::Acquire) {
             Box::new(ZORetrievalMode::new(self.target.clone(), self.targets.clone()))
         } else {
             error!("ZOPrepMode::exit_mode called without left_orbit flag set!");

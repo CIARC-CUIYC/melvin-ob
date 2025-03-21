@@ -87,7 +87,7 @@ async fn init(url: &str) -> ModeContext {
     let c_orbit: ClosedOrbit = {
         let f_cont_lock = init_k.f_cont();
         FlightComputer::set_state_wait(init_k.f_cont(), FlightState::Acquisition).await;
-        FlightComputer::set_vel_wait(init_k.f_cont(), STATIC_ORBIT_VEL.into()).await;
+        FlightComputer::set_vel_wait(init_k.f_cont(), STATIC_ORBIT_VEL.into(), false).await;
         FlightComputer::set_angle_wait(init_k.f_cont(), CONST_ANGLE).await;
         let f_cont = f_cont_lock.read().await;
         ClosedOrbit::new(OrbitBase::new(&f_cont), CameraAngle::Wide).unwrap_or_else(|e| match e {
