@@ -1,23 +1,24 @@
 use crate::flight_control::common::vec2d::Vec2D;
 use crate::flight_control::flight_computer::FlightComputer;
+use crate::flight_control::flight_state::{FlightState, TRANS_DEL};
 use crate::flight_control::imaging::map_image::OffsetZOImage;
 use crate::flight_control::task::base_task::BaseTask;
 use crate::flight_control::{
     objective::{known_img_objective::KnownImgObjective, objective_base::ObjectiveBase},
     task::base_task::Task,
 };
+use crate::mode_control::mode::orbit_return_mode::OrbitReturnMode;
 use crate::mode_control::{
     base_mode::BaseWaitExitSignal,
     mode::global_mode::GlobalMode,
     mode_context::ModeContext,
     signal::{ExecExitSignal, OpExitSignal, WaitExitSignal},
 };
-use crate::{DT_0_STD, error, info};
+use crate::{DT_0_STD, error, info, log, warn};
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use std::sync::Arc;
-use crate::mode_control::mode::orbit_return_mode::OrbitReturnMode;
 
 #[derive(Clone)]
 pub struct ZORetrievalMode {
@@ -35,7 +36,6 @@ impl ZORetrievalMode {
 
 #[async_trait]
 impl GlobalMode for ZORetrievalMode {
-
     fn type_name(&self) -> &'static str { Self::MODE_NAME }
 
     async fn init_mode(&self, context: Arc<ModeContext>) -> OpExitSignal {
@@ -77,7 +77,7 @@ impl GlobalMode for ZORetrievalMode {
 
     async fn exec_task(&self, context: Arc<ModeContext>, task: Task) -> ExecExitSignal {
         match task.task_type() {
-            BaseTask::TakeImage(img) => {
+            BaseTask::TakeImage(_) => {
                 let bottom_left = Vec2D::new(
                     I32F32::from_num(self.target.zone()[0]),
                     I32F32::from_num(self.target.zone()[1]),
@@ -87,7 +87,9 @@ impl GlobalMode for ZORetrievalMode {
                 let mut buffer = OffsetZOImage::new(bottom_left, dimensions);
                 let deadline = Utc::now() + Self::SINGLE_TARGET_ACQ_DT;
                 let c_cont = context.k().c_cont();
-                c_cont.execute_zo_single_target_cycle(context.k().f_cont(), &mut buffer, deadline).await;
+                c_cont
+                    .execute_zo_single_target_cycle(context.k().f_cont(), &mut buffer, deadline)
+                    .await;
             }
             _ => error!(
                 "Invalid task type in ZORetrievalMode: {:?}",
@@ -98,13 +100,35 @@ impl GlobalMode for ZORetrievalMode {
     }
 
     async fn safe_handler(&self, context: Arc<ModeContext>) -> OpExitSignal {
-        todo!();
         FlightComputer::escape_safe(context.k().f_cont()).await;
-        context.o_ch_lock().write().await.finish(
-            context.k().f_cont().read().await.current_pos(),
-            self.safe_mode_rationale(),
-        );
-        OpExitSignal::ReInit(Box::new(self.clone()))
+        let (vel, pos) = {
+            let f_cont_locked = context.k().f_cont();
+            let f_cont = f_cont_locked.read().await;
+            (f_cont.current_vel(), f_cont.current_pos())
+        };
+        let to_target = pos.unwrapped_to(&self.targets[0]);
+        let angle = vel.angle_to(&to_target).abs();
+        if angle < I32F32::lit("10.0") {
+            let time_cond = {
+                let state = context.k().f_cont().read().await.state();
+                if state == FlightState::Acquisition {
+                    to_target.abs() > I32F32::lit("10.0") * angle
+                } else {
+                    let transition = I32F32::from_num(
+                        TRANS_DEL.get(&(state, FlightState::Acquisition)).unwrap().as_secs(),
+                    );
+                    to_target.abs() > I32F32::lit("10.0") * angle + transition
+                }
+            };
+            if time_cond {
+                log!("Objective still reachable after safe event, staying in ZORetrievalMode");
+                FlightComputer::set_state_wait(context.k().f_cont(), FlightState::Acquisition)
+                    .await;
+                return OpExitSignal::ReInit(Box::new(self.clone()));
+            }
+        }
+        warn!("Objective not reachable after safe event, exiting ZORetrievalMode");
+        OpExitSignal::ReInit(Box::new(OrbitReturnMode::new()))
     }
 
     async fn objective_handler(
@@ -119,7 +143,7 @@ impl GlobalMode for ZORetrievalMode {
         unimplemented!()
     }
 
-    async fn exit_mode(&self, _: Arc<ModeContext>) -> Box<dyn GlobalMode> { 
+    async fn exit_mode(&self, _: Arc<ModeContext>) -> Box<dyn GlobalMode> {
         info!("Exiting ZORetrievalMode");
         Box::new(OrbitReturnMode::new())
     }
