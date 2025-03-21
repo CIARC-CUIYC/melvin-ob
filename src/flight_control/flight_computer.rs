@@ -536,7 +536,7 @@ impl FlightComputer {
         let vel_change_dt = Duration::from_secs_f32(
             (new_vel.to(&current_vel).abs() / Self::ACC_CONST).to_num::<f32>(),
         );
-        self_lock.read().await.set_vel(new_vel).await;
+        self_lock.read().await.set_vel(new_vel, mute).await;
         if vel_change_dt.as_secs() > 0 {
             Self::wait_for_duration(vel_change_dt).await;
         }
@@ -620,7 +620,7 @@ impl FlightComputer {
                 (f_locked.current_pos(), f_locked.current_vel())
             };
             let to_target = pos.unwrapped_to(&target);
-            let dt = to_target.abs();
+            let dt = to_target.abs() / vel.abs();
             let dx = to_target - (vel.normalize() * dt);
             let acc = dx.normalize() * Self::ACC_CONST;
             let overspeed = vel.abs() > max_speed;
@@ -643,13 +643,13 @@ impl FlightComputer {
                 if overspeed {
                     todo!();
                 } else {
-                    self_lock.write().await.set_vel(vel).await;
+                    self_lock.write().await.set_vel(vel, true).await;
                 }
                 FlightComputer::set_angle_wait(Arc::clone(&self_lock), lens).await;
                 return Utc::now() + TimeDelta::seconds(dt.to_num::<i64>());
             }
             let (new_vel, _) = FlightComputer::trunc_vel(vel + acc);
-            self_lock.write().await.set_vel(new_vel).await;
+            self_lock.write().await.set_vel(new_vel, true).await;
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
@@ -700,7 +700,7 @@ impl FlightComputer {
     ///
     /// # Arguments
     /// - `new_vel`: The new velocity.
-    async fn set_vel(&self, new_vel: Vec2D<I32F32>) {
+    async fn set_vel(&self, new_vel: Vec2D<I32F32>, mute: bool) {
         let (vel, _) = Self::round_vel(new_vel);
         let req = ControlSatelliteRequest {
             vel_x: vel.x().to_f64().unwrap(),
@@ -709,8 +709,10 @@ impl FlightComputer {
             state: self.current_state.into(),
         };
         loop {
-            if req.send_request(&self.request_client).await.is_ok() {
-                info!("Velocity change commanded to [{}, {}]", vel.x(), vel.y());
+            if req.send_request(&self.request_client).await.is_ok()  {
+                if !mute {
+                    info!("Velocity change commanded to [{}, {}]", vel.x(), vel.y());
+                }
                 return;
             }
             error!("Unnoticed HTTP Error in set_vel()");
