@@ -29,9 +29,14 @@ pub struct BurnSequence {
     rem_angle_dev: I32F32,
     /// Minimum battery needed to initiate the sequence.
     min_charge: I32F32,
+    /// Minimum needed fuel to initiate the sequence.
+    min_fuel: I32F32,
 }
 
 impl BurnSequence {
+    /// Additional approximate detumble + return fuel need per exit maneuver
+    const ADD_FUEL_CONST: I32F32 = I32F32::lit("10.0");
+
     /// Creates a new `BurnSequence` with the provided parameters.
     ///
     /// # Parameters
@@ -74,6 +79,8 @@ impl BurnSequence {
             * FlightState::Acquisition.get_charge_rate()
             + I32F32::from_num(acc_dt) * FlightState::ACQ_ACC_ADDITION)
             * I32F32::lit("-2.0");
+        let min_fuel =
+            I32F32::from_num(maneuver_acq_time) * FlightComputer::ACC_CONST + Self::ADD_FUEL_CONST;
         Self {
             start_i,
             sequence_pos,
@@ -82,6 +89,7 @@ impl BurnSequence {
             detumble_dt,
             rem_angle_dev,
             min_charge,
+            min_fuel,
         }
     }
 
@@ -105,6 +113,9 @@ impl BurnSequence {
 
     /// Returns the minimum charge to initiate the burn.
     pub fn min_charge(&self) -> I32F32 { self.min_charge }
+    
+    /// Returns the minimum fuel to initiate the burn
+    pub fn min_fuel(&self) -> I32F32 { self.min_fuel }
 }
 
 pub struct BurnSequenceEvaluator {
@@ -175,7 +186,7 @@ impl BurnSequenceEvaluator {
         if let Some(b) = self.build_burn_sequence(bs_i, turns_in_dir, break_cond) {
             let cost = self.get_bs_cost(&b);
             let curr_cost = self.best_burn.as_ref().map_or(I32F32::MAX, |(_, c)| *c);
-            if curr_cost > cost && b.min_charge() <= max_needed_batt {
+            if curr_cost > cost && b.min_charge() <= max_needed_batt && b.min_fuel() <= self.fuel_left {
                 self.best_burn = Some((b, cost));
             }
         }
