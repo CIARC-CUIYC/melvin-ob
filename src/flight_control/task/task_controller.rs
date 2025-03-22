@@ -524,11 +524,6 @@ impl TaskController {
         if let Some(e) = &end_cond {
             let (left_dt, ch, s) = {
                 let dt = usize::try_from((e.time() - next_start.0).num_seconds()).unwrap_or(0);
-                log!(
-                    "Time left for end condition: {dt}, end charge is {} and start charge is {}.",
-                    e.charge(),
-                    next_start_e
-                );
                 (Some(dt), Some(e.charge()), Some(e.state()))
             };
             let result = Self::init_sched_dp(&orbit, next_start.1, left_dt, s, ch);
@@ -552,7 +547,7 @@ impl TaskController {
         let dt_tot = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
         info!(
             "Number of tasks after scheduling: {n_tasks}. \
-            Calculation and processing took {dt_tot:.2}",
+            Calculation and processing took {dt_tot:.2}s.",
         );
     }
 
@@ -616,7 +611,7 @@ impl TaskController {
         let (n_tasks, _) =
             self.sched_opt_orbit_res(comp_start, result, dt_sh, false, st_batt).await;
         let dt_tot = (Utc::now() - comp_start).num_milliseconds() as f32 / 1000.0;
-        info!("Tasks after scheduling: {n_tasks}. Calculation and processing took {dt_tot:.2}");
+        info!("Tasks after scheduling: {n_tasks}. Calculation and processing took {dt_tot:.2}s.");
     }
 
     async fn get_batt_and_state(f_cont_lock: &Arc<RwLock<FlightComputer>>) -> (I32F32, usize) {
