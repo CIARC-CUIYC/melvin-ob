@@ -222,7 +222,7 @@ impl BurnSequenceEvaluator {
         let bs_i = self.i.new_from_future_pos(pos, self.i.t() + TimeDelta::seconds(dt as i64));
 
         let best_target = self.find_best_target(pos, self.vel).unwrap();
-        let shortest_dir = pos.unwrapped_to(&best_target);
+        let shortest_dir = pos.to(&best_target);
 
         if self.vel.angle_to(&shortest_dir).abs() > Self::NINETY_DEG {
             return;
