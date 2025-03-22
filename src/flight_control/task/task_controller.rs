@@ -4,7 +4,7 @@ use super::{
 };
 use crate::flight_control::camera_state::CameraAngle;
 use crate::flight_control::flight_state::TRANS_DEL;
-use crate::flight_control::orbit::BurnSequenceEvaluator;
+use crate::flight_control::orbit::{BurnSequenceEvaluator, ExitBurnResult};
 use crate::flight_control::task::end_condition::EndCondition;
 use crate::flight_control::{
     common::{linked_box::LinkedBox, vec2d::Vec2D},
@@ -380,7 +380,7 @@ impl TaskController {
         target_pos: Vec2D<I32F32>,
         target_end_time: DateTime<Utc>,
         fuel_left: I32F32,
-    ) -> Option<BurnSequence> {
+    ) -> Option<ExitBurnResult> {
         info!("Starting to calculate single target burn towards {target_pos}");
 
         // Calculate maximum allowed time delta for the maneuver
@@ -410,31 +410,35 @@ impl TaskController {
             max_dt,
             max_off_orbit_dt,
             turns,
-            fuel_left
+            fuel_left,
         );
 
         for dt in remaining_range.rev() {
             evaluator.process_dt(dt, Self::MAX_BATTERY_THRESHOLD);
         }
         // Return the best burn sequence, panicking if none was found
-        evaluator.get_best_burn().map(|(burn, _)| burn)
+        evaluator.get_best_burn()
     }
-    
+
     pub async fn calculate_orbit_return_burn_sequence(
         curr_i: IndexedOrbitPosition,
         curr_vel: Vec2D<I32F32>,
         return_orbit: &ClosedOrbit,
         fuel_left: I32F32,
         batt_left: I32F32,
-        ) -> Option<BurnSequence> {
-            todo!()
+    ) -> Option<BurnSequence> {
+        todo!()
     }
-    
-    pub async fn schedule_orbit_return() {
+
+    pub async fn schedule_orbit_return(
+        self: Arc<TaskController>,
+        orbit_lock: Arc<RwLock<ClosedOrbit>>,
+        f_cont_lock: Arc<RwLock<FlightComputer>>,
+        scheduling_start_i: IndexedOrbitPosition,
+    ) {
         
     }
-    
-    
+
     #[allow(clippy::cast_possible_wrap)]
     async fn sched_single_comms_cycle(
         &self,

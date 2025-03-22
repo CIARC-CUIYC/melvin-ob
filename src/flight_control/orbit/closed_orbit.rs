@@ -7,6 +7,7 @@ use bitvec::{
 };
 use fixed::types::I32F32;
 use strum_macros::Display;
+use crate::flight_control::common::vec2d::Vec2D;
 
 /// Represents a closed orbit with a fixed period, image time information, and completion status.
 pub struct ClosedOrbit {
@@ -92,6 +93,10 @@ impl ClosedOrbit {
             .unwrap()
             .iter_mut()
             .for_each(|mut b| *b = true);
+    }
+    
+    pub fn get_closest_deviation(&self, pos: Vec2D<I32F32>) -> I32F32 {
+        todo!()
     }
 
     /// Returns the maximum image time interval for the orbit.

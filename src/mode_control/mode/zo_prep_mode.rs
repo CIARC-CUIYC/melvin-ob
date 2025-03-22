@@ -4,7 +4,6 @@ use crate::flight_control::{
         beacon_objective::BeaconObjective, known_img_objective::KnownImgObjective,
         objective_base::ObjectiveBase, objective_type::ObjectiveType,
     },
-    orbit::BurnSequence,
     task::{
         base_task::{BaseTask, Task},
         TaskController,
@@ -26,16 +25,14 @@ use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use fixed::types::I32F32;
 use tokio_util::sync::CancellationToken;
-use crate::flight_control::common::vec2d::Vec2D;
+use crate::flight_control::orbit::ExitBurnResult;
 use crate::mode_control::mode::zo_retrieval_mode::ZORetrievalMode;
 
 pub struct ZOPrepMode {
     base: BaseMode,
-    exit_burn: BurnSequence,
+    exit_burn: ExitBurnResult,
     target: KnownImgObjective,
-    targets: Vec<Vec2D<I32F32>>,
     left_orbit: AtomicBool,
 }
 
@@ -45,7 +42,6 @@ impl Clone for ZOPrepMode {
             base: self.base.clone(),
             exit_burn: self.exit_burn.clone(),
             target: self.target.clone(),
-            targets: self.targets.clone(),
             left_orbit: AtomicBool::new(self.left_orbit.load(Ordering::Acquire)),
         }
     }
@@ -81,18 +77,19 @@ impl ZOPrepMode {
             // TODO: multiple imaging points?
             fatal!("Zoned Objective with multiple images not yet supported");
         }?;
-        let entry_pos = exit_burn.sequence_pos().first().unwrap();
-        let exit_pos = exit_burn.sequence_pos().last().unwrap();
-        let entry_t = exit_burn.start_i().t().format("%H:%M:%S").to_string();
-        let exit_vel = exit_burn.sequence_vel().last().unwrap();
+        let exit_burn_seq = exit_burn.sequence();
+        let entry_pos = exit_burn_seq.sequence_pos().first().unwrap();
+        let exit_pos = exit_burn_seq.sequence_pos().last().unwrap();
+        let entry_t = exit_burn_seq.start_i().t().format("%H:%M:%S").to_string();
+        let exit_vel = exit_burn_seq.sequence_vel().last().unwrap();
         let tar = zo.get_imaging_points()[0];
         info!("Calculated Burn Sequence for Zoned Objective: {}", zo.id());
         log!("Entry at {entry_t}, Position will be {entry_pos}");
-        log!("Exit after {}s, Position will be {exit_pos}", exit_burn.acc_dt());
-        log!("Exit Velocity will be {exit_vel} aiming for target at {tar}. Detumble time is {}s.",  exit_burn.detumble_dt());
+        log!("Exit after {}s, Position will be {exit_pos}", exit_burn_seq.acc_dt());
+        log!("Exit Velocity will be {exit_vel} aiming for target at {tar}. Detumble time is {}s.",  exit_burn_seq.detumble_dt());
         log!("Whole BS: {:?}", exit_burn);
         if let BaseMode::BeaconObjectiveScanningMode(_) = base {
-            let burn_start = exit_burn.start_i().t();
+            let burn_start = exit_burn_seq.start_i().t();
             let worst_case_first_comms_end = {
                 let to_comms = 
                     FlightComputer::get_to_comms_dt_est(context.k().f_cont()).await;
@@ -102,13 +99,12 @@ impl ZOPrepMode {
                 base = BaseMode::MappingMode;
             }
         }
-        Some(ZOPrepMode { base, exit_burn, target: zo, left_orbit: AtomicBool::new(false) , targets})
+        Some(ZOPrepMode { base, exit_burn, target: zo, left_orbit: AtomicBool::new(false)})
     }
     
     fn new_base(&self, base: BaseMode) -> Self {
         Self {
             base,
-            targets: self.targets.clone(),
             exit_burn: self.exit_burn.clone(),
             target: self.target.clone(),
             left_orbit: AtomicBool::new(self.left_orbit.load(Ordering::Acquire)),
@@ -127,7 +123,7 @@ impl GlobalMode for ZOPrepMode {
     async fn init_mode(&self, context: Arc<ModeContext>) -> OpExitSignal {
         let cancel_task = CancellationToken::new();
         let comms_end = self.base.handle_sched_preconditions(Arc::clone(&context)).await;
-        let end = EndCondition::from_burn(&self.exit_burn);
+        let end = EndCondition::from_burn(self.exit_burn.sequence());
         let sched_handle = {
             let cancel_clone = cancel_task.clone();
             self.base.get_schedule_handle(Arc::clone(&context), cancel_clone, comms_end, Some(end)).await
@@ -137,7 +133,7 @@ impl GlobalMode for ZOPrepMode {
         tokio::select!(
             _ = &mut sched_handle => {
                 info!("Additionally scheduling Orbit Escape Burn Sequence!");
-                context.k().t_cont().schedule_vel_change(self.exit_burn.clone(), OrbitEscape).await;
+                context.k().t_cont().schedule_vel_change(self.exit_burn.sequence().clone(), OrbitEscape).await;
                 context.k().con().send_tasklist().await;
             },
             () = safe_mon.notified() => {
@@ -238,7 +234,7 @@ impl GlobalMode for ZOPrepMode {
                     context.k().f_cont().read().await.current_pos(),
                     self.new_zo_rationale(),
                 );
-                let burn_dt_cond = self.exit_burn.start_i().t() - Utc::now() > Self::MIN_REPLANNING_DT;
+                let burn_dt_cond = self.exit_burn.sequence().start_i().t() - Utc::now() > Self::MIN_REPLANNING_DT;
                 if k_obj.end() < self.target.end() && burn_dt_cond {
                     let new_obj_mode = Self::from_obj(context, k_obj, self.base.clone()).await;
                     if let Some(prep_mode) = new_obj_mode {
@@ -283,7 +279,7 @@ impl GlobalMode for ZOPrepMode {
             self.tasks_done_exit_rationale(),
         );
         if self.left_orbit.load(Ordering::Acquire) {
-            Box::new(ZORetrievalMode::new(self.target.clone(), self.targets.clone()))
+            Box::new(ZORetrievalMode::new(self.target.clone(), *self.exit_burn.unwrapped_target()))
         } else {
             error!("ZOPrepMode::exit_mode called without left_orbit flag set!");
             Box::new(InOrbitMode::new(self.base.exit_base(handler).await))

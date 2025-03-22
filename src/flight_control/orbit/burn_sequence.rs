@@ -7,6 +7,7 @@ use crate::flight_control::{
 };
 use chrono::{TimeDelta, Utc};
 use fixed::types::I32F32;
+use kiddo::{ImmutableKdTree, SquaredEuclidean};
 use num::Zero;
 
 /// Represents a sequence of corrective burns for orbital adjustments.
@@ -118,6 +119,35 @@ impl BurnSequence {
     pub fn min_fuel(&self) -> I32F32 { self.min_fuel }
 }
 
+#[derive(Debug, Clone)]
+pub struct ExitBurnResult {
+    sequence: BurnSequence,
+    cost: I32F32,
+    target_pos: Vec2D<I32F32>,
+    unwrapped_target: Vec2D<I32F32>,
+}
+
+impl ExitBurnResult {
+    pub fn new(
+        sequence: BurnSequence,
+        target_pos: Vec2D<I32F32>,
+        unwrapped_target: Vec2D<I32F32>,
+        cost: I32F32,
+    ) -> Self {
+        Self{
+            sequence,
+            target_pos,
+            unwrapped_target,
+            cost,
+        }
+    }
+    
+    pub fn cost(&self) -> I32F32 { self.cost }
+    pub fn sequence(&self) -> &BurnSequence { &self.sequence }
+    pub fn target_pos(&self) -> &Vec2D<I32F32> { &self.target_pos }
+    pub fn unwrapped_target(&self) -> &Vec2D<I32F32> { &self.unwrapped_target }
+}
+
 pub struct BurnSequenceEvaluator {
     i: IndexedOrbitPosition,
     vel: Vec2D<I32F32>,
@@ -126,8 +156,10 @@ pub struct BurnSequenceEvaluator {
     max_off_orbit_dt: usize,
     max_angle_dev: I32F32,
     turns: TurnsClockCClockTup,
-    best_burn: Option<(BurnSequence, I32F32)>,
+    best_burn: Option<ExitBurnResult>,
     fuel_left: I32F32,
+    dynamic_fuel_w: I32F32,
+    unwrapped_targets: [Vec2D<I32F32>;9]
 }
 
 impl BurnSequenceEvaluator {
@@ -155,6 +187,14 @@ impl BurnSequenceEvaluator {
             let vel_perp = vel.perp_unit(true) * FlightComputer::ACC_CONST;
             vel.angle_to(&vel_perp).abs()
         };
+        let unwrapped_targets = target_pos.unwrap_all();
+        let dynamic_fuel_w = math::interpolate(
+            FlightComputer::MIN_0,
+            FlightComputer::MAX_100,
+            Self::MIN_FUEL_W,
+            Self::MAX_FUEL_W,
+            fuel_left,
+        );
         Self {
             i,
             vel,
@@ -164,7 +204,9 @@ impl BurnSequenceEvaluator {
             max_angle_dev,
             turns,
             fuel_left,
+            dynamic_fuel_w,
             best_burn: None,
+            unwrapped_targets
         }
     }
 
@@ -172,7 +214,10 @@ impl BurnSequenceEvaluator {
     pub fn process_dt(&mut self, dt: usize, max_needed_batt: I32F32) {
         let pos = (self.i.pos() + self.vel * I32F32::from_num(dt)).wrap_around_map().round();
         let bs_i = self.i.new_from_future_pos(pos, self.i.t() + TimeDelta::seconds(dt as i64));
-        let shortest_dir = pos.unwrapped_to(&self.target_pos);
+        
+        let best_target = self.find_best_target(pos, self.vel).unwrap();
+        let shortest_dir = pos.unwrapped_to(&best_target);
+        
         if self.vel.angle_to(&shortest_dir).abs() > Self::NINETY_DEG {
             return;
         }
@@ -185,14 +230,14 @@ impl BurnSequenceEvaluator {
         };
         if let Some(b) = self.build_burn_sequence(bs_i, turns_in_dir, break_cond) {
             let cost = self.get_bs_cost(&b);
-            let curr_cost = self.best_burn.as_ref().map_or(I32F32::MAX, |(_, c)| *c);
+            let curr_cost = self.best_burn.as_ref().map_or(I32F32::MAX, |res| res.cost());
             if curr_cost > cost && b.min_charge() <= max_needed_batt && b.min_fuel() <= self.fuel_left {
-                self.best_burn = Some((b, cost));
+                self.best_burn = Some(ExitBurnResult::new(b, self.target_pos, best_target, cost));
             }
         }
     }
 
-    pub fn get_best_burn(self) -> Option<(BurnSequence, I32F32)> { self.best_burn }
+    pub fn get_best_burn(self) -> Option<ExitBurnResult> { self.best_burn }
 
     #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_possible_truncation)]
     fn build_burn_sequence(
@@ -283,18 +328,42 @@ impl BurnSequenceEvaluator {
         let norm_angle_dev =
             math::normalize_fixed32(bs.rem_angle_dev().abs(), I32F32::zero(), self.max_angle_dev)
                 .unwrap_or(I32F32::zero());
-
-        let dynamic_fuel_w = math::interpolate(
-            FlightComputer::MIN_0,
-            FlightComputer::MAX_100,
-            Self::MIN_FUEL_W,
-            Self::MAX_FUEL_W,
-            self.fuel_left,
-        );
-
+        
         // Compute the total cost of the burn sequence
         Self::OFF_ORBIT_W * norm_off_orbit_dt
-            + dynamic_fuel_w * norm_fuel
+            + self.dynamic_fuel_w * norm_fuel
             + Self::ANGLE_DEV_W * norm_angle_dev
+    }
+
+    fn find_best_target(
+        &self,
+        pos: Vec2D<I32F32>,
+        vel: Vec2D<I32F32>,
+    ) -> Option<Vec2D<I32F32>> {
+        self.unwrapped_targets.iter()
+            .map(|target_point| {
+                let distance = pos.euclid_distance_sq(target_point);
+                let angle_penalty = Self::direction_penalty(&vel, &pos, target_point);
+                let score = Self::OFF_ORBIT_W * distance + self.dynamic_fuel_w * angle_penalty;
+                (score, *target_point)
+            })
+            .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
+            .map(|(_, best_target)| best_target)
+    }
+
+    /// Direction penalty = 1 - cos(angle between direction_vec and target direction)
+    fn direction_penalty(vel: &Vec2D<I32F32>, pos: &Vec2D<I32F32>, target: &Vec2D<I32F32>) -> I32F32 {
+        let to_target = pos.to(target);
+
+        let dot = to_target.dot(vel);
+        let mag_dir = vel.abs_sq();
+        let mag_target = to_target.abs_sq();
+
+        if I32F32::is_zero(mag_dir) || I32F32::is_zero(mag_target) {
+            return I32F32::lit("1.0"); // Penalize undefined direction
+        }
+
+        let cos_sim_sq = dot * dot / (mag_dir * mag_target);
+        I32F32::lit("1.0") - cos_sim_sq.clamp(I32F32::lit("-1.0"), I32F32::lit("1.0"))
     }
 }

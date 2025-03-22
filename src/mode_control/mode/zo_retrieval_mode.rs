@@ -23,14 +23,14 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct ZORetrievalMode {
     target: KnownImgObjective,
-    targets: Vec<Vec2D<I32F32>>,
+    unwrapped_pos: Vec2D<I32F32>,
 }
 
 impl ZORetrievalMode {
     const MODE_NAME: &'static str = "ZORetrievalMode";
     const SINGLE_TARGET_ACQ_DT: TimeDelta = TimeDelta::seconds(10);
-    pub fn new(target: KnownImgObjective, targets: Vec<Vec2D<I32F32>>) -> Self {
-        Self { target, targets }
+    pub fn new(target: KnownImgObjective, unwrapped_pos: Vec2D<I32F32>) -> Self {
+        Self { target, unwrapped_pos }
     }
 }
 
@@ -41,13 +41,13 @@ impl GlobalMode for ZORetrievalMode {
     async fn init_mode(&self, context: Arc<ModeContext>) -> OpExitSignal {
         let target_t = FlightComputer::detumble_to(
             context.k().f_cont(),
-            self.targets[0],
+            self.unwrapped_pos,
             self.target.optic_required(),
         )
         .await;
         let t_cont = context.k().t_cont();
         t_cont.clear_schedule().await; // Just to be sure
-        t_cont.schedule_retrieval_phase(target_t, self.targets[0], self.target.optic_required()).await;
+        t_cont.schedule_retrieval_phase(target_t, self.unwrapped_pos.wrap_around_map(), self.target.optic_required()).await;
         OpExitSignal::Continue
     }
 
@@ -104,7 +104,7 @@ impl GlobalMode for ZORetrievalMode {
             let f_cont = f_cont_locked.read().await;
             (f_cont.current_vel(), f_cont.current_pos())
         };
-        let to_target = pos.unwrapped_to(&self.targets[0]);
+        let to_target = pos.to(&self.unwrapped_pos);
         let angle = vel.angle_to(&to_target).abs();
         if angle < I32F32::lit("10.0") {
             let time_cond = {

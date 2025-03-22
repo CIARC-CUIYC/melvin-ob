@@ -228,7 +228,7 @@ where T: FixedSigned + NumAssignOps
     /// # Returns
     /// A new vector representing the direction from `self` to `other`.
     pub fn to(&self, other: &Self) -> Self { Vec2D::new(other.x - self.x, other.y - self.y) }
-    
+
     pub fn to_num<R: FromFixed + Copy>(self) -> Vec2D<R> {
         Vec2D::new(self.x.to_num::<R>(), self.y.to_num::<R>())
     }
@@ -246,17 +246,39 @@ where T: FixedSigned + NumAssignOps
     /// A `Vec2D` representing the shortest unwrapped direction from `self` to `other`.
     pub fn unwrapped_to(&self, other: &Self) -> Self {
         let options = self.get_projected_in_range(other, (&[1, 0, -1], &[1, 0, -1]));
-        options.iter().min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Less)).unwrap().0
+        options
+            .into_iter()
+            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Less))
+            .unwrap()
+            .0
+    }
+
+    pub fn unwrap_all(&self) -> [Self; 9] {
+        self.get_projected_in_range(self, (&[1, 0, -1], &[1, 0, -1]))
+            .into_iter()
+            .take(9)
+            .map(|x| x.0)
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap()
     }
 
     pub fn unwrapped_to_top_right(&self, other: &Self) -> Self {
         let options = self.get_projected_in_range(other, (&[1, 0], &[1, 0]));
-        options.iter().min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Less)).unwrap().0
+        options
+            .into_iter()
+            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Less))
+            .unwrap()
+            .0
     }
 
     pub fn unwrapped_to_bottom_right(&self, other: &Self) -> Self {
         let options = self.get_projected_in_range(other, (&[1, 0], &[-1, 0]));
-        options.iter().min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Less)).unwrap().0
+        options
+            .into_iter()
+            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Less))
+            .unwrap()
+            .0
     }
 
     fn get_projected_in_range(&self, to: &Self, range: (&[i8], &[i8])) -> Vec<(Self, I64F64)> {
@@ -396,8 +418,17 @@ where T: FixedSigned + NumAssignOps
     ///
     /// # Returns
     /// The Euclidean distance as a scalar of type `T`.
-    pub fn euclid_distance(&self, other: &Self) -> T {
-        ((self.x - other.x) * (self.x - other.x) + (self.y - other.y) * (self.y - other.y)).sqrt()
+    pub fn euclid_distance(&self, other: &Self) -> T { self.euclid_distance_sq(other).sqrt() }
+
+    /// Computes the Euclidean distance squared.
+    ///
+    /// # Arguments
+    /// * `other` - The other vector to compute the distance to.
+    ///
+    /// # Returns
+    /// The Euclidean distance squared as a scalar of type `T`.
+    pub fn euclid_distance_sq(&self, other: &Self) -> T {
+        (self.x - other.x) * (self.x - other.x) + (self.y - other.y) * (self.y - other.y)
     }
 }
 
@@ -636,7 +667,7 @@ where T: Copy
     /// Creates a `Vec2D` from a slice of (x, y) values.
     ///
     /// # Arguments
-    /// * `slice` - A tuple representing the x and y values.
+    /// * `slice` - A slice representing the x and y values.
     ///
     /// # Returns
     /// A new `Vec2D` created from the slice.
@@ -646,4 +677,17 @@ where T: Copy
             y: slice[1],
         }
     }
+}
+
+impl<T> From<Vec2D<T>> for [T; 2]
+where T: Copy
+{
+    /// Creates a slice [x, y] from a `Vec2D`.
+    ///
+    /// # Arguments
+    /// * `vec` - A Vec2D representing the x and y values.
+    ///
+    /// # Returns
+    /// A new slice created from the `Vec2D`.
+    fn from(vec: Vec2D<T>) -> Self { [vec.x(), vec.y()] }
 }

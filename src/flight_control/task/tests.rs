@@ -43,13 +43,14 @@ async fn test_single_target_burn_calculator() {
     let mock_obj_point = get_rand_pos();
     let mock_end_t = get_rand_end_t();
     let mock_fuel_left = get_rand_fuel();
-    let exit_burn = TaskController::calculate_single_target_burn_sequence(
+    let res = TaskController::calculate_single_target_burn_sequence(
         mock_start_point,
         Vec2D::from(STATIC_ORBIT_VEL),
         mock_obj_point,
         mock_end_t,
         mock_fuel_left,
     ).await.unwrap();
+    let exit_burn = res.sequence();
     let entry_pos = exit_burn.sequence_pos().first().unwrap();
     let exit_pos = exit_burn.sequence_pos().last().unwrap();
     let entry_t = exit_burn.start_i().t().format("%H:%M:%S").to_string();
