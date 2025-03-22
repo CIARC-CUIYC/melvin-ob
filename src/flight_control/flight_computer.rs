@@ -185,7 +185,6 @@ impl FlightComputer {
     /// - The second vector contains possible counterclockwise turns `(position, velocity)`.
     #[allow(clippy::cast_possible_truncation)]
     pub fn compute_possible_turns(init_vel: Vec2D<I32F32>) -> TurnsClockCClockTup {
-        info!("Precomputing possible turns...");
         let start_x = init_vel.x();
         let end_x = I32F32::zero();
         let start_y = init_vel.y();
@@ -238,18 +237,8 @@ impl FlightComputer {
 
         // Determine the ordering of clockwise and counterclockwise turns based on the direction of steps.
         if step_x.signum() == step_y.signum() {
-            info!(
-                "Possible turns: {} clockwise and {} counter clockwise.",
-                y_const_x_change.len(),
-                x_const_y_change.len()
-            );
             (y_const_x_change, x_const_y_change)
         } else {
-            info!(
-                "Possible turns: {} clockwise and {} counter clockwise.",
-                x_const_y_change.len(),
-                y_const_x_change.len()
-            );
             (x_const_y_change, y_const_x_change)
         }
     }
@@ -477,7 +466,6 @@ impl FlightComputer {
             return (0, TimeDelta::seconds(rem_t.to_num::<i64>()));
         }
         let charge_dt = Self::get_charge_dt(&self_lock).await;
-        log!("Charge time for comms: {}", charge_dt);
 
         if charge_dt > 0 {
             (charge_dt, TimeDelta::seconds(charge_dt as i64) + t_time * 2)

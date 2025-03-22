@@ -397,7 +397,6 @@ impl TaskController {
             tokio::spawn(async move { FlightComputer::compute_possible_turns(curr_vel) });
 
         let last_possible_dt = Self::find_last_possible_dt(&curr_i, &curr_vel, &target_pos, max_dt);
-        info!("Done skipping impossible start times. Last possible dt: {last_possible_dt}");
 
         // Define range for evaluation and initialize best burn sequence tracker
         let remaining_range = Self::OBJECTIVE_SCHEDULE_MIN_DT..=last_possible_dt;
