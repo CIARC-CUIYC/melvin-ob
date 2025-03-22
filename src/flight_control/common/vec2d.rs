@@ -1,5 +1,5 @@
 use fixed::prelude::{FromFixed, ToFixed};
-use fixed::types::{I32F32, I64F64};
+use fixed::types::{I32F32, I64F64, I96F32};
 use fixed::{
     traits::{Fixed, FixedSigned},
     types::I32F0,
@@ -115,6 +115,22 @@ impl MapSize for I32F32 {
         Vec2D {
             x: I32F32::from_num(21600.0),
             y: I32F32::from_num(10800.0),
+        }
+    }
+}
+
+/// Implementation of the `MapSize` trait for the `I96F32` fixed-point number type.
+impl MapSize for I96F32 {
+    type Output = I96F32;
+
+    /// Defines the size of the map as a `Vec2D` with dimensions 21600.0 x 10800.0.
+    ///
+    /// # Returns
+    /// A `Vec2D` with fixed-point components representing the map dimensions.
+    fn map_size() -> Vec2D<I96F32> {
+        Vec2D {
+            x: I96F32::from_num(21600.0),
+            y: I96F32::from_num(10800.0),
         }
     }
 }

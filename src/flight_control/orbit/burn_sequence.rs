@@ -1,3 +1,4 @@
+use std::sync::LazyLock;
 use super::index::IndexedOrbitPosition;
 use crate::flight_control::{
     common::{math, vec2d::Vec2D},
@@ -8,6 +9,7 @@ use crate::flight_control::{
 use chrono::{TimeDelta, Utc};
 use fixed::types::{I32F32, I96F32};
 use num::Zero;
+use crate::flight_control::common::vec2d::MapSize;
 
 /// Represents a sequence of corrective burns for orbital adjustments.
 ///
@@ -161,6 +163,10 @@ pub struct BurnSequenceEvaluator {
     unwrapped_targets: [Vec2D<I32F32>; 9],
 }
 
+static MAX_DIST: LazyLock<I32F32> = LazyLock::new(|| {
+    I32F32::from_num((Vec2D::<I96F32>::map_size() * I96F32::from_num(2)).abs())
+});
+
 impl BurnSequenceEvaluator {
     /// A constant representing a 90-degree angle, in fixed-point format.
     const NINETY_DEG: I32F32 = I32F32::lit("90.0");
@@ -172,6 +178,7 @@ impl BurnSequenceEvaluator {
     const MIN_FUEL_W: I32F32 = I32F32::lit("1.0");
     /// Weight assigned to angle deviation in optimization calculations.
     const ANGLE_DEV_W: I32F32 = I32F32::lit("2.0");
+    
 
     pub fn new(
         i: IndexedOrbitPosition,
@@ -227,7 +234,7 @@ impl BurnSequenceEvaluator {
                 (&self.turns.1, true)
             }
         };
-        if let Some(b) = self.build_burn_sequence(bs_i, turns_in_dir, break_cond) {
+        if let Some(b) = self.build_burn_sequence(bs_i, turns_in_dir, break_cond, &best_target) {
             let cost = self.get_bs_cost(&b);
             let curr_cost = self.best_burn.as_ref().map_or(I32F32::MAX, ExitBurnResult::cost);
             if curr_cost > cost
@@ -247,6 +254,7 @@ impl BurnSequenceEvaluator {
         burn_i: IndexedOrbitPosition,
         turns_in_dir: &[(Vec2D<I32F32>, Vec2D<I32F32>)],
         break_cond: bool,
+        best_target: &Vec2D<I32F32>
     ) -> Option<BurnSequence> {
         let mut add_dt = 0;
         let mut fin_sequence_pos: Vec<Vec2D<I32F32>> = vec![burn_i.pos()];
@@ -257,7 +265,7 @@ impl BurnSequenceEvaluator {
             let next_seq_pos = (burn_i.pos() + atomic_turn.0).wrap_around_map();
             let next_vel = atomic_turn.1;
 
-            let next_to_target = next_seq_pos.unwrapped_to(&self.target_pos);
+            let next_to_target = next_seq_pos.to(best_target);
             let min_dt = (next_to_target.abs() / next_vel.abs()).abs().round().to_num::<usize>();
             let dt = (burn_i.t() - Utc::now()).num_seconds() as usize;
             // Check if the maneuver exceeds the maximum allowed time
@@ -273,7 +281,7 @@ impl BurnSequenceEvaluator {
                 let last_pos = fin_sequence_pos.last().unwrap();
                 let last_vel = fin_sequence_vel.last().unwrap();
                 let (fin_dt, fin_angle_dev) = {
-                    let last_to_target = last_pos.unwrapped_to(&self.target_pos);
+                    let last_to_target = last_pos.to(best_target);
                     let last_angle_deviation = -last_vel.angle_to(&last_to_target);
                     let this_angle_deviation = next_vel.angle_to(&next_to_target);
 
@@ -288,7 +296,7 @@ impl BurnSequenceEvaluator {
                     let acc = (next_vel - *last_vel) * corr_burn_perc;
                     let (corr_vel, _) = FlightComputer::trunc_vel(next_vel + acc);
                     let corr_pos = *last_pos + corr_vel;
-                    let corr_to_target = corr_pos.unwrapped_to(&self.target_pos);
+                    let corr_to_target = corr_pos.to(best_target);
                     let corr_angle_dev = corr_vel.angle_to(&corr_to_target);
                     fin_sequence_pos.push(corr_pos.round());
                     fin_sequence_vel.push(corr_vel);
@@ -341,8 +349,9 @@ impl BurnSequenceEvaluator {
         self.unwrapped_targets
             .iter()
             .map(|target_point| {
-                let distance = pos.euclid_distance(target_point);
+                let distance = pos.euclid_distance(target_point) / *MAX_DIST;
                 let angle_penalty = Self::direction_penalty(&vel, &pos, target_point);
+                
                 let score = Self::OFF_ORBIT_W * distance + self.dynamic_fuel_w * angle_penalty;
                 (score, *target_point)
             })
@@ -362,15 +371,20 @@ impl BurnSequenceEvaluator {
         let to_target = pos_i128.to(&target_i128);
 
         let dot = to_target.dot(&vel_i128);
-        let mag_dir = vel_i128.abs_sq();
-        let mag_target = to_target.abs_sq();
+        let mag_dir = vel_i128.abs();
+        let mag_target = to_target.abs();
 
         if I96F32::is_zero(mag_dir) || I96F32::is_zero(mag_target) {
             return I32F32::lit("1.0"); // Penalize undefined direction
         }
 
-        let cos_sim_sq = dot * dot / (mag_dir * mag_target);
-        I32F32::lit("1.0")
-            - I32F32::from_num(cos_sim_sq.clamp(I96F32::lit("-1.0"), I96F32::lit("1.0")))
+        let cos_sim = dot / (mag_dir * mag_target);
+        // Base penalty from 0 to 0.2 for angles 0 to 90 degrees
+        let base_penalty = I96F32::lit("0.2") * (I96F32::lit("1.0") - cos_sim);
+        // Extra penalty that only applies when cos_sim is negative (angles > 90°)
+        // This adds up to 0.6 more penalty points for the range from 90° to 180°
+        let extra_penalty = I96F32::lit("0.6") * (I96F32::lit("0.0") - cos_sim).max(I96F32::lit("0.0"));
+
+        I32F32::from_num(base_penalty + extra_penalty)
     }
 }
