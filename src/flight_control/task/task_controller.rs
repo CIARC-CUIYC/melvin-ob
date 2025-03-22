@@ -379,6 +379,7 @@ impl TaskController {
         curr_vel: Vec2D<I32F32>,
         target_pos: Vec2D<I32F32>,
         target_end_time: DateTime<Utc>,
+        fuel_left: I32F32,
     ) -> Option<BurnSequence> {
         info!("Starting to calculate single target burn towards {target_pos}");
 
@@ -410,6 +411,7 @@ impl TaskController {
             max_dt,
             max_off_orbit_dt,
             turns,
+            fuel_left
         );
 
         for dt in remaining_range.rev() {
@@ -418,37 +420,6 @@ impl TaskController {
         // Return the best burn sequence, panicking if none was found
         evaluator.get_best_burn().map(|(burn, _)| burn)
     }
-
-    /*
-    pub async fn sched_zo_retrieval_burn(
-        self: Arc<TaskController>,
-        f_cont_lock: Arc<RwLock<FlightComputer>>,
-        target: Vec2D<I32F32>,
-        t: DateTime<Utc>,
-    ) {
-        log!("Calculating/Scheduling ZO retrieval burn.");
-        let (pos, vel, state, batt) = {
-            let f = f_cont_lock.read().await;
-            (
-                f.current_pos(),
-                f.current_vel(),
-                f.state(),
-                f.current_battery(),
-            )
-        };
-        assert_eq!(
-            state,
-            FlightState::Acquisition,
-            "Unexpected Critical state {state}."
-        );
-        let act_pos = pos + vel * I32F32::from_num((t - Utc::now()).num_seconds());
-        let deviation = act_pos.unwrapped_to(&target);
-        log!(
-            "Deviation after burn is {deviation}. Detumble time is {t}s. Remaining battery is {batt}%."
-        );
-        let (burn, hold, dev) = TaskController::calculate_orbit_correction_burn(vel, deviation, t);
-        log!("Calculated burn! Hold time is {hold}s. Resulting deviation will be {dev}.");
-    }*/
 
     #[allow(clippy::cast_possible_wrap)]
     async fn sched_single_comms_cycle(

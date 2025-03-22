@@ -64,12 +64,17 @@ impl ZOPrepMode {
         let targets = zo.get_imaging_points();
         let exit_burn = if zo.min_images() == 1 {
             let due = zo.end();
-            let current_vel = context.k().f_cont().read().await.current_vel();
+            let (current_vel, fuel_left) = {
+                let f_cont_lock = context.k().f_cont();
+                let f_cont = f_cont_lock.read().await;
+                (f_cont.current_vel(), f_cont.fuel_left())
+            };
             TaskController::calculate_single_target_burn_sequence(
                 context.o_ch_clone().await.i_entry(),
                 current_vel,
                 targets[0],
                 due,
+                fuel_left
             )
             .await
         } else {

@@ -116,6 +116,7 @@ pub struct BurnSequenceEvaluator {
     max_angle_dev: I32F32,
     turns: TurnsClockCClockTup,
     best_burn: Option<(BurnSequence, I32F32)>,
+    fuel_left: I32F32,
 }
 
 impl BurnSequenceEvaluator {
@@ -123,8 +124,10 @@ impl BurnSequenceEvaluator {
     const NINETY_DEG: I32F32 = I32F32::lit("90.0");
     /// Weight assigned to off-orbit delta time in optimization calculations.
     const OFF_ORBIT_W: I32F32 = I32F32::lit("3.0");
-    /// Weight assigned to fuel consumption in optimization calculations.
-    const FUEL_W: I32F32 = I32F32::lit("1.0");
+    /// Maximum Weight assigned to fuel consumption in optimization calculations.
+    const MAX_FUEL_W: I32F32 = I32F32::lit("3.0");
+    /// Minimum Weight assigned to fuel consumption in optimization calculations.
+    const MIN_FUEL_W: I32F32 = I32F32::lit("1.0");
     /// Weight assigned to angle deviation in optimization calculations.
     const ANGLE_DEV_W: I32F32 = I32F32::lit("2.0");
 
@@ -135,6 +138,7 @@ impl BurnSequenceEvaluator {
         max_dt: usize,
         max_off_orbit_dt: usize,
         turns: TurnsClockCClockTup,
+        fuel_left: I32F32,
     ) -> Self {
         let max_angle_dev = {
             let vel_perp = vel.perp_unit(true) * FlightComputer::ACC_CONST;
@@ -148,6 +152,7 @@ impl BurnSequenceEvaluator {
             max_off_orbit_dt,
             max_angle_dev,
             turns,
+            fuel_left,
             best_burn: None,
         }
     }
@@ -268,9 +273,17 @@ impl BurnSequenceEvaluator {
             math::normalize_fixed32(bs.rem_angle_dev().abs(), I32F32::zero(), self.max_angle_dev)
                 .unwrap_or(I32F32::zero());
 
+        let dynamic_fuel_w = math::interpolate(
+            FlightComputer::MIN_0,
+            FlightComputer::MAX_100,
+            Self::MIN_FUEL_W,
+            Self::MAX_FUEL_W,
+            self.fuel_left,
+        );
+
         // Compute the total cost of the burn sequence
         Self::OFF_ORBIT_W * norm_off_orbit_dt
-            + Self::FUEL_W * norm_fuel
+            + dynamic_fuel_w * norm_fuel
             + Self::ANGLE_DEV_W * norm_angle_dev
     }
 }

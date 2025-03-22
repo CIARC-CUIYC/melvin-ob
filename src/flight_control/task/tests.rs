@@ -29,17 +29,26 @@ fn get_rand_end_t() -> DateTime<Utc> {
     now + TimeDelta::seconds(rand_secs)
 }
 
+fn get_rand_fuel() -> I32F32 {
+    const MIN_FUEL: f32 = 10.0;
+    const MAX_FUEL: f32 = 100.0;
+    let mut rng = rand::rng();
+    I32F32::from_num(rng.random_range(MIN_FUEL..MAX_FUEL))
+}
+
 #[tokio::test]
 async fn test_single_target_burn_calculator() {
     info!("Running Single Target Burn Calculator Test");
     let mock_start_point = get_start_pos();
     let mock_obj_point = get_rand_pos();
     let mock_end_t = get_rand_end_t();
+    let mock_fuel_left = get_rand_fuel();
     let exit_burn = TaskController::calculate_single_target_burn_sequence(
         mock_start_point,
         Vec2D::from(STATIC_ORBIT_VEL),
         mock_obj_point,
         mock_end_t,
+        mock_fuel_left,
     ).await.unwrap();
     let entry_pos = exit_burn.sequence_pos().first().unwrap();
     let exit_pos = exit_burn.sequence_pos().last().unwrap();
