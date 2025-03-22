@@ -6,8 +6,7 @@ use crate::flight_control::{
     task::TaskController,
 };
 use chrono::{TimeDelta, Utc};
-use fixed::types::I32F32;
-use kiddo::{ImmutableKdTree, SquaredEuclidean};
+use fixed::types::{I32F32, I96F32};
 use num::Zero;
 
 /// Represents a sequence of corrective burns for orbital adjustments.
@@ -114,7 +113,7 @@ impl BurnSequence {
 
     /// Returns the minimum charge to initiate the burn.
     pub fn min_charge(&self) -> I32F32 { self.min_charge }
-    
+
     /// Returns the minimum fuel to initiate the burn
     pub fn min_fuel(&self) -> I32F32 { self.min_fuel }
 }
@@ -134,14 +133,14 @@ impl ExitBurnResult {
         unwrapped_target: Vec2D<I32F32>,
         cost: I32F32,
     ) -> Self {
-        Self{
+        Self {
             sequence,
+            cost,
             target_pos,
             unwrapped_target,
-            cost,
         }
     }
-    
+
     pub fn cost(&self) -> I32F32 { self.cost }
     pub fn sequence(&self) -> &BurnSequence { &self.sequence }
     pub fn target_pos(&self) -> &Vec2D<I32F32> { &self.target_pos }
@@ -159,7 +158,7 @@ pub struct BurnSequenceEvaluator {
     best_burn: Option<ExitBurnResult>,
     fuel_left: I32F32,
     dynamic_fuel_w: I32F32,
-    unwrapped_targets: [Vec2D<I32F32>;9]
+    unwrapped_targets: [Vec2D<I32F32>; 9],
 }
 
 impl BurnSequenceEvaluator {
@@ -206,7 +205,7 @@ impl BurnSequenceEvaluator {
             fuel_left,
             dynamic_fuel_w,
             best_burn: None,
-            unwrapped_targets
+            unwrapped_targets,
         }
     }
 
@@ -214,10 +213,10 @@ impl BurnSequenceEvaluator {
     pub fn process_dt(&mut self, dt: usize, max_needed_batt: I32F32) {
         let pos = (self.i.pos() + self.vel * I32F32::from_num(dt)).wrap_around_map().round();
         let bs_i = self.i.new_from_future_pos(pos, self.i.t() + TimeDelta::seconds(dt as i64));
-        
+
         let best_target = self.find_best_target(pos, self.vel).unwrap();
         let shortest_dir = pos.unwrapped_to(&best_target);
-        
+
         if self.vel.angle_to(&shortest_dir).abs() > Self::NINETY_DEG {
             return;
         }
@@ -230,8 +229,11 @@ impl BurnSequenceEvaluator {
         };
         if let Some(b) = self.build_burn_sequence(bs_i, turns_in_dir, break_cond) {
             let cost = self.get_bs_cost(&b);
-            let curr_cost = self.best_burn.as_ref().map_or(I32F32::MAX, |res| res.cost());
-            if curr_cost > cost && b.min_charge() <= max_needed_batt && b.min_fuel() <= self.fuel_left {
+            let curr_cost = self.best_burn.as_ref().map_or(I32F32::MAX, ExitBurnResult::cost);
+            if curr_cost > cost
+                && b.min_charge() <= max_needed_batt
+                && b.min_fuel() <= self.fuel_left
+            {
                 self.best_burn = Some(ExitBurnResult::new(b, self.target_pos, best_target, cost));
             }
         }
@@ -328,21 +330,18 @@ impl BurnSequenceEvaluator {
         let norm_angle_dev =
             math::normalize_fixed32(bs.rem_angle_dev().abs(), I32F32::zero(), self.max_angle_dev)
                 .unwrap_or(I32F32::zero());
-        
+
         // Compute the total cost of the burn sequence
         Self::OFF_ORBIT_W * norm_off_orbit_dt
             + self.dynamic_fuel_w * norm_fuel
             + Self::ANGLE_DEV_W * norm_angle_dev
     }
 
-    fn find_best_target(
-        &self,
-        pos: Vec2D<I32F32>,
-        vel: Vec2D<I32F32>,
-    ) -> Option<Vec2D<I32F32>> {
-        self.unwrapped_targets.iter()
+    fn find_best_target(&self, pos: Vec2D<I32F32>, vel: Vec2D<I32F32>) -> Option<Vec2D<I32F32>> {
+        self.unwrapped_targets
+            .iter()
             .map(|target_point| {
-                let distance = pos.euclid_distance_sq(target_point);
+                let distance = pos.euclid_distance(target_point);
                 let angle_penalty = Self::direction_penalty(&vel, &pos, target_point);
                 let score = Self::OFF_ORBIT_W * distance + self.dynamic_fuel_w * angle_penalty;
                 (score, *target_point)
@@ -351,19 +350,27 @@ impl BurnSequenceEvaluator {
             .map(|(_, best_target)| best_target)
     }
 
-    /// Direction penalty = 1 - cos(angle between direction_vec and target direction)
-    fn direction_penalty(vel: &Vec2D<I32F32>, pos: &Vec2D<I32F32>, target: &Vec2D<I32F32>) -> I32F32 {
-        let to_target = pos.to(target);
+    /// Direction penalty = 1 - cos(angle between `direction_vec` and target direction)
+    fn direction_penalty(
+        vel: &Vec2D<I32F32>,
+        pos: &Vec2D<I32F32>,
+        target: &Vec2D<I32F32>,
+    ) -> I32F32 {
+        let vel_i128 = vel.to_num::<I96F32>();
+        let pos_i128 = pos.to_num::<I96F32>();
+        let target_i128 = target.to_num::<I96F32>();
+        let to_target = pos_i128.to(&target_i128);
 
-        let dot = to_target.dot(vel);
-        let mag_dir = vel.abs_sq();
+        let dot = to_target.dot(&vel_i128);
+        let mag_dir = vel_i128.abs_sq();
         let mag_target = to_target.abs_sq();
 
-        if I32F32::is_zero(mag_dir) || I32F32::is_zero(mag_target) {
+        if I96F32::is_zero(mag_dir) || I96F32::is_zero(mag_target) {
             return I32F32::lit("1.0"); // Penalize undefined direction
         }
 
         let cos_sim_sq = dot * dot / (mag_dir * mag_target);
-        I32F32::lit("1.0") - cos_sim_sq.clamp(I32F32::lit("-1.0"), I32F32::lit("1.0"))
+        I32F32::lit("1.0")
+            - I32F32::from_num(cos_sim_sq.clamp(I96F32::lit("-1.0"), I96F32::lit("1.0")))
     }
 }

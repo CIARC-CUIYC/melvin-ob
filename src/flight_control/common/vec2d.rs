@@ -254,13 +254,8 @@ where T: FixedSigned + NumAssignOps
     }
 
     pub fn unwrap_all(&self) -> [Self; 9] {
-        self.get_projected_in_range(self, (&[1, 0, -1], &[1, 0, -1]))
-            .into_iter()
-            .take(9)
-            .map(|x| x.0)
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap()
+        let options = self.get_projected_in_range(self, (&[1, 0, -1], &[1, 0, -1]));
+        options.into_iter().take(9).map(|x| x.0 + *self).collect::<Vec<_>>().try_into().unwrap()
     }
 
     pub fn unwrapped_to_top_right(&self, other: &Self) -> Self {
@@ -685,7 +680,7 @@ where T: Copy
     /// Creates a slice [x, y] from a `Vec2D`.
     ///
     /// # Arguments
-    /// * `vec` - A Vec2D representing the x and y values.
+    /// * `vec` - A `Vec2D` representing the x and y values.
     ///
     /// # Returns
     /// A new slice created from the `Vec2D`.

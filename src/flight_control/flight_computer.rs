@@ -510,7 +510,7 @@ impl FlightComputer {
             FlightComputer::escape_safe(Arc::clone(self_lock), true).await;
             FlightComputer::set_state_wait(Arc::clone(self_lock), FlightState::Charge).await;
         } else {
-            FlightComputer::set_state_wait(Arc::clone(&self_lock), FlightState::Charge).await;
+            FlightComputer::set_state_wait(Arc::clone(self_lock), FlightState::Charge).await;
         }
         let batt = self_lock.read().await.current_battery();
         let dt = (Self::MAX_100 - batt) / FlightState::Charge.get_charge_rate();
@@ -694,8 +694,8 @@ impl FlightComputer {
                 self.current_angle = CameraAngle::from(obs.angle());
                 self.last_observation_timestamp = obs.timestamp();
                 self.current_battery = I32F32::from_num(obs.battery()).clamp(Self::MIN_0, Self::MAX_100);
-                self.max_battery = I32F32::from_num(obs.max_battery()).clamp(Self::MIN_0, Self::MAX_100);;
-                self.fuel_left = I32F32::from_num(obs.fuel()).clamp(Self::MIN_0, Self::MAX_100);;
+                self.max_battery = I32F32::from_num(obs.max_battery()).clamp(Self::MIN_0, Self::MAX_100);
+                self.fuel_left = I32F32::from_num(obs.fuel()).clamp(Self::MIN_0, Self::MAX_100);
                 return;
             }
             error!("Unnoticed HTTP Error in updateObservation()");
