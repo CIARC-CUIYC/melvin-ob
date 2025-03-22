@@ -1,3 +1,4 @@
+use crate::flight_control::orbit::ExitBurnResult;
 use crate::flight_control::{
     flight_computer::FlightComputer,
     objective::{
@@ -5,12 +6,13 @@ use crate::flight_control::{
         objective_base::ObjectiveBase, objective_type::ObjectiveType,
     },
     task::{
-        base_task::{BaseTask, Task},
         TaskController,
+        base_task::{BaseTask, Task},
         end_condition::EndCondition,
-        vel_change_task::VelocityChangeTaskRationale::OrbitEscape
+        vel_change_task::VelocityChangeTaskRationale::OrbitEscape,
     },
 };
+use crate::mode_control::mode::zo_retrieval_mode::ZORetrievalMode;
 use crate::mode_control::{
     base_mode::{BaseMode, BaseWaitExitSignal},
     mode::{
@@ -26,8 +28,6 @@ use chrono::{DateTime, TimeDelta, Utc};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio_util::sync::CancellationToken;
-use crate::flight_control::orbit::ExitBurnResult;
-use crate::mode_control::mode::zo_retrieval_mode::ZORetrievalMode;
 
 pub struct ZOPrepMode {
     base: BaseMode,
@@ -70,7 +70,7 @@ impl ZOPrepMode {
                 current_vel,
                 targets[0],
                 due,
-                fuel_left
+                fuel_left,
             )
             .await
         } else {
@@ -81,27 +81,36 @@ impl ZOPrepMode {
         let entry_pos = exit_burn_seq.sequence_pos().first().unwrap();
         let exit_pos = exit_burn_seq.sequence_pos().last().unwrap();
         let entry_t = exit_burn_seq.start_i().t().format("%H:%M:%S").to_string();
-        let exit_vel = exit_burn_seq.sequence_vel().last().unwrap();
+        let vel = exit_burn_seq.sequence_vel().last().unwrap();
         let tar = zo.get_imaging_points()[0];
+        let det_dt = exit_burn_seq.detumble_dt();
+        let acq_dt = exit_burn_seq.acc_dt();
+        let tar_unwrap = exit_burn.unwrapped_target();
         info!("Calculated Burn Sequence for Zoned Objective: {}", zo.id());
         log!("Entry at {entry_t}, Position will be {entry_pos}");
-        log!("Exit after {}s, Position will be {exit_pos}", exit_burn_seq.acc_dt());
-        log!("Exit Velocity will be {exit_vel} aiming for target at {tar}. Detumble time is {}s.",  exit_burn_seq.detumble_dt());
+        log!("Exit after {acq_dt}s, Position will be {exit_pos}. Detumble time is {det_dt}s.");
+        log!("Exit Velocity will be {vel} aiming for target at {tar} unwrapped to {tar_unwrap}.");
         log!("Whole BS: {:?}", exit_burn);
         if let BaseMode::BeaconObjectiveScanningMode(_) = base {
             let burn_start = exit_burn_seq.start_i().t();
             let worst_case_first_comms_end = {
-                let to_comms = 
-                    FlightComputer::get_to_comms_dt_est(context.k().f_cont()).await;
-                Utc::now() + to_comms.1 + TimeDelta::seconds(TaskController::IN_COMMS_SCHED_SECS as i64)
+                let to_comms = FlightComputer::get_to_comms_dt_est(context.k().f_cont()).await;
+                Utc::now()
+                    + to_comms.1
+                    + TimeDelta::seconds(TaskController::IN_COMMS_SCHED_SECS as i64)
             };
             if worst_case_first_comms_end + TimeDelta::seconds(10) > burn_start {
                 base = BaseMode::MappingMode;
             }
         }
-        Some(ZOPrepMode { base, exit_burn, target: zo, left_orbit: AtomicBool::new(false)})
+        Some(ZOPrepMode {
+            base,
+            exit_burn,
+            target: zo,
+            left_orbit: AtomicBool::new(false),
+        })
     }
-    
+
     fn new_base(&self, base: BaseMode) -> Self {
         Self {
             base,
@@ -126,7 +135,9 @@ impl GlobalMode for ZOPrepMode {
         let end = EndCondition::from_burn(self.exit_burn.sequence());
         let sched_handle = {
             let cancel_clone = cancel_task.clone();
-            self.base.get_schedule_handle(Arc::clone(&context), cancel_clone, comms_end, Some(end)).await
+            self.base
+                .get_schedule_handle(Arc::clone(&context), cancel_clone, comms_end, Some(end))
+                .await
         };
         tokio::pin!(sched_handle);
         let safe_mon = context.super_v().safe_mon();
@@ -234,7 +245,8 @@ impl GlobalMode for ZOPrepMode {
                     context.k().f_cont().read().await.current_pos(),
                     self.new_zo_rationale(),
                 );
-                let burn_dt_cond = self.exit_burn.sequence().start_i().t() - Utc::now() > Self::MIN_REPLANNING_DT;
+                let burn_dt_cond =
+                    self.exit_burn.sequence().start_i().t() - Utc::now() > Self::MIN_REPLANNING_DT;
                 if k_obj.end() < self.target.end() && burn_dt_cond {
                     let new_obj_mode = Self::from_obj(context, k_obj, self.base.clone()).await;
                     if let Some(prep_mode) = new_obj_mode {
@@ -279,11 +291,13 @@ impl GlobalMode for ZOPrepMode {
             self.tasks_done_exit_rationale(),
         );
         if self.left_orbit.load(Ordering::Acquire) {
-            Box::new(ZORetrievalMode::new(self.target.clone(), *self.exit_burn.unwrapped_target()))
+            Box::new(ZORetrievalMode::new(
+                self.target.clone(),
+                *self.exit_burn.unwrapped_target(),
+            ))
         } else {
             error!("ZOPrepMode::exit_mode called without left_orbit flag set!");
             Box::new(InOrbitMode::new(self.base.exit_base(handler).await))
         }
-        
     }
 }
