@@ -86,7 +86,7 @@ impl GlobalMode for InOrbitMode {
     }
 
     async fn safe_handler(&self, context: Arc<ModeContext>) -> OpExitSignal {
-        FlightComputer::escape_safe(context.k().f_cont()).await;
+        FlightComputer::escape_safe(context.k().f_cont(), false).await;
         context.o_ch_lock().write().await.finish(
             context.k().f_cont().read().await.current_pos(),
             self.safe_mode_rationale(),

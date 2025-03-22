@@ -98,7 +98,7 @@ impl GlobalMode for ZORetrievalMode {
     }
 
     async fn safe_handler(&self, context: Arc<ModeContext>) -> OpExitSignal {
-        FlightComputer::escape_safe(context.k().f_cont()).await;
+        FlightComputer::escape_safe(context.k().f_cont(), false).await;
         let (vel, pos) = {
             let f_cont_locked = context.k().f_cont();
             let f_cont = f_cont_locked.read().await;

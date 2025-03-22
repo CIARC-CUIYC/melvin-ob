@@ -419,7 +419,22 @@ impl TaskController {
         // Return the best burn sequence, panicking if none was found
         evaluator.get_best_burn().map(|(burn, _)| burn)
     }
-
+    
+    pub async fn calculate_orbit_return_burn_sequence(
+        curr_i: IndexedOrbitPosition,
+        curr_vel: Vec2D<I32F32>,
+        return_orbit: &ClosedOrbit,
+        fuel_left: I32F32,
+        batt_left: I32F32,
+        ) -> Option<BurnSequence> {
+            todo!()
+    }
+    
+    pub async fn schedule_orbit_return() {
+        
+    }
+    
+    
     #[allow(clippy::cast_possible_wrap)]
     async fn sched_single_comms_cycle(
         &self,

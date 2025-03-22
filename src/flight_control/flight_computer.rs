@@ -16,7 +16,7 @@ use crate::http_handler::{
         reset_get::ResetRequest,
     },
 };
-use crate::{error, fatal, info, log, warn};
+use crate::{error, fatal, info, log, warn, STATIC_ORBIT_VEL};
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::{I32F32, I64F64};
 use num::{ToPrimitive, Zero};
@@ -377,10 +377,10 @@ impl FlightComputer {
         }
     }
 
-    pub async fn escape_safe(self_lock: Arc<RwLock<Self>>) {
+    pub async fn escape_safe(self_lock: Arc<RwLock<Self>>, force_charge: bool) {
         let target_state = {
             let init_batt = self_lock.read().await.current_battery();
-            if init_batt <= Self::AFTER_SAFE_MIN_BATT {
+            if init_batt <= Self::AFTER_SAFE_MIN_BATT || force_charge {
                 FlightState::Charge
             } else {
                 FlightState::Acquisition
@@ -424,7 +424,7 @@ impl FlightComputer {
             ));
             return Utc::now() + add_t;
         }
-        let charge_dt = Self::get_charge_dt(&self_lock).await;
+        let charge_dt = Self::get_charge_dt_comms(&self_lock).await;
         log!("Charge time for comms: {}", charge_dt);
 
         if charge_dt > 0 {
@@ -465,7 +465,7 @@ impl FlightComputer {
             let rem_t = (batt_diff / FlightState::Comms.get_charge_rate()).abs().ceil();
             return (0, TimeDelta::seconds(rem_t.to_num::<i64>()));
         }
-        let charge_dt = Self::get_charge_dt(&self_lock).await;
+        let charge_dt = Self::get_charge_dt_comms(&self_lock).await;
 
         if charge_dt > 0 {
             (charge_dt, TimeDelta::seconds(charge_dt as i64) + t_time * 2)
@@ -474,11 +474,47 @@ impl FlightComputer {
         }
     }
 
-    async fn get_charge_dt(self_lock: &Arc<RwLock<Self>>) -> u64 {
+    pub async fn get_to_static_orbit_vel(self_lock: Arc<RwLock<Self>>) {
+        let orbit_vel = Vec2D::from(STATIC_ORBIT_VEL);
+        let (batt, vel) = {
+            let f_cont = self_lock.read().await;
+            (f_cont.current_battery(), f_cont.current_vel())
+        };
+        let vel_change_dt = Duration::from_secs_f32(
+            (orbit_vel.to(&vel).abs() / Self::ACC_CONST).to_num::<f32>(),
+        );
+        let charge_needed = {
+            let acq_batt = FlightState::Acquisition.get_charge_rate() + FlightState::ACQ_ACC_ADDITION;
+            TaskController::MIN_BATTERY_THRESHOLD + I32F32::from_num(vel_change_dt.as_secs()) * acq_batt
+        };
+        if batt < charge_needed {
+            FlightComputer::charge_full_wait(&self_lock).await;
+        }
+        let state = self_lock.read().await.state();
+        if !matches!(state, FlightState::Acquisition) {
+            FlightComputer::set_state_wait(Arc::clone(&self_lock), FlightState::Acquisition).await;
+        }
+        FlightComputer::set_vel_wait(Arc::clone(&self_lock), orbit_vel, false).await;
+    }
+
+    async fn get_charge_dt_comms(self_lock: &Arc<RwLock<Self>>) -> u64 {
         let batt_diff = (self_lock.read().await.current_battery()
             - TaskController::MIN_COMMS_START_CHARGE)
             .min(I32F32::zero());
         (-batt_diff / FlightState::Charge.get_charge_rate()).ceil().to_num::<u64>()
+    }
+    
+    async fn charge_full_wait(self_lock: &Arc<RwLock<Self>>) {
+       let state = self_lock.read().await.state();
+        if state == FlightState::Safe {
+            FlightComputer::escape_safe(Arc::clone(self_lock), true).await;
+            FlightComputer::set_state_wait(Arc::clone(self_lock), FlightState::Charge).await;
+        } else {
+            FlightComputer::set_state_wait(Arc::clone(&self_lock), FlightState::Charge).await;
+        }
+        let batt = self_lock.read().await.current_battery();
+        let dt = (Self::MAX_100 - batt) / FlightState::Charge.get_charge_rate();
+        Self::wait_for_duration(Duration::from_secs(dt.to_num::<u64>())).await;
     }
 
     /// Transitions the satellite to a new operational state and waits for transition completion.

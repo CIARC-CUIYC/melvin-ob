@@ -217,6 +217,7 @@ impl BaseMode {
                             if let Some(t) = due_t {
                                 let prolong_cond = new_end > t || obj_length == 1;
                                 if prolong_cond && res_batt > TaskController::MIN_BATTERY_THRESHOLD {
+                                    // TODO: here we should set a prolong flag and on returning maybe reschedule if its an early/late return
                                     fut = Box::pin(tokio::time::sleep_until(Instant::now() + Self::BO_MSG_COMM_PROLONG_STD));
                                 }
                             }
