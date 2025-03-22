@@ -59,7 +59,7 @@ async fn test_single_target_burn_calculator() {
     log!("Entry at {entry_t}, Position will be {entry_pos}");
     log!("Exit after {}s, Position will be {exit_pos}", exit_burn.acc_dt());
     log!("Exit Velocity will be {exit_vel} aiming for target at {mock_obj_point}. Detumble time is {}s.",  exit_burn.detumble_dt());
-    log!("Whole BS: {:?}", exit_burn);
+    log!("Whole BS: {:?}", res);
 }
 
  /*
