@@ -12,6 +12,7 @@ use crate::flight_control::{
 use crate::http_handler::http_client::HTTPClient;
 use crate::{event, fatal, info, log, obj, warn};
 
+use crate::flight_control::task::end_condition::EndCondition;
 use crate::mode_control::base_mode::TaskEndSignal::{Join, Timestamp};
 use crate::mode_control::mode_context::ModeContext;
 use chrono::{DateTime, TimeDelta, Utc};
@@ -112,7 +113,6 @@ impl BaseMode {
                         k_clone.con(),
                         (end_t, rx),
                         img_dt,
-                        Self::DEF_MAPPING_ANGLE,
                         i_start.index(),
                     )
                     .await
@@ -217,6 +217,7 @@ impl BaseMode {
                             if let Some(t) = due_t {
                                 let prolong_cond = new_end > t || obj_length == 1;
                                 if prolong_cond && res_batt > TaskController::MIN_BATTERY_THRESHOLD {
+                                    // TODO: here we should set a prolong flag and on returning maybe reschedule if its an early/late return
                                     fut = Box::pin(tokio::time::sleep_until(Instant::now() + Self::BO_MSG_COMM_PROLONG_STD));
                                 }
                             }
@@ -229,7 +230,7 @@ impl BaseMode {
                 },
                 // If the timeout expires, exit
                 () = &mut fut => {
-                    log!("Comms Timeout reached after {}s. Stopping listener.",
+                    log!("Comms Deadline reached after {}s. Stopping listener.",
                     (Utc::now() - start).num_seconds());
                     break;
                 },
@@ -242,11 +243,11 @@ impl BaseMode {
         }
     }
 
-    pub async fn handle_sched_preconditions(&self, context: Arc<ModeContext>) {
+    pub async fn handle_sched_preconditions(&self, context: Arc<ModeContext>) -> DateTime<Utc> {
         match self {
-            BaseMode::MappingMode => (),
+            BaseMode::MappingMode => FlightComputer::escape_if_comms(context.k().f_cont()).await,
             BaseMode::BeaconObjectiveScanningMode(_) => {
-                FlightComputer::get_to_comms(context.k().f_cont()).await;
+                FlightComputer::get_to_comms(context.k().f_cont()).await
             }
         }
     }
@@ -255,6 +256,8 @@ impl BaseMode {
         &self,
         context: Arc<ModeContext>,
         c_tok: CancellationToken,
+        comms_end: DateTime<Utc>,
+        end: Option<EndCondition>,
     ) -> JoinHandle<()> {
         let k = Arc::clone(context.k());
         let o_ch = context.o_ch_clone().await;
@@ -264,6 +267,7 @@ impl BaseMode {
                 k.c_orbit(),
                 k.f_cont(),
                 o_ch.i_entry(),
+                end,
             )),
             BaseMode::BeaconObjectiveScanningMode(obj_m) => {
                 let last_obj_end = obj_m
@@ -279,6 +283,8 @@ impl BaseMode {
                     k.f_cont(),
                     o_ch.i_entry(),
                     last_obj_end,
+                    comms_end,
+                    end,
                 ))
             }
         };
@@ -415,7 +421,10 @@ impl BaseMode {
     ) -> BaseWaitExitSignal {
         for b_o in b_o_done {
             if b_o.guesses().is_empty() {
-                obj!("Beacon Objective {} has no guesses. Not submitting!", b_o.id());
+                obj!(
+                    "Beacon Objective {} has no guesses. Not submitting!",
+                    b_o.id()
+                );
             } else {
                 obj!("Submitting Beacon Objective: {}", b_o.id());
                 b_o.guess_max(cl.clone()).await;

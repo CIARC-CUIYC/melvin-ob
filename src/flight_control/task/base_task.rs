@@ -17,7 +17,7 @@ pub struct Task {
     /// The specific type of the task.
     task_type: BaseTask,
     /// The pinned time delay associated with the task's execution.
-    dt: DateTime<Utc>,
+    t: DateTime<Utc>,
 }
 
 /// An enumeration representing different types of tasks.
@@ -46,14 +46,14 @@ impl Display for Task {
             BaseTask::ChangeVelocity(task) => {
                 let res_vel = task.burn().sequence_vel().last().unwrap();
                 let res_pos = task.burn().sequence_pos().last().unwrap();
-                let angle_dev = task.burn().res_angle_dev();
+                let angle_dev = task.burn().rem_angle_dev();
                 &*format!(
                     "Burn to velocity {res_vel} at pos {res_pos}, \
                 angle deviation will be {angle_dev}",
                 )
             }
         };
-        let end = self.dt.format("%d %H:%M:%S").to_string();
+        let end = self.t.format("%d %H:%M:%S").to_string();
         write!(f, "Due: {end}, Task: {task_type_str}")
     }
 }
@@ -63,20 +63,20 @@ impl Task {
     ///
     /// # Arguments
     /// - `target_state`: The desired flight state to switch to.
-    /// - `dt`: The time delay associated with the task's execution.
+    /// - `t`: The time delay associated with the task's execution.
     ///
     /// # Returns
     /// - A new `Task` instance representing the state switch task.
     ///
     /// # Panics
     /// Panics if the provided `target_state` is invalid for switching.
-    pub fn switch_target(target_state: FlightState, dt: DateTime<Utc>) -> Self {
+    pub fn switch_target(target_state: FlightState, t: DateTime<Utc>) -> Self {
         Self {
             task_type: BaseTask::SwitchState(
                 SwitchStateTask::new(target_state)
                     .expect("[FATAL] Tried to schedule invalid state switch"),
             ),
-            dt,
+            t,
         }
     }
 
@@ -85,14 +85,14 @@ impl Task {
     /// # Arguments
     /// - `planned_pos`: The target position for capturing the image.
     /// - `lens`: The camera lens configuration.
-    /// - `dt`: The time delay associated with the task's execution.
+    /// - `t`: The time delay associated with the task's execution.
     ///
     /// # Returns
     /// - A new `Task` instance representing the image capture task.
-    pub fn image_task(planned_pos: Vec2D<u32>, lens: CameraAngle, dt: DateTime<Utc>) -> Self {
+    pub fn image_task(planned_pos: Vec2D<u32>, lens: CameraAngle, t: DateTime<Utc>) -> Self {
         Self {
             task_type: BaseTask::TakeImage(ImageTask::new(planned_pos, lens)),
-            dt,
+            t,
         }
     }
 
@@ -100,25 +100,25 @@ impl Task {
     ///
     /// # Arguments
     /// - `burn`: The burn sequence for orbital adjustments.
-    /// - `dt`: The time delay associated with the task's execution.
+    /// - `t`: The time delay associated with the task's execution.
     ///
     /// # Returns
     /// - A new `Task` instance representing the velocity change task.
     pub fn vel_change_task(
         burn: BurnSequence,
         rationale: VelocityChangeTaskRationale,
-        dt: DateTime<Utc>,
+        t: DateTime<Utc>,
     ) -> Self {
         Self {
             task_type: BaseTask::ChangeVelocity(VelocityChangeTask::new(burn, rationale)),
-            dt,
+            t,
         }
     }
     /// Returns an immutable reference to the task's time delay.
     ///
     /// # Returns
     /// - An `DateTime<Utc>` representing the tasks due time.
-    pub fn dt(&self) -> DateTime<Utc> { self.dt }
+    pub fn t(&self) -> DateTime<Utc> { self.t }
 
     /// Returns an immutable reference to the task's type.
     ///

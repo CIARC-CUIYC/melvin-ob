@@ -9,6 +9,6 @@ pub enum ObjectiveType {
     KnownImage {
         zone: [i32; 4],
         optic_required: CameraAngle,
-        coverage_required: f32,
+        coverage_required: f64,
     },
 }

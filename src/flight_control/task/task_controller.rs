@@ -1,28 +1,23 @@
 use super::{
-    atomic_decision::AtomicDecision,
-    atomic_decision_cube::AtomicDecisionCube,
-    base_task::Task,
-    score_grid::ScoreGrid,
-    vel_change_task::{VelocityChangeTaskRationale, VelocityChangeTaskRationale::OrbitEscape},
+    atomic_decision::AtomicDecision, atomic_decision_cube::AtomicDecisionCube, base_task::Task,
+    score_grid::ScoreGrid, vel_change_task::VelocityChangeTaskRationale,
 };
+use crate::flight_control::camera_state::CameraAngle;
 use crate::flight_control::flight_state::TRANS_DEL;
+use crate::flight_control::orbit::{BurnSequenceEvaluator, ExitBurnResult};
+use crate::flight_control::task::end_condition::EndCondition;
 use crate::flight_control::{
-    common::{linked_box::LinkedBox, math, vec2d::Vec2D},
+    common::{linked_box::LinkedBox, vec2d::Vec2D},
     flight_computer::FlightComputer,
     flight_state::FlightState,
-    objective::known_img_objective::KnownImgObjective,
     orbit::{BurnSequence, ClosedOrbit, IndexedOrbitPosition},
 };
-use crate::{error, fatal, info, log};
+use crate::{error, info, log};
 use bitvec::prelude::BitRef;
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use num::Zero;
-use std::{
-    collections::VecDeque,
-    fmt::Debug,
-    sync::{Arc, Condvar},
-};
+use std::{collections::VecDeque, fmt::Debug, sync::Arc};
 use tokio::sync::RwLock;
 
 /// `TaskController` manages and schedules tasks for MELVIN.
@@ -37,8 +32,6 @@ use tokio::sync::RwLock;
 pub struct TaskController {
     /// Schedule for the next images, represented by image tasks.
     task_schedule: Arc<RwLock<VecDeque<Task>>>,
-    /// Notification condition variable to signal changes to the first element in `image_schedule`.
-    next_task_notify: Arc<Condvar>,
 }
 
 /// Struct holding the result of the optimal orbit dynamic program
@@ -72,33 +65,23 @@ impl TaskController {
     const MANEUVER_INIT_BATT_TOL: I32F32 = I32F32::lit("10.0");
 
     /// The minimum delta time required for detumble maneuvers, in seconds.
-    pub(crate) const MANEUVER_MIN_DETUMBLE_DT: usize = 50;
-
-    /// Weight assigned to off-orbit delta time in optimization calculations.
-    const OFF_ORBIT_DT_WEIGHT: I32F32 = I32F32::lit("3.0");
-
-    /// Weight assigned to fuel consumption in optimization calculations.
-    const FUEL_CONSUMPTION_WEIGHT: I32F32 = I32F32::lit("1.0");
-
-    /// Weight assigned to angle deviation in optimization calculations.
-    const ANGLE_DEV_WEIGHT: I32F32 = I32F32::lit("2.0");
+    pub(crate) const MANEUVER_MIN_DETUMBLE_DT: usize = 100;
 
     /// Default maximum time duration for burn sequences, in seconds.
     const DEF_MAX_BURN_SEQUENCE_TIME: i64 = 1_000_000_000;
 
+    const ZO_IMAGE_FIRST_DEL: TimeDelta = TimeDelta::seconds(5);
+
     /// Maximum allowable absolute deviation after a correction burn.
-    const MAX_AFTER_CB_DEV: I32F32 = I32F32::lit("1.0");
+    const MAX_AFTER_CB_DEV: I32F32 = I32F32::lit("5.0");
 
-    /// A constant representing a 90-degree angle, in fixed-point format.
-    const NINETY_DEG: I32F32 = I32F32::lit("90.0");
-
-    const IN_COMMS_SCHED_SECS: usize = 585;
+    pub const IN_COMMS_SCHED_SECS: usize = 585;
     const COMMS_SCHED_PERIOD: usize = 1025;
     #[allow(clippy::cast_possible_wrap)]
     const COMMS_SCHED_USABLE_TIME: TimeDelta =
         TimeDelta::seconds((Self::COMMS_SCHED_PERIOD - 2 * 180) as i64);
-    pub const COMMS_CHARGE_USAGE: I32F32 = I32F32::lit("48.6");
-    pub const MIN_COMMS_START_CHARGE: I32F32 = I32F32::lit("58.6");
+    pub const COMMS_CHARGE_USAGE: I32F32 = I32F32::lit("4.68");
+    pub const MIN_COMMS_START_CHARGE: I32F32 = I32F32::lit("20.0");
 
     /// Creates a new instance of the `TaskController` struct.
     ///
@@ -107,7 +90,6 @@ impl TaskController {
     pub fn new() -> Self {
         Self {
             task_schedule: Arc::new(RwLock::new(VecDeque::new())),
-            next_task_notify: Arc::new(Condvar::new()),
         }
     }
 
@@ -140,13 +122,11 @@ impl TaskController {
         let max_battery = (usable_batt_range / Self::BATTERY_RESOLUTION).round().to_num::<usize>();
         // Determine the prediction duration in seconds, constrained by the orbit period or `dt` if provided.
         let prediction_secs = {
-            let max_pred_secs =
-                Self::MAX_ORBIT_PREDICTION_SECS.min(orbit.period().0.to_num::<u32>()) as usize;
             if let Some(pred_secs) = dt {
                 // Ensure the prediction duration does not exceed the maximum prediction length or the provided duration.
-                max_pred_secs.min(pred_secs)
+                pred_secs
             } else {
-                max_pred_secs
+                Self::MAX_ORBIT_PREDICTION_SECS.min(orbit.period().0.to_num::<u32>()) as usize
             }
         };
 
@@ -211,20 +191,24 @@ impl TaskController {
                     let de = if s == 0 { 1 } else { -1 };
                     let new_e = (e as isize + de) as usize;
                     // Compute score for the decision to stay in the current state.
-                    let stay = {
-                        if s == 0 {
-                            // If in charge state, calculate score for staying.
-                            score_cube.front().unwrap().get(new_e.min(max_battery), s)
-                        } else if e > 0 {
-                            // If in acquisition state, consider score and state.
-                            score_cube.front().unwrap().get(new_e, s) + p_dt
-                        } else {
-                            // If battery is depleted, staying is not possible.
-                            i32::MIN
-                        }
+                    let stay = if s == 0 {
+                        // If in charge state, calculate score for staying.
+                        score_cube.front().unwrap().get(new_e.min(max_battery), s)
+                    } else if e > 0 {
+                        // If in acquisition state, consider score and state.
+                        score_cube.front().unwrap().get(new_e, s) + p_dt
+                    } else {
+                        // If battery is depleted, staying is not possible.
+                        i32::MIN
                     };
-                    // Compute score for the decision to switch to the other state.
-                    let switch = score_cube.back().unwrap().get(e, s ^ 1);
+
+                    let switch = if score_cube.len() < score_cube.size() {
+                        // We do not swap here as the time after the maximum prediction time is not predictable
+                        i32::MIN
+                    } else {
+                        // Compute score for the decision to switch to the other state.
+                        score_cube.back().unwrap().get(e, s ^ 1)
+                    };
                     // Choose the better decision and record it.
                     if stay >= switch {
                         dec_cube.set(t, e, s, AtomicDecision::stay(s));
@@ -244,7 +228,7 @@ impl TaskController {
             coverage_slice: score_cube,
         }
     }
-
+    /*
     #[allow(clippy::cast_possible_truncation)]
     /// Calculates the optimal sequence of thrust burns needed to correct the orbit
     /// based on the current velocity and the desired deviation.
@@ -267,36 +251,51 @@ impl TaskController {
         initial_vel: Vec2D<I32F32>,
         deviation: Vec2D<I32F32>,
         due: DateTime<Utc>,
-    ) -> (Vec<Vec2D<I32F32>>, i64, Vec2D<I32F32>) {
-        let is_clockwise = initial_vel.is_clockwise_to(&deviation).unwrap_or(false);
-
-        let min_burn_sequence_time = TimeDelta::seconds(Self::DEF_MAX_BURN_SEQUENCE_TIME);
-        let mut max_acc_secs = 1;
+    ) -> (Vec<Vec2D<I32F32>>, i64, Vec2D<FixedI64<U32>>) {
+        let mut acc_secs = 1;
+        // TODO: fix or scrap this
         let mut best_burn_sequence = Vec::new();
-        let mut best_min_dev = Vec2D::new(I32F32::MAX, I32F32::MAX);
-        let mut best_vel_hold_dt = 0;
-        let mut last_vel = initial_vel;
+        let mut best_hold_dt = Self::DEF_MAX_BURN_SEQUENCE_TIME;
+        let mut best_res_dev = deviation;
 
-        while min_burn_sequence_time > due - Utc::now() {
+        while acc_secs <= (due - Utc::now()).num_seconds() / 2 {
             let mut res_vel_diff = Vec2D::<I32F32>::zero();
             let mut remaining_deviation = deviation;
             let mut current_burn_sequence = Vec::new();
+            let mut last_vel = initial_vel;
 
-            for _ in 0..max_acc_secs {
-                let perp_acc = last_vel.perp_unit(is_clockwise) * FlightComputer::ACC_CONST;
-                let (new_vel, _) = FlightComputer::trunc_vel(last_vel + perp_acc);
+            let mut vel_underflow = Vec2D::<I64F64>::zero();
+            for _ in 0..acc_secs {
+                let acc_vector = if vel_underflow.abs() >= FlightComputer::ACC_CONST {
+                    let underflow_dir = vel_underflow.normalize();
+                    let underflow_comp = underflow_dir * FlightComputer::ACC_CONST;
+                    vel_underflow = vel_underflow - underflow_comp;
+                    Vec2D::new(
+                        I32F32::from_num(underflow_comp.x()),
+                        I32F32::from_num(underflow_comp.y()),
+                    )
+                } else {
+                    remaining_deviation.normalize() * FlightComputer::ACC_CONST
+                };
+                let (new_vel, underflow) = FlightComputer::trunc_vel(last_vel + acc_vector);
+                vel_underflow = vel_underflow + underflow;
                 current_burn_sequence.push(new_vel);
                 let vel_diff = new_vel - last_vel;
                 res_vel_diff = res_vel_diff + vel_diff;
                 remaining_deviation = remaining_deviation - res_vel_diff * I32F32::lit("2.0");
                 last_vel = new_vel;
             }
-
-            let x_vel_hold_dt = (remaining_deviation.x() / res_vel_diff.x()).floor();
-            let y_vel_hold_dt = (remaining_deviation.y() / res_vel_diff.y()).floor();
-            let min_vel_hold_dt = x_vel_hold_dt.min(y_vel_hold_dt).to_num::<i64>();
-
-            if min_vel_hold_dt + max_acc_secs > (due - Utc::now()).num_seconds() {
+            println!("remaining_deviation: {remaining_deviation}, res_vel_diff: {res_vel_diff}");
+            let x_vel_hold_dt =
+                remaining_deviation.x().checked_div(res_vel_diff.x()).unwrap_or(I32F32::MAX);
+            let y_vel_hold_dt =
+                remaining_deviation.y().checked_div(res_vel_diff.y()).unwrap_or(I32F32::MAX);
+            if x_vel_hold_dt
+                .abs()
+                .checked_sub(y_vel_hold_dt.abs())
+                .is_none_or(|diff| diff > I32F32::lit("1.0"))
+            {
+                acc_secs += 1;
                 continue;
             }
 
@@ -310,20 +309,40 @@ impl TaskController {
                 max_y_dev.into(),
             );
             let res_dev_vec = Vec2D::from(res_dev);
-            let min_t_i64 = min_t.floor().to_num::<i64>();
+            let vel_hold_dt = min_t.floor().to_num::<i64>();
 
-            if best_min_dev.abs() > res_dev_vec.abs() {
-                best_min_dev = res_dev_vec;
-                best_burn_sequence = current_burn_sequence;
-                best_vel_hold_dt = min_t_i64;
+            if 2 * acc_secs + vel_hold_dt < (due - Utc::now()).num_seconds() {
+                if res_dev_vec.abs() < Self::MAX_AFTER_CB_DEV {
+                    return (current_burn_sequence, vel_hold_dt, res_dev_vec);
+                } else if res_dev_vec.abs() < best_res_dev.abs() {
+                    best_burn_sequence = current_burn_sequence;
+                    best_hold_dt = vel_hold_dt;
+                    best_res_dev = res_dev_vec;
+                }
             }
-
-            if best_min_dev.abs() < Self::MAX_AFTER_CB_DEV {
-                break;
-            }
-            max_acc_secs += 1;
+            acc_secs += 1;
         }
-        (best_burn_sequence, best_vel_hold_dt, best_min_dev)
+        (best_burn_sequence, best_hold_dt, best_res_dev)
+    }*/
+
+    fn find_last_possible_dt(
+        i: &IndexedOrbitPosition,
+        vel: &Vec2D<I32F32>,
+        target_pos: &Vec2D<I32F32>,
+        max_dt: usize,
+    ) -> usize {
+        let orbit_vel_abs = vel.abs();
+
+        for dt in (Self::OBJECTIVE_SCHEDULE_MIN_DT..max_dt).rev() {
+            let pos = (i.pos() + *vel * I32F32::from_num(dt)).wrap_around_map();
+            let to_target = pos.unwrapped_to(target_pos);
+            let min_dt = (to_target.abs() / orbit_vel_abs).abs().round().to_num::<usize>();
+
+            if min_dt + dt < max_dt {
+                return dt;
+            }
+        }
+        Self::OBJECTIVE_SCHEDULE_MIN_DT
     }
 
     /// Calculates the optimal burn sequence to reach a single target position
@@ -357,280 +376,66 @@ impl TaskController {
     )]
     pub async fn calculate_single_target_burn_sequence(
         curr_i: IndexedOrbitPosition,
-        f_cont_lock: Arc<RwLock<FlightComputer>>,
+        curr_vel: Vec2D<I32F32>,
         target_pos: Vec2D<I32F32>,
         target_end_time: DateTime<Utc>,
-    ) -> (BurnSequence, I32F32) {
+        fuel_left: I32F32,
+    ) -> Option<ExitBurnResult> {
         info!("Starting to calculate single target burn towards {target_pos}");
 
         // Calculate maximum allowed time delta for the maneuver
-        let comp_start = Utc::now();
-        let time_left = target_end_time - comp_start;
+        let time_left = target_end_time - curr_i.t();
         let max_dt = {
             let max = usize::try_from(time_left.num_seconds()).unwrap_or(0);
             max - Self::OBJECTIVE_MIN_RETRIEVAL_TOL
         };
 
-        // Retrieve the current orbital velocity
-        let orbit_vel = {
-            let f_cont = f_cont_lock.read().await;
-            f_cont.current_vel()
-        };
-
-        let max_off_orbit_t = max_dt - Self::OBJECTIVE_SCHEDULE_MIN_DT;
+        let max_off_orbit_dt = max_dt - Self::OBJECTIVE_SCHEDULE_MIN_DT;
 
         // Spawn a task to compute possible turns asynchronously
         let turns_handle =
-            tokio::spawn(async move { FlightComputer::compute_possible_turns(orbit_vel) });
+            tokio::spawn(async move { FlightComputer::compute_possible_turns(curr_vel) });
 
-        let orbit_vel_abs = orbit_vel.abs();
-        let mut last_possible_dt = 0;
-
-        // Determine the last possible time delta where a maneuver is feasible
-        for dt in (Self::OBJECTIVE_SCHEDULE_MIN_DT..max_dt).rev() {
-            let pos = (curr_i.pos() + orbit_vel * I32F32::from_num(dt)).wrap_around_map();
-            let to_target = pos.unwrapped_to(&target_pos);
-            let min_dt = (to_target.abs() / orbit_vel_abs).abs().round().to_num::<usize>();
-
-            if min_dt + dt < max_dt {
-                last_possible_dt = dt;
-                break;
-            }
-        }
-        info!("Done skipping impossible start times. Last possible dt: {last_possible_dt}");
+        let last_possible_dt = Self::find_last_possible_dt(&curr_i, &curr_vel, &target_pos, max_dt);
 
         // Define range for evaluation and initialize best burn sequence tracker
         let remaining_range = Self::OBJECTIVE_SCHEDULE_MIN_DT..=last_possible_dt;
-        let mut best_burn_sequence: Option<(BurnSequence, I32F32)> = None;
-
-        // Calculate the maximum allowable angle deviation
-        let max_angle_dev = {
-            let vel_perp = orbit_vel.perp_unit(true) * FlightComputer::ACC_CONST;
-            orbit_vel.angle_to(&vel_perp).abs()
-        };
 
         // Await the result of possible turn computations
         let turns = turns_handle.await.unwrap();
+        let mut evaluator = BurnSequenceEvaluator::new(
+            curr_i,
+            curr_vel,
+            target_pos,
+            max_dt,
+            max_off_orbit_dt,
+            turns,
+            fuel_left,
+        );
 
-        'outer: for dt in remaining_range.rev() {
-            // Calculate the next position and initialize the burn sequence
-            let mut next_pos = (curr_i.pos() + orbit_vel * I32F32::from_num(dt)).wrap_around_map();
-            let burn_sequence_i =
-                curr_i.new_from_future_pos(next_pos, comp_start + TimeDelta::seconds(dt as i64));
-            let direction_vec = next_pos.unwrapped_to(&target_pos);
-
-            // Skip iterations where the current velocity is too far off-target
-            if orbit_vel.angle_to(&direction_vec).abs() > Self::NINETY_DEG {
-                continue;
-            }
-
-            // Determine the turn sequence based on the relative direction to the target
-            let (turns_in_dir, break_cond) = {
-                if direction_vec.is_clockwise_to(&orbit_vel).unwrap_or(false) {
-                    (&turns.0, false)
-                } else {
-                    (&turns.1, true)
-                }
-            };
-
-            // Initialize variables to calculate the final burn sequence
-            let mut add_dt = 0;
-            let mut fin_sequence_pos: Vec<Vec2D<I32F32>> = vec![next_pos];
-            let mut fin_sequence_vel: Vec<Vec2D<I32F32>> = vec![orbit_vel];
-            let mut fin_angle_dev = I32F32::zero();
-            let mut fin_dt = 0;
-            let max_add_dt = turns_in_dir.len();
-
-            'inner: for atomic_turn in turns_in_dir {
-                // Update position and velocity based on turns
-                next_pos = (next_pos + atomic_turn.0).wrap_around_map();
-                let next_vel = atomic_turn.1;
-
-                let next_to_target = next_pos.unwrapped_to(&target_pos);
-                let min_dt =
-                    (next_to_target.abs() / next_vel.abs()).abs().round().to_num::<usize>();
-
-                // Check if the maneuver exceeds the maximum allowed time
-                if min_dt + dt + add_dt > max_dt {
-                    continue 'outer;
-                }
-
-                // Break and finalize the burn sequence if close enough to the target
-                if next_to_target.is_clockwise_to(&next_vel).unwrap_or(break_cond) == break_cond {
-                    let last_pos = fin_sequence_pos.last().unwrap();
-                    let last_vel = fin_sequence_vel.last().unwrap();
-                    (fin_dt, fin_angle_dev) = {
-                        let last_to_target = last_pos.unwrapped_to(&target_pos);
-                        let last_angle_deviation = last_vel.angle_to(&last_to_target);
-                        let this_angle_deviation = next_vel.angle_to(&next_to_target);
-
-                        let corr_burn_perc = math::interpolate(
-                            last_angle_deviation,
-                            this_angle_deviation,
-                            I32F32::zero(),
-                            I32F32::lit("1.0"),
-                            I32F32::zero(),
-                        );
-                        let acc = (next_vel - *last_vel) * corr_burn_perc;
-                        let (corr_vel, _) = FlightComputer::trunc_vel(next_vel + acc);
-                        let corr_pos = *last_pos + corr_vel;
-                        let corr_to_target = corr_pos.unwrapped_to(&target_pos);
-                        let corr_angle_dev = corr_vel.angle_to(&corr_to_target);
-                        fin_sequence_pos.push(corr_pos);
-                        fin_sequence_vel.push(corr_vel);
-                        add_dt += 1;
-                        (min_dt + dt + add_dt, corr_angle_dev)
-                    };
-                    break 'inner;
-                }
-                fin_sequence_pos.push(next_pos);
-                fin_sequence_vel.push(next_vel);
-                add_dt += 1;
-            }
-
-            // Normalize the factors contributing to burn sequence cost
-            let normalized_fuel_consumption = math::normalize_fixed32(
-                I32F32::from_num(add_dt) * FlightComputer::FUEL_CONST,
-                I32F32::zero(),
-                I32F32::from_num(max_add_dt) * FlightComputer::FUEL_CONST,
-            )
-            .unwrap_or(I32F32::zero());
-
-            let normalized_off_orbit_t = math::normalize_fixed32(
-                I32F32::from_num(fin_dt - dt),
-                I32F32::zero(),
-                I32F32::from_num(max_off_orbit_t),
-            )
-            .unwrap_or(I32F32::zero());
-            let normalized_angle_dev =
-                math::normalize_fixed32(fin_angle_dev.abs(), I32F32::zero(), max_angle_dev)
-                    .unwrap_or(I32F32::zero());
-
-            // Compute the total cost of the burn sequence
-            let burn_sequence_cost = Self::OFF_ORBIT_DT_WEIGHT * normalized_off_orbit_t
-                + Self::FUEL_CONSUMPTION_WEIGHT * normalized_fuel_consumption
-                + Self::ANGLE_DEV_WEIGHT * normalized_angle_dev;
-
-            // Create the burn sequence object
-            let burn_sequence = BurnSequence::new(
-                burn_sequence_i,
-                fin_sequence_pos.into_boxed_slice(),
-                fin_sequence_vel.into_boxed_slice(),
-                add_dt,
-                fin_dt - dt - add_dt,
-                burn_sequence_cost,
-                fin_angle_dev,
-            );
-
-            // Estimate the minimum required battery charge for the sequence
-            let min_charge = FlightComputer::estimate_min_burn_charge(&burn_sequence);
-
-            // Update the best burn sequence if a cheaper and feasible one is found
-            if best_burn_sequence.is_none()
-                || burn_sequence_cost < best_burn_sequence.as_ref().unwrap().0.cost()
-            {
-                if min_charge < Self::MAX_BATTERY_THRESHOLD {
-                    best_burn_sequence = Some((burn_sequence, min_charge));
-                } else {
-                    println!("Cheaper maneuver found but min charge {min_charge} is too high!");
-                }
-            }
+        for dt in remaining_range.rev() {
+            evaluator.process_dt(dt, Self::MAX_BATTERY_THRESHOLD);
         }
-
         // Return the best burn sequence, panicking if none was found
-        best_burn_sequence.unwrap()
+        evaluator.get_best_burn()
     }
 
-    /// Schedules a zoned objective, calculating the necessary burn maneuvers and updating the task schedule.
-    ///
-    /// # Arguments
-    /// - `self`: A reference-counted `TaskController` used for scheduling and managing tasks.
-    /// - `orbit_lock`: An `Arc<RwLock<ClosedOrbit>>` containing the shared closed orbit data.
-    /// - `f_cont_lock`: An `Arc<RwLock<FlightComputer>>` containing the flight control state and operations.
-    /// - `scheduling_start_i`: The starting orbital position as an `IndexedOrbitPosition`.
-    /// - `objective`: A `ZonedObjective` representing the target objective to be scheduled.
-    ///
-    /// # Behavior
-    /// - Calculates the best maneuver to reach a single imaging target if the objective requires only one image.
-    /// - Logs the computation process and results.
-    /// - Updates the task schedule with velocity and state changes required to achieve the objective.
-    ///
-    /// # Panics
-    /// - Panics if the objective requires more than one image as multi-image scheduling is not yet supported.
-    #[allow(clippy::cast_precision_loss)]
-    pub async fn sched_z_o(
+    pub async fn calculate_orbit_return_burn_sequence(
+        curr_i: IndexedOrbitPosition,
+        curr_vel: Vec2D<I32F32>,
+        return_orbit: &ClosedOrbit,
+        fuel_left: I32F32,
+        batt_left: I32F32,
+    ) -> Option<BurnSequence> {
+        todo!()
+    }
+
+    pub async fn schedule_orbit_return(
         self: Arc<TaskController>,
         orbit_lock: Arc<RwLock<ClosedOrbit>>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
-        scheduling_start_i: IndexedOrbitPosition,
-        objective: KnownImgObjective,
     ) {
-        let computation_start = Utc::now();
-        info!(
-            "Calculating schedule for Retrieval of Objective {}",
-            objective.id()
-        );
-        let (burn_sequence, min_charge) = if objective.min_images() == 1 {
-            let target_pos = objective.get_imaging_points()[0];
-            let due = objective.end();
-            Self::calculate_single_target_burn_sequence(
-                scheduling_start_i,
-                Arc::clone(&f_cont_lock),
-                target_pos,
-                due,
-            )
-            .await
-        } else {
-            // TODO
-            fatal!("Zoned Objective with multiple images not yet supported");
-        };
-        let comp_time = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
-        info!("Maneuver calculation completed after {comp_time}s!");
-
-        let start = (burn_sequence.start_i().t() - Utc::now()).num_milliseconds() as f32 / 1000.0;
-        log!(
-            "Maneuver will start in {start}s, will take {}s. \
-            Detumble time will be roughly {}s!",
-            burn_sequence.acc_dt(),
-            burn_sequence.detumble_dt()
-        );
-        let after_dp = {
-            let pos = f_cont_lock.read().await.current_pos();
-            scheduling_start_i.new_from_pos(pos)
-        };
-        let dt =
-            usize::try_from((burn_sequence.start_i().t() - Utc::now()).num_seconds()).unwrap_or(0);
-        let result = {
-            let orbit = orbit_lock.read().await;
-            Self::init_sched_dp(
-                &orbit,
-                after_dp.index(),
-                Some(dt),
-                Some(FlightState::Acquisition),
-                Some(min_charge),
-            )
-        };
-        info!(
-            "Calculating optimal orbit schedule to be at {min_charge} and in {} in {dt}s.",
-            <&'static str>::from(FlightState::Acquisition)
-        );
-        let after_sched_calc_i = {
-            let pos = f_cont_lock.read().await.current_pos();
-            scheduling_start_i.new_from_pos(pos)
-        };
-        let dt_shift = after_sched_calc_i.index() - after_dp.index();
-        let st_batt = Self::get_batt_and_state(&f_cont_lock).await;
-        self.sched_opt_orbit_res(after_dp.t(), result, dt_shift, true, st_batt).await;
-        let n_tasks = self.schedule_vel_change(burn_sequence, OrbitEscape).await;
-        let dt_tot = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
-        info!("Tasks after scheduling: {n_tasks}. Calculation and processing took {dt_tot:.2}");
-
-        {
-            let sched = self.task_schedule.read().await;
-            for task in &*sched {
-                log!("{task} in {}s.", (task.dt() - Utc::now()).num_seconds());
-            }
-        }
+        
     }
 
     #[allow(clippy::cast_possible_wrap)]
@@ -641,7 +446,7 @@ impl TaskController {
         orbit: &ClosedOrbit,
         strict_end: (DateTime<Utc>, usize),
     ) -> Option<(DateTime<Utc>, I32F32)> {
-        let t_time = *TRANS_DEL.get(&(FlightState::Charge, FlightState::Comms)).unwrap();
+        let t_time = FlightState::Charge.dt_to(FlightState::Comms);
         let sched_end = sched_start.0 + Self::COMMS_SCHED_USABLE_TIME;
         let t_ch = Self::MIN_COMMS_START_CHARGE;
 
@@ -657,7 +462,6 @@ impl TaskController {
             self.sched_opt_orbit_res(sched_start.0, result, 0, false, target).await;
             None
         } else {
-            
             let dt = usize::try_from((sched_end - sched_start.0).num_seconds()).unwrap_or(0);
             let result = Self::init_sched_dp(orbit, sched_start.1, Some(dt), None, Some(t_ch));
             let target = {
@@ -685,37 +489,83 @@ impl TaskController {
         orbit_lock: Arc<RwLock<ClosedOrbit>>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
         scheduling_start_i: IndexedOrbitPosition,
-        end_t: DateTime<Utc>,
+        last_bo_end_t: DateTime<Utc>,
+        first_comms_end: DateTime<Utc>,
+        end_cond: Option<EndCondition>,
     ) {
         log!("Calculating/Scheduling optimal orbit with passive beacon scanning.");
         let computation_start = Utc::now();
         // TODO: later maybe this shouldnt be cleared here anymore
         self.clear_schedule().await;
-        let t_time = *TRANS_DEL.get(&(FlightState::Charge, FlightState::Comms)).unwrap();
-        let strict_end = (end_t, scheduling_start_i.index_then(end_t));
+        let t_time = FlightState::Charge.dt_to(FlightState::Comms);
+        let t_time_ch = TimeDelta::from_std(t_time).unwrap();
+        let strict_end = (last_bo_end_t, scheduling_start_i.index_then(last_bo_end_t));
+
+        let is_next_possible: Box<dyn Fn(DateTime<Utc>) -> bool + Send> =
+            if let Some(end) = &end_cond {
+                let dt = end.abs_charge_dt() + t_time_ch * 2;
+                Box::new(move |comms_end: DateTime<Utc>| -> bool {
+                    let n_end = comms_end
+                        + TaskController::COMMS_SCHED_USABLE_TIME
+                        + t_time_ch * 2
+                        + TimeDelta::seconds(TaskController::IN_COMMS_SCHED_SECS as i64);
+                    n_end + dt <= end.time()
+                })
+            } else {
+                Box::new(|_| -> bool { true })
+            };
 
         let mut curr_comms_end = {
-            let dt = TimeDelta::seconds(Self::IN_COMMS_SCHED_SECS as i64);
+            let dt = first_comms_end - Utc::now();
             let batt = f_cont_lock.read().await.batt_in_dt(dt);
-            Some((Utc::now() + dt, batt))
+            Some((first_comms_end, batt))
         };
+
+        let mut next_start = (Utc::now(), scheduling_start_i.index());
+        let mut next_start_e = I32F32::zero();
 
         let orbit = orbit_lock.read().await;
         while let Some(end) = curr_comms_end {
-            let next_start = {
+            (next_start, next_start_e) = {
                 let t = end.0 + TimeDelta::from_std(t_time).unwrap();
                 let i = scheduling_start_i.index_then(t);
-                (t, i)
+                ((t, i), end.1)
             };
-            curr_comms_end =
-                self.sched_single_comms_cycle(end, next_start, &orbit, strict_end).await;
+            if is_next_possible(next_start.0) {
+                curr_comms_end =
+                    self.sched_single_comms_cycle(end, next_start, &orbit, strict_end).await;
+            } else {
+                break;
+            }
+        }
+
+        if let Some(e) = &end_cond {
+            let (left_dt, ch, s) = {
+                let dt = usize::try_from((e.time() - next_start.0).num_seconds()).unwrap_or(0);
+                (Some(dt), Some(e.charge()), Some(e.state()))
+            };
+            let result = Self::init_sched_dp(&orbit, next_start.1, left_dt, s, ch);
+            let target = {
+                let st = result
+                    .coverage_slice
+                    .front()
+                    .unwrap()
+                    .get_max_s(Self::map_e_to_dp(next_start_e));
+                (next_start_e, st)
+            };
+            self.schedule_switch(
+                FlightState::from_dp_usize(target.1),
+                next_start.0 - t_time_ch,
+            )
+            .await;
+            self.sched_opt_orbit_res(next_start.0, result, 0, false, target).await;
         }
 
         let n_tasks = self.task_schedule.read().await.len();
         let dt_tot = (Utc::now() - computation_start).num_milliseconds() as f32 / 1000.0;
         info!(
             "Number of tasks after scheduling: {n_tasks}. \
-            Calculation and processing took {dt_tot:.2}",
+            Calculation and processing took {dt_tot:.2}s.",
         );
     }
 
@@ -746,22 +596,30 @@ impl TaskController {
         orbit_lock: Arc<RwLock<ClosedOrbit>>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
         scheduling_start_i: IndexedOrbitPosition,
+        end: Option<EndCondition>,
     ) {
         log!("Calculating/Scheduling optimal orbit.");
         self.clear_schedule().await;
         let p_t_shift = scheduling_start_i.index();
         let comp_start = scheduling_start_i.t();
+        let (dt, batt, state) = if let Some(end_c) = end {
+            let end_t = (end_c.time() - Utc::now()).num_seconds().max(0) as usize;
+            (Some(end_t), Some(end_c.charge()), Some(end_c.state()))
+        } else {
+            (None, None, None)
+        };
         let result = {
             let orbit = orbit_lock.read().await;
-            Self::init_sched_dp(&orbit, p_t_shift, None, None, None)
+            Self::init_sched_dp(&orbit, p_t_shift, dt, state, batt)
         };
         let dt_calc = (Utc::now() - comp_start).num_milliseconds() as f32 / 1000.0;
         let dt_shift = dt_calc.ceil() as usize;
-        
+
         let (st_batt, dt_sh) = {
             let (batt, st) = Self::get_batt_and_state(&f_cont_lock).await;
             if st == 2 {
-                let best_st = result.coverage_slice.back().unwrap().get_max_s(Self::map_e_to_dp(batt));
+                let best_st =
+                    result.coverage_slice.back().unwrap().get_max_s(Self::map_e_to_dp(batt));
                 self.schedule_switch(FlightState::from_dp_usize(best_st), comp_start).await;
                 ((batt, best_st), dt_shift + 180)
             } else {
@@ -771,7 +629,7 @@ impl TaskController {
         let (n_tasks, _) =
             self.sched_opt_orbit_res(comp_start, result, dt_sh, false, st_batt).await;
         let dt_tot = (Utc::now() - comp_start).num_milliseconds() as f32 / 1000.0;
-        info!("Tasks after scheduling: {n_tasks}. Calculation and processing took {dt_tot:.2}");
+        info!("Tasks after scheduling: {n_tasks}. Calculation and processing took {dt_tot:.2}s.");
     }
 
     async fn get_batt_and_state(f_cont_lock: &Arc<RwLock<FlightComputer>>) -> (I32F32, usize) {
@@ -784,7 +642,9 @@ impl TaskController {
     fn map_e_to_dp(e: I32F32) -> usize {
         let e_clamp = e.clamp(Self::MIN_BATTERY_THRESHOLD, Self::MAX_BATTERY_THRESHOLD);
 
-        ((e_clamp - Self::MIN_BATTERY_THRESHOLD) / Self::BATTERY_RESOLUTION).round().to_num::<usize>()
+        ((e_clamp - Self::MIN_BATTERY_THRESHOLD) / Self::BATTERY_RESOLUTION)
+            .round()
+            .to_num::<usize>()
     }
 
     fn map_dp_to_e(dp: usize) -> I32F32 {
@@ -884,12 +744,6 @@ impl TaskController {
     /// - An `Arc` pointing to the `LockedTaskQueue`.
     pub fn sched_arc(&self) -> Arc<RwLock<VecDeque<Task>>> { Arc::clone(&self.task_schedule) }
 
-    /// Provides a reference to the `Convar` signaling changes to the first item in `image_schedule`.
-    ///
-    /// # Returns
-    /// - An `Arc` pointing to the `Condvar`.
-    pub fn notify_arc(&self) -> Arc<Condvar> { Arc::clone(&self.next_task_notify) }
-
     /// Schedules a task to switch the flight state at a specific time.
     ///
     /// # Arguments
@@ -900,11 +754,27 @@ impl TaskController {
     /// - If the task schedule is empty, the task is enqueued, and all waiting threads are notified.
     /// - Otherwise, the task is simply enqueued without sending notifications.
     async fn schedule_switch(&self, target: FlightState, sched_t: DateTime<Utc>) {
-        if self.task_schedule.read().await.is_empty() {
-            self.enqueue_task(Task::switch_target(target, sched_t)).await;
-            self.next_task_notify.notify_all();
-        } else {
-            self.enqueue_task(Task::switch_target(target, sched_t)).await;
+        self.enqueue_task(Task::switch_target(target, sched_t)).await;
+    }
+
+    async fn schedule_zo_image(&self, t: DateTime<Utc>, pos: Vec2D<I32F32>, lens: CameraAngle) {
+        let pos_u32 = Vec2D::new(pos.x().to_num::<u32>(), pos.y().to_num::<u32>());
+        self.enqueue_task(Task::image_task(pos_u32, lens, t)).await;
+    }
+
+    pub async fn schedule_retrieval_phase(
+        &self,
+        t: DateTime<Utc>,
+        pos: Vec2D<I32F32>,
+        lens: CameraAngle,
+    ) {
+        let t_first = t - Self::ZO_IMAGE_FIRST_DEL;
+        self.schedule_zo_image(t_first, pos, lens).await;
+        let trans_time = TRANS_DEL.get(&(FlightState::Acquisition, FlightState::Charge)).unwrap();
+        if Utc::now() + TimeDelta::from_std(*trans_time).unwrap() * 2 < t_first {
+            self.schedule_switch(FlightState::Charge, Utc::now()).await;
+            let last_charge_leave = t_first - TimeDelta::from_std(*trans_time).unwrap();
+            self.schedule_switch(FlightState::Acquisition, last_charge_leave).await;
         }
     }
 
@@ -918,21 +788,13 @@ impl TaskController {
     ///
     /// # Behavior
     /// - If the task schedule is empty before scheduling, all waiting threads are notified.
-    async fn schedule_vel_change(
-        &self,
+    pub async fn schedule_vel_change(
+        self: Arc<TaskController>,
         burn: BurnSequence,
         rationale: VelocityChangeTaskRationale,
     ) -> usize {
-        let mut has_to_notify = false;
-        if self.task_schedule.read().await.is_empty() {
-            has_to_notify = true;
-        }
         let due = burn.start_i().t();
         self.enqueue_task(Task::vel_change_task(burn, rationale, due)).await;
-
-        if has_to_notify {
-            self.next_task_notify.notify_all();
-        }
         self.task_schedule.read().await.len()
     }
 
@@ -953,7 +815,7 @@ impl TaskController {
         let schedule_len = schedule.len();
         let mut first_remove = 0;
         for i in 0..schedule_len {
-            if schedule[i].dt() > dt {
+            if schedule[i].t() > dt {
                 first_remove = i;
                 break;
             }

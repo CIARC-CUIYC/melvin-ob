@@ -1,12 +1,11 @@
 use super::{
     bayesian_set::BayesianSet,
-    vec2d::{MapSize, Vec2D},
+    vec2d::Vec2D,
 };
 use crate::flight_control::objective::beacon_objective::BeaconMeas;
 use crate::STATIC_ORBIT_VEL;
 use chrono::TimeDelta;
 use fixed::types::I32F32;
-use num::traits::FloatConst;
 use rand::{rng, Rng};
 
 const MAX_MEASURE_POINTS: usize = 6;
@@ -54,14 +53,19 @@ fn test_bayesian_filter() {
     );
     */
     let meas_pos = vec![
-        Vec2D::new(I32F32::from_num(12197), I32F32::from_num(9804)),
-        Vec2D::new(I32F32::from_num(12392), I32F32::from_num(10030)),
-        Vec2D::new(I32F32::from_num(12587), I32F32::from_num(10256)),
-        Vec2D::new(I32F32::from_num(12783), I32F32::from_num(10481)),
-        Vec2D::new(I32F32::from_num(12978), I32F32::from_num(10707)),
+        Vec2D::new(I32F32::from_num(271), I32F32::from_num(64)),
+        Vec2D::new(I32F32::from_num(466), I32F32::from_num(290)),
+        Vec2D::new(I32F32::from_num(661), I32F32::from_num(516)),
+        Vec2D::new(I32F32::from_num(856), I32F32::from_num(741)),
+        Vec2D::new(I32F32::from_num(1051), I32F32::from_num(967)),
+        Vec2D::new(I32F32::from_num(1247), I32F32::from_num(1193)),
+        Vec2D::new(I32F32::from_num(1442), I32F32::from_num(1418)),
+        Vec2D::new(I32F32::from_num(1637), I32F32::from_num(1644)),
+        Vec2D::new(I32F32::from_num(1832), I32F32::from_num(1870)),
+        Vec2D::new(I32F32::from_num(2027), I32F32::from_num(2096)),
     ];
 
-    let d_noisy = vec![1039.85, 1022.73, 1306.68, 1384.36, 1874.69];
+    let d_noisy = vec![1783.39, 1955.2, 1474.0, 1310.44, 1125.43, 1220.42, 1006.02, 1349.5, 1423.85, 1671.7];
 
     //println!("Generated beacon Position: {beacon_pos}");
 

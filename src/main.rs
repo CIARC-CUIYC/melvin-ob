@@ -2,10 +2,10 @@
 #![warn(clippy::shadow_reuse, clippy::shadow_same, clippy::builtin_type_shadow)]
 mod console_communication;
 mod flight_control;
-mod mode_control;
 mod http_handler;
 mod keychain;
 mod logger;
+mod mode_control;
 
 use crate::flight_control::{
     camera_state::CameraAngle,
@@ -16,14 +16,14 @@ use crate::flight_control::{
 };
 use crate::keychain::{Keychain, KeychainWithOrbit};
 use crate::mode_control::{
-    mode::global_mode::{GlobalMode, OpExitSignal},
-    mode::in_orbit_mode::InOrbitMode,
+    base_mode::BaseMode,
+    mode::{global_mode::GlobalMode, in_orbit_mode::InOrbitMode},
     mode_context::ModeContext,
+    signal::OpExitSignal,
 };
 use chrono::TimeDelta;
 use fixed::types::I32F32;
-use std::{env, sync::Arc};
-use std::time::Duration;
+use std::{env, sync::Arc, time::Duration};
 
 const DT_MIN: TimeDelta = TimeDelta::seconds(5);
 const DT_0: TimeDelta = TimeDelta::seconds(0);
@@ -34,16 +34,16 @@ const STATIC_ORBIT_VEL: (I32F32, I32F32) = (I32F32::lit("6.40"), I32F32::lit("7.
 const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
-async fn main() {    
+async fn main() {
     let base_url_var = env::var("DRS_BASE_URL");
     let base_url = base_url_var.as_ref().map_or("http://localhost:33000", |v| v.as_str());
     let context = Arc::new(init(base_url).await);
-    
-    let mut global_mode: Box<dyn GlobalMode> = Box::new(InOrbitMode::new());
+
+    let mut global_mode: Box<dyn GlobalMode> = Box::new(InOrbitMode::new(BaseMode::MappingMode));
     loop {
         let phase = context.o_ch_clone().await.mode_switches();
         info!("Starting phase {phase} in {}!", global_mode.type_name());
-        match global_mode.init_mode(Arc::clone(&context)).await{
+        match global_mode.init_mode(Arc::clone(&context)).await {
             OpExitSignal::ReInit(mode) => {
                 global_mode = mode;
                 continue;
@@ -58,17 +58,14 @@ async fn main() {
             OpExitSignal::Continue => {
                 global_mode = global_mode.exit_mode(Arc::clone(&context)).await;
                 continue;
-            },
+            }
         }
-        
     }
     // drop(console_messenger);
 }
 
 #[allow(clippy::cast_precision_loss)]
-async fn init(
-    url: &str,
-) -> ModeContext {
+async fn init(url: &str) -> ModeContext {
     let init_k = Keychain::new(url).await;
     init_k.f_cont().write().await.reset().await;
     let init_k_f_cont_clone = init_k.f_cont();
@@ -90,7 +87,7 @@ async fn init(
     let c_orbit: ClosedOrbit = {
         let f_cont_lock = init_k.f_cont();
         FlightComputer::set_state_wait(init_k.f_cont(), FlightState::Acquisition).await;
-        FlightComputer::set_vel_wait(init_k.f_cont(), STATIC_ORBIT_VEL.into()).await;
+        FlightComputer::set_vel_wait(init_k.f_cont(), STATIC_ORBIT_VEL.into(), false).await;
         FlightComputer::set_angle_wait(init_k.f_cont(), CONST_ANGLE).await;
         let f_cont = f_cont_lock.read().await;
         ClosedOrbit::new(OrbitBase::new(&f_cont), CameraAngle::Wide).unwrap_or_else(|e| match e {
@@ -104,7 +101,12 @@ async fn init(
     supervisor.reset_pos_mon().notify_one();
 
     let orbit_char = OrbitCharacteristics::new(&c_orbit, &init_k.f_cont()).await;
-    ModeContext::new(KeychainWithOrbit::new(init_k, c_orbit), orbit_char, obj_rx, supervisor)
+    ModeContext::new(
+        KeychainWithOrbit::new(init_k, c_orbit),
+        orbit_char,
+        obj_rx,
+        supervisor,
+    )
 }
 // TODO: translate this into state
 /*

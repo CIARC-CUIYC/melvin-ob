@@ -19,7 +19,7 @@ pub struct ImageObjective {
     decrease_rate: f32,
     zone: ZoneType,
     optic_required: String,
-    coverage_required: f32,
+    coverage_required: f64,
     description: String,
     sprite: Option<String>,
     secret: bool,
@@ -34,7 +34,7 @@ impl ImageObjective {
     pub fn decrease_rate(&self) -> f32 { self.decrease_rate }
     pub fn zone_type(&self) -> &ZoneType { &self.zone }
     pub fn optic_required(&self) -> &str { &self.optic_required }
-    pub fn coverage_required(&self) -> f32 { self.coverage_required }
+    pub fn coverage_required(&self) -> f64 { self.coverage_required }
     pub fn sprite(&self) -> Option<&String> { self.sprite.as_ref() }
     pub fn is_secret(&self) -> bool { self.secret }
 }
