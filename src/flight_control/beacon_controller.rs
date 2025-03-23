@@ -81,7 +81,7 @@ impl BeaconController {
         self.active_beacons.lock().await.values().map(BeaconObjective::end).max()
     }
 
-    fn extract_id_and_d(&self, input: &str) -> Option<(usize, f64)> {
+    fn extract_id_and_d(input: &str) -> Option<(usize, f64)> {
         // Match the input string
         if let Some(captures) = BO_REGEX.captures(input) {
             // Extract beacon_id and d_noisy
@@ -101,7 +101,7 @@ impl BeaconController {
         f_cont: Arc<RwLock<FlightComputer>>,
     ) -> bool {
         let (t, val) = msg;
-        if let Some((id, d_noisy)) = self.extract_id_and_d(val.as_str()) {
+        if let Some((id, d_noisy)) = Self::extract_id_and_d(val.as_str()) {
             let (pos, res_batt) = {
                 let f_cont_lock = f_cont.read().await;
                 (
