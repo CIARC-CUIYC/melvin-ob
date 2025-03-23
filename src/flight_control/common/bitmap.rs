@@ -42,11 +42,7 @@ impl Bitmap {
     /// A new instance of `Bitmap` with the specified dimensions and all pixels unset.
     pub fn new(width: u32, height: u32) -> Self {
         let length = width * height;
-        Self {
-            width,
-            height,
-            data: bitbox![usize, Lsb0; 0; length as usize],
-        }
+        Self { width, height, data: bitbox![usize, Lsb0; 0; length as usize] }
     }
 
     /// Creates a `Bitmap` with dimensions defined by `Vec2D::map_size()`.

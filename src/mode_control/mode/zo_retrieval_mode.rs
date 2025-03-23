@@ -4,8 +4,7 @@ use crate::flight_control::flight_state::{FlightState, TRANS_DEL};
 use crate::flight_control::imaging::map_image::OffsetZOImage;
 use crate::flight_control::task::base_task::BaseTask;
 use crate::flight_control::{
-    objective::known_img_objective::KnownImgObjective,
-    task::base_task::Task,
+    objective::known_img_objective::KnownImgObjective, task::base_task::Task,
 };
 use crate::mode_control::mode::orbit_return_mode::OrbitReturnMode;
 use crate::mode_control::{
@@ -46,7 +45,13 @@ impl GlobalMode for ZORetrievalMode {
         .await;
         let t_cont = context.k().t_cont();
         t_cont.clear_schedule().await; // Just to be sure
-        t_cont.schedule_retrieval_phase(target_t, self.unwrapped_pos.wrap_around_map(), self.target.optic_required()).await;
+        t_cont
+            .schedule_retrieval_phase(
+                target_t,
+                self.unwrapped_pos.wrap_around_map(),
+                self.target.optic_required(),
+            )
+            .await;
         OpExitSignal::Continue
     }
 
@@ -127,19 +132,19 @@ impl GlobalMode for ZORetrievalMode {
         warn!("Objective not reachable after safe event, exiting ZORetrievalMode");
         OpExitSignal::ReInit(Box::new(OrbitReturnMode::new()))
     }
-    
-    async fn zo_handler(&self, context: Arc<ModeContext>, task: KnownImgObjective) -> Option<OpExitSignal> {
+
+    async fn zo_handler(
+        &self,
+        context: Arc<ModeContext>,
+        task: KnownImgObjective,
+    ) -> Option<OpExitSignal> {
         context.k_buffer().lock().await.push(task);
         None
     }
 
-    fn bo_event_handler(&self) -> Option<OpExitSignal> {
-        unimplemented!()
-    }
-    
-    fn resched_event_handler(&self) -> Option<OpExitSignal> {
-        unimplemented!()
-    }
+    fn bo_event_handler(&self) -> Option<OpExitSignal> { unimplemented!() }
+
+    fn resched_event_handler(&self) -> Option<OpExitSignal> { unimplemented!() }
 
     async fn exit_mode(&self, _: Arc<ModeContext>) -> Box<dyn GlobalMode> {
         info!("Exiting ZORetrievalMode");

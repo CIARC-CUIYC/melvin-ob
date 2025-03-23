@@ -1,13 +1,13 @@
-use chrono::{DateTime, Utc};
 use super::http_request::request_common::RequestError;
 use super::http_response::response_common::ResponseError;
+use chrono::{DateTime, Utc};
 use strum_macros::Display;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum ZoneType {
     KnownZone([i32; 4]),
-    SecretZone(String)
+    SecretZone(String),
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
@@ -26,7 +26,6 @@ pub struct ImageObjective {
 }
 
 impl ImageObjective {
-
     pub fn id(&self) -> usize { self.id }
     pub fn start(&self) -> DateTime<Utc> { self.start }
     pub fn end(&self) -> DateTime<Utc> { self.end }

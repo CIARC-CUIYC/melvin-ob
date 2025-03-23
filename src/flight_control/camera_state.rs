@@ -1,5 +1,5 @@
-use std::{collections::HashMap, sync::LazyLock};
 use fixed::types::I32F32;
+use std::{collections::HashMap, sync::LazyLock};
 use strum_macros::{Display, EnumIter};
 
 /// Represents different camera angles supported by the system.
@@ -25,8 +25,8 @@ impl CameraAngle {
     /// # Returns
     /// A `u16` representing the side length of the square for the given camera angle.
     pub fn get_square_side_length(self) -> u16 { CAMERA_SCALE_LOOKUP[&self] }
-    
-    pub fn get_max_speed(self) -> I32F32 {CAMERA_MAX_SPEED_LOOKUP[&self]}
+
+    pub fn get_max_speed(self) -> I32F32 { CAMERA_MAX_SPEED_LOOKUP[&self] }
 }
 
 impl From<&str> for CameraAngle {

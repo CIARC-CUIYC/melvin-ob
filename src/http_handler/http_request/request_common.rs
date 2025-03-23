@@ -1,5 +1,5 @@
 use super::response_common::{HTTPResponseType, ResponseError};
-use crate::http_handler::{http_client::HTTPClient, HTTPError};
+use crate::http_handler::{HTTPError, http_client::HTTPClient};
 use std::{collections::HashMap, fmt::Debug, io::ErrorKind};
 use strum_macros::Display;
 
@@ -122,10 +122,4 @@ pub(crate) trait HTTPRequestType {
     }
 }
 
-pub fn bool_to_string(value: bool) -> &'static str {
-    if value {
-        "true"
-    } else {
-        "false"
-    }
-}
+pub fn bool_to_string(value: bool) -> &'static str { if value { "true" } else { "false" } }

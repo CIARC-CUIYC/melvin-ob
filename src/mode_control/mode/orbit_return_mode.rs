@@ -1,6 +1,6 @@
 use crate::flight_control::flight_computer::FlightComputer;
 use crate::flight_control::objective::known_img_objective::KnownImgObjective;
-use crate::flight_control::{objective::objective_base::ObjectiveBase, task::base_task::Task};
+use crate::flight_control::task::base_task::Task;
 use crate::mode_control::{
     mode::global_mode::GlobalMode,
     mode_context::ModeContext,

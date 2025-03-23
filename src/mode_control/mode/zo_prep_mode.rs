@@ -1,10 +1,7 @@
 use crate::flight_control::orbit::ExitBurnResult;
 use crate::flight_control::{
     flight_computer::FlightComputer,
-    objective::{
-        beacon_objective::BeaconObjective, known_img_objective::KnownImgObjective,
-        objective_base::ObjectiveBase, objective_type::ObjectiveType,
-    },
+    objective::known_img_objective::KnownImgObjective,
     task::{
         TaskController,
         base_task::{BaseTask, Task},
@@ -22,7 +19,7 @@ use crate::mode_control::{
     mode_context::ModeContext,
     signal::{ExecExitSignal, OpExitSignal, WaitExitSignal},
 };
-use crate::{error, fatal, info, log, obj};
+use crate::{error, fatal, info, log};
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use std::sync::Arc;
@@ -103,12 +100,7 @@ impl ZOPrepMode {
                 base = BaseMode::MappingMode;
             }
         }
-        Some(ZOPrepMode {
-            base,
-            exit_burn,
-            target: zo,
-            left_orbit: AtomicBool::new(false),
-        })
+        Some(ZOPrepMode { base, exit_burn, target: zo, left_orbit: AtomicBool::new(false) })
     }
 
     fn new_base(&self, base: BaseMode) -> Self {

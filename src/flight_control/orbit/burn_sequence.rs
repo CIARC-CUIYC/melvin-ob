@@ -1,5 +1,5 @@
-use std::sync::LazyLock;
 use super::index::IndexedOrbitPosition;
+use crate::flight_control::common::vec2d::MapSize;
 use crate::flight_control::{
     common::{math, vec2d::Vec2D},
     flight_computer::{FlightComputer, TurnsClockCClockTup},
@@ -9,8 +9,7 @@ use crate::flight_control::{
 use chrono::{TimeDelta, Utc};
 use fixed::types::{I32F32, I96F32};
 use num::Zero;
-use crate::flight_control::common::vec2d::MapSize;
-use crate::warn;
+use std::sync::LazyLock;
 
 /// Represents a sequence of corrective burns for orbital adjustments.
 ///
@@ -80,7 +79,8 @@ impl BurnSequence {
         let min_charge = (I32F32::from_num(maneuver_acq_time)
             * FlightState::Acquisition.get_charge_rate()
             + I32F32::from_num(acc_dt) * FlightState::ACQ_ACC_ADDITION)
-            * I32F32::lit("-1.0") + TaskController::MIN_BATTERY_THRESHOLD;
+            * I32F32::lit("-1.0")
+            + TaskController::MIN_BATTERY_THRESHOLD;
         let min_fuel =
             I32F32::from_num(maneuver_acq_time) * FlightComputer::ACC_CONST + Self::ADD_FUEL_CONST;
         Self {
@@ -135,12 +135,7 @@ impl ExitBurnResult {
         unwrapped_target: Vec2D<I32F32>,
         cost: I32F32,
     ) -> Self {
-        Self {
-            sequence,
-            cost,
-            target_pos,
-            unwrapped_target,
-        }
+        Self { sequence, cost, target_pos, unwrapped_target }
     }
 
     pub fn cost(&self) -> I32F32 { self.cost }
@@ -162,9 +157,8 @@ pub struct BurnSequenceEvaluator {
     dynamic_fuel_w: I32F32,
 }
 
-static MAX_DIST: LazyLock<I96F32> = LazyLock::new(|| {
-    (Vec2D::<I96F32>::map_size() * I96F32::from_num(2)).abs()
-});
+static MAX_DIST: LazyLock<I96F32> =
+    LazyLock::new(|| (Vec2D::<I96F32>::map_size() * I96F32::from_num(2)).abs());
 
 impl BurnSequenceEvaluator {
     /// A constant representing a 90-degree angle, in fixed-point format.
@@ -177,7 +171,6 @@ impl BurnSequenceEvaluator {
     const MIN_FUEL_W: I32F32 = I32F32::lit("1.0");
     /// Weight assigned to angle deviation in optimization calculations.
     const ANGLE_DEV_W: I32F32 = I32F32::lit("2.0");
-
 
     pub fn new(
         i: IndexedOrbitPosition,
@@ -238,13 +231,19 @@ impl BurnSequenceEvaluator {
                 && b.min_fuel() <= self.fuel_left
             {
                 let unwrapped_target = self.get_unwrapped_target(&b);
-                self.best_burn = Some(ExitBurnResult::new(b, self.target_pos, unwrapped_target, cost));
-            } 
+                self.best_burn = Some(ExitBurnResult::new(
+                    b,
+                    self.target_pos,
+                    unwrapped_target,
+                    cost,
+                ));
+            }
         }
     }
 
     pub fn get_unwrapped_target(&self, b: &BurnSequence) -> Vec2D<I32F32> {
-        let impact_pos = *b.sequence_pos().last().unwrap() + *b.sequence_vel().last().unwrap() * I32F32::from_num(b.detumble_dt());
+        let impact_pos = *b.sequence_pos().last().unwrap()
+            + *b.sequence_vel().last().unwrap() * I32F32::from_num(b.detumble_dt());
         let wrapped_impact_pos = impact_pos.wrap_around_map();
         let offset = wrapped_impact_pos.to(&self.target_pos);
         impact_pos + offset
@@ -298,7 +297,6 @@ impl BurnSequenceEvaluator {
 
                     let acc = (next_vel - *last_vel) * corr_burn_perc;
                     let (corr_vel, _) = FlightComputer::trunc_vel(next_vel + acc);
-                    let corr_wraps = (*last_pos + corr_vel).wraps();
                     let corr_pos = (*last_pos + corr_vel).wrap_around_map();
                     let corr_to_target = corr_pos.unwrapped_to(&self.target_pos);
                     let corr_angle_dev = corr_vel.angle_to(&corr_to_target);
@@ -330,14 +328,14 @@ impl BurnSequenceEvaluator {
             I32F32::zero(),
             I32F32::from_num(max_add_dt) * FlightComputer::FUEL_CONST,
         )
-            .unwrap_or(I32F32::zero());
+        .unwrap_or(I32F32::zero());
 
         let norm_off_orbit_dt = math::normalize_fixed32(
             I32F32::from_num(bs.acc_dt() + bs.detumble_dt()),
             I32F32::zero(),
             I32F32::from_num(self.max_off_orbit_dt),
         )
-            .unwrap_or(I32F32::zero());
+        .unwrap_or(I32F32::zero());
 
         let norm_angle_dev =
             math::normalize_fixed32(bs.rem_angle_dev().abs(), I32F32::zero(), self.max_angle_dev)

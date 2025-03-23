@@ -17,7 +17,10 @@ impl CycleState {
             TimeDelta::seconds(overlap_dt as i64)
         };
         Self {
-            last_mark: (start_i - overlap.num_seconds() as isize, Utc::now() - overlap),
+            last_mark: (
+                start_i - overlap.num_seconds() as isize,
+                Utc::now() - overlap,
+            ),
             last_pic: None,
             last_image_flag: false,
             done_ranges: Vec::new(),
@@ -42,9 +45,7 @@ impl CycleState {
         self.last_pic = None;
     }
 
-    pub fn update_success(&mut self, img_t: DateTime<Utc>) {
-        self.last_pic = Some(img_t);
-    }
+    pub fn update_success(&mut self, img_t: DateTime<Utc>) { self.last_pic = Some(img_t); }
 
     #[allow(clippy::cast_possible_truncation)]
     pub fn finish(mut self) -> Vec<(isize, isize)> {

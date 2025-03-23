@@ -31,9 +31,6 @@ impl HTTPRequestType for ObjectiveImageRequest {
 
 impl ObjectiveImageRequest {
     pub fn new(objective_id: usize, encoded_image: Vec<u8>) -> Self {
-        Self {
-            encoded_image: Bytes::from(encoded_image),
-            objective_id,
-        }
+        Self { encoded_image: Bytes::from(encoded_image), objective_id }
     }
 }

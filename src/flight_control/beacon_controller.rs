@@ -101,7 +101,6 @@ impl BeaconController {
         due_t: Option<DateTime<Utc>>,
         f_cont: Arc<RwLock<FlightComputer>>,
     ) -> bool {
-
         let (t, val) = msg;
         if let Some((id, d_noisy)) = Self::extract_id_and_d(val.as_str()) {
             let (pos, res_batt) = {
@@ -151,7 +150,7 @@ impl BeaconController {
 
     async fn move_to_done(&self, finished: HashMap<usize, BeaconObjective>) {
         let mut done_bo = self.done_bo.write().await;
-        finished.into_iter().for_each(|(id, beacon)| {
+        for (id, beacon) in finished {
             let done_beacon = BeaconObjectiveDone::from(beacon);
             if done_beacon.guesses().is_empty() {
                 //done_beacon.gen_random_guesses()
@@ -161,7 +160,7 @@ impl BeaconController {
                 obj!("Finished Beacon objective: ID {id} with {guesses} guesses.");
             }
             done_bo.insert(done_beacon.id(), done_beacon.clone());
-        });
+        }
     }
 
     async fn check_approaching_end(&self, handler: &Arc<HTTPClient>) {
@@ -184,7 +183,9 @@ impl BeaconController {
         };
         self.move_to_done(finished).await;
         if no_more_beacons {
-            self.state_rx.send(BeaconControllerState::NoActiveBeacons).expect("Failed to send state");
+            self.state_rx
+                .send(BeaconControllerState::NoActiveBeacons)
+                .expect("Failed to send state");
         }
         self.handle_beacon_submission(handler).await;
     }

@@ -7,16 +7,16 @@ use crate::flight_control::{
 };
 use crate::{error, fatal, info, log};
 
+use crate::flight_control::beacon_controller::BeaconControllerState;
 use crate::flight_control::task::end_condition::EndCondition;
 use crate::mode_control::base_mode::TaskEndSignal::{Join, Timestamp};
 use crate::mode_control::mode_context::ModeContext;
+use crate::mode_control::signal::BaseWaitExitSignal;
 use chrono::{DateTime, TimeDelta, Utc};
 use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 use strum_macros::Display;
 use tokio::{sync::oneshot, task::JoinHandle, time::Instant};
 use tokio_util::sync::CancellationToken;
-use crate::flight_control::beacon_controller::BeaconControllerState;
-use crate::mode_control::signal::BaseWaitExitSignal;
 
 pub(crate) enum TaskEndSignal {
     Timestamp(DateTime<Utc>),
@@ -140,7 +140,7 @@ impl BaseMode {
             }
             Join(join_handle) => Box::pin(async { join_handle.await.ok().unwrap() }),
         };
-        
+
         let start = Utc::now();
         info!("Starting Comms Listener.");
         loop {
@@ -255,7 +255,9 @@ impl BaseMode {
                 if let Self::BeaconObjectiveScanningMode = self {
                     Box::pin(async move {
                         Self::exec_comms(context, Timestamp(due), c_tok).await;
-                        if Utc::now() > due + Self::MAX_COMM_PROLONG_RESCHEDULE || Utc::now() < due - Self::MAX_COMM_PROLONG_RESCHEDULE {
+                        if Utc::now() > due + Self::MAX_COMM_PROLONG_RESCHEDULE
+                            || Utc::now() < due - Self::MAX_COMM_PROLONG_RESCHEDULE
+                        {
                             log!("Prolonging or shortening detected. Rescheduling.");
                             BaseWaitExitSignal::ReSchedule
                         } else {
@@ -301,14 +303,14 @@ impl BaseMode {
             _ => fatal!("Illegal target state!"),
         }
     }
-    
+
     pub fn get_rel_bo_event(&self) -> BeaconControllerState {
         match self {
             BaseMode::MappingMode => BeaconControllerState::ActiveBeacons,
             BaseMode::BeaconObjectiveScanningMode => BeaconControllerState::NoActiveBeacons,
         }
     }
-    
+
     pub fn bo_event(&self) -> Self {
         match self {
             BaseMode::MappingMode => Self::BeaconObjectiveScanningMode,

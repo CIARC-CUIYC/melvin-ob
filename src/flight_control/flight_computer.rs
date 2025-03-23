@@ -3,6 +3,7 @@ use super::{
     common::{math::MAX_DEC, vec2d::Vec2D},
     flight_state::{FlightState, TRANS_DEL},
 };
+use crate::flight_control::common::vec2d::WrapDirection;
 use crate::flight_control::{
     orbit::{BurnSequence, IndexedOrbitPosition},
     task::TaskController,
@@ -16,7 +17,7 @@ use crate::http_handler::{
         reset_get::ResetRequest,
     },
 };
-use crate::{error, fatal, info, log, warn, STATIC_ORBIT_VEL};
+use crate::{STATIC_ORBIT_VEL, error, fatal, info, log, warn};
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::{I32F32, I64F64};
 use num::{ToPrimitive, Zero};
@@ -25,7 +26,6 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::RwLock;
-use crate::flight_control::common::vec2d::WrapDirection;
 
 pub type TurnsClockCClockTup = (
     Vec<(Vec2D<I32F32>, Vec2D<I32F32>)>,
@@ -399,7 +399,7 @@ impl FlightComputer {
             cond_not_trans,
             Self::DEF_COND_TO,
             Self::DEF_COND_PI,
-            false
+            false,
         )
         .await;
         let state = self_lock.read().await.state();
@@ -410,7 +410,14 @@ impl FlightComputer {
             |cont: &FlightComputer| cont.current_battery() > Self::EXIT_SAFE_MIN_BATT,
             format!("Battery level is higher than {}", Self::EXIT_SAFE_MIN_BATT),
         );
-        Self::wait_for_condition(&self_lock, cond_min_charge, 450_000, Self::DEF_COND_PI, false).await;
+        Self::wait_for_condition(
+            &self_lock,
+            cond_min_charge,
+            450_000,
+            Self::DEF_COND_PI,
+            false,
+        )
+        .await;
         Self::set_state_wait(self_lock, target_state).await;
     }
 
@@ -481,12 +488,13 @@ impl FlightComputer {
             let f_cont = self_lock.read().await;
             (f_cont.current_battery(), f_cont.current_vel())
         };
-        let vel_change_dt = Duration::from_secs_f32(
-            (orbit_vel.to(&vel).abs() / Self::ACC_CONST).to_num::<f32>(),
-        );
+        let vel_change_dt =
+            Duration::from_secs_f32((orbit_vel.to(&vel).abs() / Self::ACC_CONST).to_num::<f32>());
         let charge_needed = {
-            let acq_batt = FlightState::Acquisition.get_charge_rate() + FlightState::ACQ_ACC_ADDITION;
-            TaskController::MIN_BATTERY_THRESHOLD + I32F32::from_num(vel_change_dt.as_secs()) * acq_batt
+            let acq_batt =
+                FlightState::Acquisition.get_charge_rate() + FlightState::ACQ_ACC_ADDITION;
+            TaskController::MIN_BATTERY_THRESHOLD
+                + I32F32::from_num(vel_change_dt.as_secs()) * acq_batt
         };
         if batt < charge_needed {
             FlightComputer::charge_full_wait(&self_lock).await;
@@ -506,7 +514,7 @@ impl FlightComputer {
     }
 
     async fn charge_full_wait(self_lock: &Arc<RwLock<Self>>) {
-       let state = self_lock.read().await.state();
+        let state = self_lock.read().await.state();
         if state == FlightState::Safe {
             FlightComputer::escape_safe(Arc::clone(self_lock), true).await;
             FlightComputer::set_state_wait(Arc::clone(self_lock), FlightState::Charge).await;
@@ -545,7 +553,14 @@ impl FlightComputer {
             |cont: &FlightComputer| cont.state() == new_state,
             format!("State equals {new_state}"),
         );
-        Self::wait_for_condition(&self_lock, cond, Self::DEF_COND_TO, Self::DEF_COND_PI, false).await;
+        Self::wait_for_condition(
+            &self_lock,
+            cond,
+            Self::DEF_COND_TO,
+            Self::DEF_COND_PI,
+            false,
+        )
+        .await;
         self_lock.write().await.target_state = None;
     }
 
@@ -574,7 +589,8 @@ impl FlightComputer {
             |cont: &FlightComputer| Self::round_vel_expand(cont.current_vel()) == comp_new_vel,
             format!("Scaled Vel equals {new_vel}"),
         );
-        Self::wait_for_condition(&self_lock, cond, Self::DEF_COND_TO, Self::DEF_COND_PI, mute).await;
+        Self::wait_for_condition(&self_lock, cond, Self::DEF_COND_TO, Self::DEF_COND_PI, mute)
+            .await;
     }
 
     /// Adjusts the satellite's camera angle and waits until the target angle is reached.
@@ -606,7 +622,14 @@ impl FlightComputer {
             |cont: &FlightComputer| cont.current_angle() == new_angle,
             format!("Lens equals {new_angle}"),
         );
-        Self::wait_for_condition(&self_lock, cond, Self::DEF_COND_TO, Self::DEF_COND_PI, false).await;
+        Self::wait_for_condition(
+            &self_lock,
+            cond,
+            Self::DEF_COND_TO,
+            Self::DEF_COND_PI,
+            false,
+        )
+        .await;
     }
 
     /// Executes a sequence of thruster burns that affect the trajectory of MELVIN.
@@ -632,7 +655,9 @@ impl FlightComputer {
             (f_cont.current_pos(), f_cont.current_vel())
         };
         let burn_dt = (Utc::now() - burn_start).num_seconds();
-        log!("Burn sequence finished after {burn_dt}s! Position: {pos}, Velocity: {vel}, expected Position: {target_pos}, expected Velocity: {target_vel}.");
+        log!(
+            "Burn sequence finished after {burn_dt}s! Position: {pos}, Velocity: {vel}, expected Position: {target_pos}, expected Velocity: {target_vel}."
+        );
     }
 
     pub async fn detumble_to(
@@ -644,36 +669,32 @@ impl FlightComputer {
         let max_speed = lens.get_max_speed();
         let detumble_start = Utc::now();
 
-        let (pos, vel) = {
-            let f_locked = self_lock.read().await;
-            (f_locked.current_pos(), f_locked.current_vel())
-        };
-        let mut to_target = pos.to(&target);
-        let mut dt = to_target.abs() / vel.abs();
-        let mut dx = to_target - (vel.normalize() * dt);
+        let start_pos = self_lock.read().await.current_pos();
+        let mut to_target = start_pos.to(&target);
+        let mut dt;
+        let mut dx;
         let mut last_to_target = to_target;
-        
-        loop {
 
+        loop {
             let (pos, vel) = {
                 let f_locked = self_lock.read().await;
                 (f_locked.current_pos(), f_locked.current_vel())
             };
             to_target = pos.to(&target);
-            
+
             // sudden jumps mean we wrapped and we need to wrap the corresponding coordinate too
             if to_target.x().abs() > 2 * last_to_target.x().abs() {
-                target.wrap_by(&WrapDirection::WrapX);
+                target = target.wrap_by(&WrapDirection::WrapX);
                 to_target = pos.to(&target);
             }
             if to_target.y().abs() > 2 * last_to_target.y().abs() {
-                target.wrap_by(&WrapDirection::WrapY);
+                target = target.wrap_by(&WrapDirection::WrapY);
                 to_target = pos.to(&target);
             }
             last_to_target = to_target;
             dt = to_target.abs() / vel.abs();
             dx = to_target - (vel.normalize() * dt);
-            
+
             let acc = dx.normalize() * Self::ACC_CONST;
             let overspeed = vel.abs() > max_speed;
             if ticker % 10 == 0 {
@@ -691,7 +712,9 @@ impl FlightComputer {
             };
             if dx.abs() < I32F32::lit("1.0") || cond {
                 let detumble_dt = (Utc::now() - detumble_start).num_seconds();
-                log!("Detumbling finished after {detumble_dt}s with remaining DX: {dx} and dt {dt:2}s");
+                log!(
+                    "Detumbling finished after {detumble_dt}s with remaining DX: {dx} and dt {dt:2}s"
+                );
                 if overspeed {
                     todo!();
                 } else {
@@ -717,8 +740,10 @@ impl FlightComputer {
                 self.current_state = FlightState::from(obs.state());
                 self.current_angle = CameraAngle::from(obs.angle());
                 self.last_observation_timestamp = obs.timestamp();
-                self.current_battery = I32F32::from_num(obs.battery()).clamp(Self::MIN_0, Self::MAX_100);
-                self.max_battery = I32F32::from_num(obs.max_battery()).clamp(Self::MIN_0, Self::MAX_100);
+                self.current_battery =
+                    I32F32::from_num(obs.battery()).clamp(Self::MIN_0, Self::MAX_100);
+                self.max_battery =
+                    I32F32::from_num(obs.max_battery()).clamp(Self::MIN_0, Self::MAX_100);
                 self.fuel_left = I32F32::from_num(obs.fuel()).clamp(Self::MIN_0, Self::MAX_100);
                 return;
             }
@@ -761,7 +786,7 @@ impl FlightComputer {
             state: self.current_state.into(),
         };
         loop {
-            if req.send_request(&self.request_client).await.is_ok()  {
+            if req.send_request(&self.request_client).await.is_ok() {
                 if !mute {
                     info!("Velocity change commanded to [{}, {}]", vel.x(), vel.y());
                 }

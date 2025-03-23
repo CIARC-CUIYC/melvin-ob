@@ -49,7 +49,7 @@ impl FileBackedBuffer {
     ///
     /// # Returns
     ///
-    /// A `Result` containing the created `FileBackedBuffer` on success, 
+    /// A `Result` containing the created `FileBackedBuffer` on success,
     /// or an error message on failure.
     #[allow(clippy::cast_possible_wrap)]
     pub(crate) fn open<T: AsRef<Path>>(path: T, length: usize) -> Result<Self, &'static str> {
@@ -77,11 +77,7 @@ impl FileBackedBuffer {
         if ptr == libc::MAP_FAILED {
             return Err("mmap failed");
         }
-        Ok(FileBackedBuffer {
-            file,
-            length,
-            ptr: ptr.cast::<u8>(),
-        })
+        Ok(FileBackedBuffer { file, length, ptr: ptr.cast::<u8>() })
     }
 }
 

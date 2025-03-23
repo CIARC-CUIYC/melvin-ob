@@ -87,11 +87,7 @@ impl TaskController {
     ///
     /// # Returns
     /// - A new `TaskController` with an empty task schedule.
-    pub fn new() -> Self {
-        Self {
-            task_schedule: Arc::new(RwLock::new(VecDeque::new())),
-        }
-    }
+    pub fn new() -> Self { Self { task_schedule: Arc::new(RwLock::new(VecDeque::new())) } }
 
     #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
     /// Initializes the optimal orbit schedule calculation.
@@ -223,10 +219,7 @@ impl TaskController {
             score_cube.push(cov_dt);
         }
         // Return the resulting decision cube and the score grid linked box.
-        OptimalOrbitResult {
-            decisions: dec_cube,
-            coverage_slice: score_cube,
-        }
+        OptimalOrbitResult { decisions: dec_cube, coverage_slice: score_cube }
     }
     /*
     #[allow(clippy::cast_possible_truncation)]
@@ -435,7 +428,6 @@ impl TaskController {
         orbit_lock: Arc<RwLock<ClosedOrbit>>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
     ) {
-        
     }
 
     #[allow(clippy::cast_possible_wrap)]

@@ -32,15 +32,11 @@ impl VelocityChangeTask {
     ///
     /// # Returns
     /// - An immutable reference to the `BurnSequence`.
-    pub fn burn(&self) -> &BurnSequence {
-        &self.burn
-    }
+    pub fn burn(&self) -> &BurnSequence { &self.burn }
 
     /// Retrieves the reason for the velocity change
-    /// 
+    ///
     /// # Returns
     /// - A `VelocityChangeTaskRationale`
-    pub fn rationale(&self) -> VelocityChangeTaskRationale {
-        self.rationale
-    }
+    pub fn rationale(&self) -> VelocityChangeTaskRationale { self.rationale }
 }

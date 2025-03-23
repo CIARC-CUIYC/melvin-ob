@@ -1,13 +1,13 @@
-use chrono::{DateTime, Utc};
 use crate::flight_control::{
     camera_state::CameraAngle,
     common::{
-        math::{fmod_fixed64, gcd_fixed64, lcm_fixed64, MAX_DEC},
-        vec2d::{Vec2D, MapSize},
+        math::{MAX_DEC, fmod_fixed64, gcd_fixed64, lcm_fixed64},
+        vec2d::{MapSize, Vec2D},
     },
     flight_computer::FlightComputer,
     flight_state::FlightState,
 };
+use chrono::{DateTime, Utc};
 use fixed::types::I32F32;
 
 /// Struct representing the base properties of an orbit.
@@ -51,9 +51,7 @@ impl OrbitBase {
     ///
     /// # Returns
     /// - A `chrono::DateTime` with the UTC initialization timestamp.
-    pub fn start_timestamp(&self) -> DateTime<Utc> {
-        self.init_timestamp
-    }
+    pub fn start_timestamp(&self) -> DateTime<Utc> { self.init_timestamp }
 
     /// Calculates the period of the orbit along with the individual periods in the x and y
     /// directions.
@@ -152,4 +150,7 @@ impl OrbitBase {
             false
         }
     }
+
+    pub fn fp(&self) -> &Vec2D<I32F32> { &self.fp }
+    pub fn vel(&self) -> &Vec2D<I32F32> { &self.vel }
 }

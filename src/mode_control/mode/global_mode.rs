@@ -9,8 +9,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use std::{future::Future, pin::Pin, sync::Arc};
 use std::mem::discriminant;
-use std::ops::Deref;
-use tokio::sync::{RwLock, RwLockWriteGuard};
+use tokio::sync::RwLock;
 use tokio::sync::watch::Receiver;
 use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
@@ -111,7 +110,7 @@ pub trait OrbitalMode: GlobalMode {
     ) -> WaitExitSignal {
         let safe_mon = context.super_v().safe_mon();
         let mut zo_mon = context.zo_mon().write().await;
-        let mut bo_mon = context.bo_mon();
+        let bo_mon = context.bo_mon();
         let cancel_task = CancellationToken::new();
 
         let fut: Pin<Box<dyn Future<Output = Result<BaseWaitExitSignal, JoinError>> + Send>> =
@@ -146,7 +145,7 @@ pub trait OrbitalMode: GlobalMode {
                 fut.await.ok();
                 WaitExitSignal::NewZOEvent(img_obj)
             }
-            _ = Self::monitor_bo_mon_change(bo_change_signal, bo_mon) => {
+            () = Self::monitor_bo_mon_change(bo_change_signal, bo_mon) => {
                 cancel_task.cancel();
                 fut.await.ok();
                 WaitExitSignal::BOEvent            
@@ -160,7 +159,7 @@ pub trait OrbitalMode: GlobalMode {
         loop {
             if let Ok(()) = bo_mon_lock.changed().await {
                 let sent_sig = bo_mon_lock.borrow_and_update();
-                let sent_sig_ref = sent_sig.deref();
+                let sent_sig_ref = &*sent_sig;
                 if discriminant(&sig) == discriminant(sent_sig_ref) {
                     return;
                 }

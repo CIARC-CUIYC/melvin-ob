@@ -44,13 +44,7 @@ impl Keychain {
             Arc::clone(&t_cont),
         ));
         let f_cont = Arc::new(RwLock::new(FlightComputer::new(Arc::clone(&client)).await));
-        Self {
-            client,
-            con,
-            f_cont,
-            t_cont,
-            c_cont,
-        }
+        Self { client, con, f_cont, t_cont, c_cont }
     }
 
     /// Provides a cloned reference to the HTTP client.

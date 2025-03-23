@@ -1,12 +1,9 @@
-use super::{
-    bayesian_set::BayesianSet,
-    vec2d::Vec2D,
-};
-use crate::flight_control::objective::beacon_objective::BeaconMeas;
+use super::{bayesian_set::BayesianSet, vec2d::Vec2D};
 use crate::STATIC_ORBIT_VEL;
+use crate::flight_control::objective::beacon_objective::BeaconMeas;
 use chrono::TimeDelta;
 use fixed::types::I32F32;
-use rand::{rng, Rng};
+use rand::{Rng, rng};
 
 const MAX_MEASURE_POINTS: usize = 6;
 const MEASURE_PERIOD: I32F32 = I32F32::lit("60");
@@ -65,7 +62,9 @@ fn test_bayesian_filter() {
         Vec2D::new(I32F32::from_num(2027), I32F32::from_num(2096)),
     ];
 
-    let d_noisy = vec![1783.39, 1955.2, 1474.0, 1310.44, 1125.43, 1220.42, 1006.02, 1349.5, 1423.85, 1671.7];
+    let d_noisy = vec![
+        1783.39, 1955.2, 1474.0, 1310.44, 1125.43, 1220.42, 1006.02, 1349.5, 1423.85, 1671.7,
+    ];
 
     //println!("Generated beacon Position: {beacon_pos}");
 
