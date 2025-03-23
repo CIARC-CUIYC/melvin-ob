@@ -1,5 +1,5 @@
-use crate::flight_control::objective::beacon_objective::BeaconMeas;
 use super::vec2d::Vec2D;
+use crate::flight_control::objective::beacon_objective::BeaconMeas;
 use fixed::types::I32F32;
 use kiddo::{ImmutableKdTree, SquaredEuclidean};
 use num::traits::FloatConst;
@@ -13,9 +13,8 @@ pub struct SquareSlice {
 }
 
 impl SquareSlice {
-    
     const HEX_PACK_SPACING_FACTOR: f32 = 0.93;
-    
+
     pub fn new(pos: Vec2D<I32F32>, max_dist: Vec2D<I32F32>) -> Self {
         let offset = (pos - max_dist).wrap_around_map();
         Self {
@@ -118,7 +117,7 @@ impl SquareSlice {
         let mut centers = Vec::new();
         let dx = ((3.0 * r / 2.0) * Self::HEX_PACK_SPACING_FACTOR) as i32;
         let dy = ((r * 3.0f32.sqrt() / 2.0) * Self::HEX_PACK_SPACING_FACTOR) as i32;
-        
+
         let side_x = self.side_length.x().to_num::<i32>();
         let side_y = self.side_length.y().to_num::<i32>();
 

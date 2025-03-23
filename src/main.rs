@@ -7,6 +7,7 @@ mod keychain;
 mod logger;
 mod mode_control;
 
+use crate::flight_control::beacon_controller::BeaconController;
 use crate::flight_control::{
     camera_state::CameraAngle,
     flight_computer::FlightComputer,
@@ -16,10 +17,10 @@ use crate::flight_control::{
 };
 use crate::keychain::{Keychain, KeychainWithOrbit};
 use crate::mode_control::{
-    mode::{global_mode::GlobalMode, in_orbit_mode::InOrbitMode},
     base_mode::BaseMode,
-    signal::OpExitSignal,
+    mode::{global_mode::GlobalMode, in_orbit_mode::InOrbitMode},
     mode_context::ModeContext,
+    signal::OpExitSignal,
 };
 use chrono::TimeDelta;
 use fixed::types::I32F32;
@@ -38,12 +39,12 @@ async fn main() {
     let base_url_var = env::var("DRS_BASE_URL");
     let base_url = base_url_var.as_ref().map_or("http://localhost:33000", |v| v.as_str());
     let context = Arc::new(init(base_url).await);
-    
+
     let mut global_mode: Box<dyn GlobalMode> = Box::new(InOrbitMode::new(BaseMode::MappingMode));
     loop {
         let phase = context.o_ch_clone().await.mode_switches();
         info!("Starting phase {phase} in {}!", global_mode.type_name());
-        match global_mode.init_mode(Arc::clone(&context)).await{
+        match global_mode.init_mode(Arc::clone(&context)).await {
             OpExitSignal::ReInit(mode) => {
                 global_mode = mode;
                 continue;
@@ -58,24 +59,22 @@ async fn main() {
             OpExitSignal::Continue => {
                 global_mode = global_mode.exit_mode(Arc::clone(&context)).await;
                 continue;
-            },
+            }
         }
-        
     }
     // drop(console_messenger);
 }
 
 #[allow(clippy::cast_precision_loss)]
-async fn init(
-    url: &str,
-) -> ModeContext {
+async fn init(url: &str) -> ModeContext {
     let init_k = Keychain::new(url).await;
     init_k.f_cont().write().await.reset().await;
     let init_k_f_cont_clone = init_k.f_cont();
-    let (supervisor, obj_rx) = {
-        let (sv, rx) = Supervisor::new(init_k_f_cont_clone);
-        (Arc::new(sv), rx)
+    let (supervisor, obj_rx, beac_rx) = {
+        let (sv, rx_obj, rx_beac) = Supervisor::new(init_k_f_cont_clone);
+        (Arc::new(sv), rx_obj, rx_beac)
     };
+    let beac_cont = Arc::new(BeaconController::new(beac_rx));
     let supervisor_clone = Arc::clone(&supervisor);
     tokio::spawn(async move {
         supervisor_clone.run_obs_obj_mon().await;
@@ -84,10 +83,10 @@ async fn init(
     tokio::spawn(async move {
         supervisor_clone_clone.run_announcement_hub().await;
     });
-    let b_cont_clone = Arc::clone(&init_k.b_cont());
-    let client = Arc::clone(&init_k.client());
+    let beac_cont_clone = Arc::clone(&beac_cont);
+    let handler = Arc::clone(&init_k.client());
     tokio::spawn(async move {
-        b_cont_clone.run(client).await;
+        beac_cont_clone.run(handler).await;
     });
 
     tokio::time::sleep(DT_MIN.to_std().unwrap()).await;
@@ -114,6 +113,7 @@ async fn init(
         orbit_char,
         obj_rx,
         supervisor,
+        beac_cont,
     )
 }
 // TODO: translate this into state

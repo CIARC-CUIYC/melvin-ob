@@ -1,12 +1,11 @@
 use crate::console_communication::ConsoleMessenger;
-use crate::flight_control::beacon_controller::BeaconController;
 use crate::flight_control::{
     camera_controller::CameraController, flight_computer::FlightComputer, orbit::ClosedOrbit,
     task::TaskController,
 };
 use crate::http_handler::http_client::HTTPClient;
 use std::sync::Arc;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 
 /// Struct representing the key components of the application, providing access
 /// to various subsystems such as the HTTP client, camera controller, flight computer,
@@ -23,8 +22,6 @@ pub struct Keychain {
     t_cont: Arc<TaskController>,
     /// The camera controller for handling camera-related operations.
     c_cont: Arc<CameraController>,
-    /// The beacon controller for handling beacon-related operations
-    b_cont: Arc<BeaconController>,
 }
 
 impl Keychain {
@@ -47,14 +44,12 @@ impl Keychain {
             Arc::clone(&t_cont),
         ));
         let f_cont = Arc::new(RwLock::new(FlightComputer::new(Arc::clone(&client)).await));
-        let b_cont = Arc::new(BeaconController::new());
         Self {
             client,
             con,
             f_cont,
             t_cont,
             c_cont,
-            b_cont,
         }
     }
 
@@ -72,9 +67,6 @@ impl Keychain {
 
     /// Provides a cloned reference to the camera controller.
     pub fn c_cont(&self) -> Arc<CameraController> { Arc::clone(&self.c_cont) }
-
-    /// Provides a cloned reference to the beacon controller.
-    pub fn b_cont(&self) -> Arc<BeaconController> { Arc::clone(&self.b_cont) }
 }
 
 /// Struct representing an enhanced `Keychain` that includes a `ClosedOrbit`.
@@ -94,8 +86,6 @@ pub struct KeychainWithOrbit {
     c_cont: Arc<CameraController>,
     /// The closed orbit object, protected by a read-write lock for thread-safe access.
     c_orbit: Arc<RwLock<ClosedOrbit>>,
-    // TODO: docstring
-    b_cont: Arc<BeaconController>,
 }
 
 impl KeychainWithOrbit {
@@ -117,7 +107,6 @@ impl KeychainWithOrbit {
             t_cont: keychain.t_cont,
             c_cont: keychain.c_cont,
             c_orbit: Arc::new(RwLock::new(orbit)),
-            b_cont: keychain.b_cont,
         }
     }
 
@@ -156,10 +145,4 @@ impl KeychainWithOrbit {
     /// # Returns
     /// A thread-safe reference to the `ConsoleMessenger`.
     pub fn con(&self) -> Arc<ConsoleMessenger> { Arc::clone(&self.con) }
-
-    /// Provides a cloned reference to the beacon controller.
-    ///
-    /// # Returns
-    /// A thread-safe reference to the `BeaconController`.
-    pub fn b_cont(&self) -> Arc<BeaconController> { Arc::clone(&self.b_cont) }
 }

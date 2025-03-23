@@ -108,7 +108,7 @@ impl GlobalMode for InOrbitMode {
                     obj.end(),
                 );
                 obj!("Found new Beacon Objective {}!", obj.id());
-                if let Some(base) = self.base.handle_b_o(&context, b_obj).await {
+                if let Some(base) = self.base.handle_b_o().await {
                     context.o_ch_lock().write().await.finish(
                         context.k().f_cont().read().await.current_pos(),
                         self.new_bo_rationale(),
@@ -171,9 +171,8 @@ impl GlobalMode for InOrbitMode {
     }
 
     async fn exit_mode(&self, c: Arc<ModeContext>) -> Box<dyn GlobalMode> {
-        let handler = c.k().f_cont().read().await.client();
         Box::new(Self {
-            base: self.base.exit_base(handler).await,
+            base: self.base.exit_base(c).await,
         })
     }
 }

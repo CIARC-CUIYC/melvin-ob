@@ -42,12 +42,7 @@ pub struct BeaconObjective {
 }
 
 impl BeaconObjective {
-    pub fn new(
-        id: usize,
-        name: String,
-        start: DateTime<Utc>,
-        end: DateTime<Utc>,
-    ) -> Self {
+    pub fn new(id: usize, name: String, start: DateTime<Utc>, end: DateTime<Utc>) -> Self {
         Self {
             id,
             name,
@@ -82,4 +77,16 @@ impl PartialOrd<Self> for BeaconObjective {
 
 impl Ord for BeaconObjective {
     fn cmp(&self, other: &Self) -> Ordering { self.end.cmp(&other.end) }
+}
+
+impl From<crate::http_handler::BeaconObjective> for BeaconObjective {
+    fn from(obj: crate::http_handler::BeaconObjective) -> Self {
+        Self {
+            id: obj.id(),
+            name: String::from(obj.name()),
+            start: obj.start(),
+            end: obj.end(),
+            measurements: None,
+        }
+    }
 }

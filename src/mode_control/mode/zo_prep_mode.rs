@@ -7,9 +7,9 @@ use crate::flight_control::{
     orbit::BurnSequence,
     task::{
         base_task::{BaseTask, Task},
-        TaskController,
         end_condition::EndCondition,
-        vel_change_task::VelocityChangeTaskRationale::OrbitEscape
+        vel_change_task::VelocityChangeTaskRationale::OrbitEscape,
+        TaskController,
     },
 };
 use crate::mode_control::{
@@ -64,20 +64,31 @@ impl ZOPrepMode {
         let tar = zo.get_imaging_points()[0];
         info!("Calculated Burn Sequence for Zoned Objective: {}", zo.id());
         log!("Entry at {entry_t}, Position will be {entry_pos}");
-        log!("Exit after {}s, Position will be {exit_pos}", exit_burn.acc_dt());
-        log!("Exit Velocity will be {exit_vel} aiming for target at {tar}. Detumble time is {}s.",  exit_burn.detumble_dt());
-        if let BaseMode::BeaconObjectiveScanningMode(_) = base {
+        log!(
+            "Exit after {}s, Position will be {exit_pos}",
+            exit_burn.acc_dt()
+        );
+        log!(
+            "Exit Velocity will be {exit_vel} aiming for target at {tar}. Detumble time is {}s.",
+            exit_burn.detumble_dt()
+        );
+        if let BaseMode::BeaconObjectiveScanningMode = base {
             let burn_start = exit_burn.start_i().t();
             let worst_case_first_comms_end = {
-                let to_comms = 
-                    FlightComputer::get_to_comms_dt_est(context.k().f_cont()).await;
-                Utc::now() + to_comms.1 + TimeDelta::seconds(TaskController::IN_COMMS_SCHED_SECS as i64)
+                let to_comms = FlightComputer::get_to_comms_dt_est(context.k().f_cont()).await;
+                Utc::now()
+                    + to_comms.1
+                    + TimeDelta::seconds(TaskController::IN_COMMS_SCHED_SECS as i64)
             };
             if worst_case_first_comms_end + TimeDelta::seconds(10) > burn_start {
                 base = BaseMode::MappingMode;
             }
         }
-        Some(ZOPrepMode { base, exit_burn, target: zo })
+        Some(ZOPrepMode {
+            base,
+            exit_burn,
+            target: zo,
+        })
     }
 }
 
@@ -95,7 +106,9 @@ impl GlobalMode for ZOPrepMode {
         let end = EndCondition::from_burn(&self.exit_burn);
         let sched_handle = {
             let cancel_clone = cancel_task.clone();
-            self.base.get_schedule_handle(Arc::clone(&context), cancel_clone, comms_end, Some(end)).await
+            self.base
+                .get_schedule_handle(Arc::clone(&context), cancel_clone, comms_end, Some(end))
+                .await
         };
         tokio::pin!(sched_handle);
         let safe_mon = context.super_v().safe_mon();
@@ -174,7 +187,7 @@ impl GlobalMode for ZOPrepMode {
                 );
                 // TODO: move this to external beacon handler
                 obj!("Found new Beacon Objective {}!", obj.id());
-                if let Some(base) = self.base.handle_b_o(&context, b_obj).await {
+                if let Some(base) = self.base.handle_b_o().await {
                     context.o_ch_lock().write().await.finish(
                         context.k().f_cont().read().await.current_pos(),
                         self.new_bo_rationale(),
@@ -241,7 +254,6 @@ impl GlobalMode for ZOPrepMode {
 
     async fn exit_mode(&self, c: Arc<ModeContext>) -> Box<dyn GlobalMode> {
         error!("This mode should never be ended manually!");
-        let handler = c.k().f_cont().read().await.client();
-        Box::new(InOrbitMode::new(self.base.exit_base(handler).await))
+        Box::new(InOrbitMode::new(self.base.exit_base(c).await))
     }
 }

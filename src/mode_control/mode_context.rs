@@ -1,3 +1,4 @@
+use crate::flight_control::beacon_controller::BeaconController;
 use crate::flight_control::{
     objective::{
         beacon_objective::BeaconObjective, known_img_objective::KnownImgObjective,
@@ -17,6 +18,7 @@ pub struct ModeContext {
     obj_mon: RwLock<Receiver<ObjectiveBase>>,
     k_buffer: Mutex<BinaryHeap<KnownImgObjective>>,
     b_buffer: Mutex<BinaryHeap<BeaconObjective>>,
+    beac_cont: Arc<BeaconController>,
 }
 
 impl ModeContext {
@@ -25,6 +27,7 @@ impl ModeContext {
         o_char: OrbitCharacteristics,
         objective_monitor: Receiver<ObjectiveBase>,
         super_v: Arc<Supervisor>,
+        beac_cont: Arc<BeaconController>,
     ) -> Self {
         let k = Arc::new(key);
         let o_ch = Arc::new(RwLock::new(o_char));
@@ -36,6 +39,7 @@ impl ModeContext {
             obj_mon,
             k_buffer: Mutex::new(BinaryHeap::new()),
             b_buffer: Mutex::new(BinaryHeap::new()),
+            beac_cont,
         }
     }
 
@@ -46,4 +50,5 @@ impl ModeContext {
     pub fn super_v(&self) -> &Arc<Supervisor> { &self.super_v }
     pub fn k_buffer(&self) -> &Mutex<BinaryHeap<KnownImgObjective>> { &self.k_buffer }
     pub fn b_buffer(&self) -> &Mutex<BinaryHeap<BeaconObjective>> { &self.b_buffer }
+    pub fn beac_cont(&self) -> &Arc<BeaconController> { &self.beac_cont }
 }
