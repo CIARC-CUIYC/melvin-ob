@@ -46,7 +46,7 @@ fn test_bayesian_filter() {
         );
         (offset + b).round().wrap_around_map()
     };
-    
+
     let beacon_pos_i32 = Vec2D::new(
         beacon_pos.x().to_num::<i32>(),
         beacon_pos.y().to_num::<i32>(),
@@ -86,7 +86,7 @@ fn test_bayesian_filter() {
         //let d_true = pos.unwrapped_to(&beacon_pos).abs().to_num::<f32>();
         //println!("STEP {i}: {pos}\n\t Distance: {d_true}");
         //if d_true > BayesianSet::MAX_DIST {
-            //println!("\t Distance too large, skipping");
+        //println!("\t Distance too large, skipping");
         //    continue;
         // };
         let noisy = d_noisy[i];
@@ -105,8 +105,7 @@ fn test_bayesian_filter() {
     for (i, center) in centers.iter().enumerate() {
         let c_fix = Vec2D::new(I32F32::from_num(center.x()), I32F32::from_num(center.y()));
         println!("\t Center {i}: {c_fix}");
-        
-        
+
         /*let hits = c_fix.unwrapped_to(&beacon_pos).abs().to_num::<f32>()
             < BayesianSet::MAX_RES_UNCERTAINTY_RAD;
         if hits {

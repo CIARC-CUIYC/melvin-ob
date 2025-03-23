@@ -7,6 +7,7 @@ mod keychain;
 mod logger;
 mod mode_control;
 
+use crate::flight_control::beacon_controller::BeaconController;
 use crate::flight_control::{
     camera_state::CameraAngle,
     flight_computer::FlightComputer,
@@ -69,9 +70,13 @@ async fn init(url: &str) -> ModeContext {
     let init_k = Keychain::new(url).await;
     init_k.f_cont().write().await.reset().await;
     let init_k_f_cont_clone = init_k.f_cont();
-    let (supervisor, obj_rx) = {
-        let (sv, rx) = Supervisor::new(init_k_f_cont_clone);
-        (Arc::new(sv), rx)
+    let (supervisor, obj_rx, beac_rx) = {
+        let (sv, rx_obj, rx_beac) = Supervisor::new(init_k_f_cont_clone);
+        (Arc::new(sv), rx_obj, rx_beac)
+    };
+    let (beac_cont, beac_rx) = {
+        let res = BeaconController::new(beac_rx);
+        (Arc::new(res.0), res.1)
     };
     let supervisor_clone = Arc::clone(&supervisor);
     tokio::spawn(async move {
@@ -80,6 +85,11 @@ async fn init(url: &str) -> ModeContext {
     let supervisor_clone_clone = Arc::clone(&supervisor);
     tokio::spawn(async move {
         supervisor_clone_clone.run_announcement_hub().await;
+    });
+    let beac_cont_clone = Arc::clone(&beac_cont);
+    let handler = Arc::clone(&init_k.client());
+    tokio::spawn(async move {
+        beac_cont_clone.run(handler).await;
     });
 
     tokio::time::sleep(DT_MIN.to_std().unwrap()).await;
@@ -105,34 +115,8 @@ async fn init(url: &str) -> ModeContext {
         KeychainWithOrbit::new(init_k, c_orbit),
         orbit_char,
         obj_rx,
+        beac_rx,
         supervisor,
+        beac_cont,
     )
 }
-// TODO: translate this into state
-/*
-async fn handle_orbit_escape(
-    mode: GlobalMode,
-    vel_change: &VelocityChangeTask,
-    k: &Arc<KeychainWithOrbit>,
-) -> GlobalMode {
-    if let GlobalMode::ZonedObjectivePrepMode(obj) = mode.clone() {
-        let burn = vel_change.burn();
-        FlightComputer::execute_burn(k.f_cont(), vel_change.burn()).await;
-        let exp_pos = burn.sequence_pos().last().unwrap();
-        let current_pos = k.f_cont().read().await.current_pos();
-        let diff = *exp_pos - current_pos;
-        let detumble_time_delta = TimeDelta::seconds(burn.detumble_dt() as i64);
-        let detumble_dt = PinnedTimeDelay::new(detumble_time_delta - DETUMBLE_TOL);
-        log!("Orbit Escape done! Expected position {exp_pos}, Actual Position {current_pos}, Diff {diff}");
-        // TODO: here we shouldn't use objective.get_imaging_points but something already created,
-        let (vel, dev) =
-            FlightComputer::evaluate_burn(k.f_cont(), burn, obj.get_imaging_points()[0]).await;
-        TaskController::calculate_orbit_correction_burn(vel, dev, detumble_dt);
-        GlobalMode::ZonedObjectiveRetrievalMode(obj)
-    } else {
-        error!("Orbit escape change requested, global mode illegal. Skipping velocity change!"
-        );
-        GlobalMode::MappingMode
-    }
-}
- */

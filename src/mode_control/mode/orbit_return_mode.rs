@@ -1,6 +1,7 @@
+use crate::flight_control::flight_computer::FlightComputer;
+use crate::flight_control::objective::known_img_objective::KnownImgObjective;
 use crate::flight_control::{objective::objective_base::ObjectiveBase, task::base_task::Task};
 use crate::mode_control::{
-    base_mode::BaseWaitExitSignal,
     mode::global_mode::GlobalMode,
     mode_context::ModeContext,
     signal::{ExecExitSignal, OpExitSignal, WaitExitSignal},
@@ -8,7 +9,6 @@ use crate::mode_control::{
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use std::sync::Arc;
-use crate::flight_control::flight_computer::FlightComputer;
 
 #[derive(Clone)]
 pub struct OrbitReturnMode {}
@@ -23,7 +23,7 @@ impl OrbitReturnMode {
 impl GlobalMode for OrbitReturnMode {
     fn type_name(&self) -> &'static str { Self::MODE_NAME }
 
-    async fn init_mode(&self, context: Arc<ModeContext>) -> OpExitSignal { 
+    async fn init_mode(&self, context: Arc<ModeContext>) -> OpExitSignal {
         FlightComputer::get_to_static_orbit_vel(context.k().f_cont()).await;
         todo!()
         //TaskController::schedule_orbit_return();
@@ -41,22 +41,18 @@ impl GlobalMode for OrbitReturnMode {
 
     async fn safe_handler(&self, context: Arc<ModeContext>) -> OpExitSignal { todo!() }
 
-    async fn objective_handler(
+    async fn zo_handler(
         &self,
         context: Arc<ModeContext>,
-        obj: ObjectiveBase,
+        obj: KnownImgObjective,
     ) -> Option<OpExitSignal> {
-        todo!()
+        context.k_buffer().lock().await.push(obj);
+        None
     }
 
-    async fn b_o_done_handler(
-        &self,
-        context: Arc<ModeContext>,
-        b_sig: BaseWaitExitSignal,
-    ) -> OpExitSignal {
-        todo!()
-    }
+    fn bo_event_handler(&self) -> Option<OpExitSignal> { unimplemented!() }
 
-    
+    fn resched_event_handler(&self) -> Option<OpExitSignal> { unimplemented!() }
+
     async fn exit_mode(&self, c: Arc<ModeContext>) -> Box<dyn GlobalMode> { todo!() }
 }

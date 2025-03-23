@@ -4,12 +4,11 @@ use crate::flight_control::flight_state::{FlightState, TRANS_DEL};
 use crate::flight_control::imaging::map_image::OffsetZOImage;
 use crate::flight_control::task::base_task::BaseTask;
 use crate::flight_control::{
-    objective::{known_img_objective::KnownImgObjective, objective_base::ObjectiveBase},
+    objective::known_img_objective::KnownImgObjective,
     task::base_task::Task,
 };
 use crate::mode_control::mode::orbit_return_mode::OrbitReturnMode;
 use crate::mode_control::{
-    base_mode::BaseWaitExitSignal,
     mode::global_mode::GlobalMode,
     mode_context::ModeContext,
     signal::{ExecExitSignal, OpExitSignal, WaitExitSignal},
@@ -57,7 +56,7 @@ impl GlobalMode for ZORetrievalMode {
         due: DateTime<Utc>,
     ) -> WaitExitSignal {
         let safe_mon = context.super_v().safe_mon();
-        let mut obj_mon = context.obj_mon().write().await;
+        let mut obj_mon = context.zo_mon().write().await;
         let dt = (due - Utc::now()).to_std().unwrap_or(DT_0_STD);
         tokio::select! {
             () = tokio::time::sleep(dt) => {
@@ -68,7 +67,7 @@ impl GlobalMode for ZORetrievalMode {
             },
             msg =  obj_mon.recv() => {
                 let obj = msg.expect("[FATAL] Objective monitor hung up!");
-                WaitExitSignal::NewObjectiveEvent(obj)
+                WaitExitSignal::NewZOEvent(obj)
             }
         }
     }
@@ -128,16 +127,17 @@ impl GlobalMode for ZORetrievalMode {
         warn!("Objective not reachable after safe event, exiting ZORetrievalMode");
         OpExitSignal::ReInit(Box::new(OrbitReturnMode::new()))
     }
-
-    async fn objective_handler(
-        &self,
-        context: Arc<ModeContext>,
-        obj: ObjectiveBase,
-    ) -> Option<OpExitSignal> {
-        todo!()
+    
+    async fn zo_handler(&self, context: Arc<ModeContext>, task: KnownImgObjective) -> Option<OpExitSignal> {
+        context.k_buffer().lock().await.push(task);
+        None
     }
 
-    async fn b_o_done_handler(&self, _: Arc<ModeContext>, _: BaseWaitExitSignal) -> OpExitSignal {
+    fn bo_event_handler(&self) -> Option<OpExitSignal> {
+        unimplemented!()
+    }
+    
+    fn resched_event_handler(&self) -> Option<OpExitSignal> {
         unimplemented!()
     }
 

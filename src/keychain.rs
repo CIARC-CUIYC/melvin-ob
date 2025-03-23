@@ -1,7 +1,7 @@
 use crate::console_communication::ConsoleMessenger;
 use crate::flight_control::{
-    camera_controller::CameraController, flight_computer::FlightComputer,
-    orbit::ClosedOrbit, task::TaskController,
+    camera_controller::CameraController, flight_computer::FlightComputer, orbit::ClosedOrbit,
+    task::TaskController,
 };
 use crate::http_handler::http_client::HTTPClient;
 use std::sync::Arc;
