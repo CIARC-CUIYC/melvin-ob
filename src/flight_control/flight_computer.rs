@@ -25,6 +25,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::RwLock;
+use crate::flight_control::common::vec2d::WrapDirection;
 
 pub type TurnsClockCClockTup = (
     Vec<(Vec2D<I32F32>, Vec2D<I32F32>)>,
@@ -503,7 +504,7 @@ impl FlightComputer {
             .min(I32F32::zero());
         (-batt_diff / FlightState::Charge.get_charge_rate()).ceil().to_num::<u64>()
     }
-    
+
     async fn charge_full_wait(self_lock: &Arc<RwLock<Self>>) {
        let state = self_lock.read().await.state();
         if state == FlightState::Safe {
@@ -636,20 +637,43 @@ impl FlightComputer {
 
     pub async fn detumble_to(
         self_lock: Arc<RwLock<Self>>,
-        target: Vec2D<I32F32>,
+        mut target: Vec2D<I32F32>,
         lens: CameraAngle,
     ) -> DateTime<Utc> {
         let ticker: i32 = 0;
         let max_speed = lens.get_max_speed();
         let detumble_start = Utc::now();
+
+        let (pos, vel) = {
+            let f_locked = self_lock.read().await;
+            (f_locked.current_pos(), f_locked.current_vel())
+        };
+        let mut to_target = pos.to(&target);
+        let mut dt = to_target.abs() / vel.abs();
+        let mut dx = to_target - (vel.normalize() * dt);
+        let mut last_to_target = to_target;
+        
         loop {
+
             let (pos, vel) = {
                 let f_locked = self_lock.read().await;
                 (f_locked.current_pos(), f_locked.current_vel())
             };
-            let to_target = pos.unwrapped_to(&target);
-            let dt = to_target.abs() / vel.abs();
-            let dx = to_target - (vel.normalize() * dt);
+            to_target = pos.to(&target);
+            
+            // sudden jumps mean we wrapped and we need to wrap the corresponding coordinate too
+            if to_target.x().abs() > 2 * last_to_target.x().abs() {
+                target.wrap_by(&WrapDirection::WrapX);
+                to_target = pos.to(&target);
+            }
+            if to_target.y().abs() > 2 * last_to_target.y().abs() {
+                target.wrap_by(&WrapDirection::WrapY);
+                to_target = pos.to(&target);
+            }
+            last_to_target = to_target;
+            dt = to_target.abs() / vel.abs();
+            dx = to_target - (vel.normalize() * dt);
+            
             let acc = dx.normalize() * Self::ACC_CONST;
             let overspeed = vel.abs() > max_speed;
             if ticker % 10 == 0 {

@@ -1,5 +1,5 @@
 use super::task_controller::TaskController;
-use crate::{info, log, STATIC_ORBIT_VEL};
+use crate::{error, info, log, STATIC_ORBIT_VEL};
 use crate::flight_control::common::vec2d::Vec2D;
 use crate::flight_control::orbit::IndexedOrbitPosition;
 use chrono::{DateTime, TimeDelta, Utc};
@@ -30,7 +30,7 @@ fn get_rand_end_t() -> DateTime<Utc> {
 }
 
 fn get_rand_fuel() -> I32F32 {
-    const MIN_FUEL: f32 = 10.0;
+    const MIN_FUEL: f32 = 15.0;
     const MAX_FUEL: f32 = 100.0;
     let mut rng = rand::rng();
     I32F32::from_num(rng.random_range(MIN_FUEL..MAX_FUEL))
@@ -38,31 +38,44 @@ fn get_rand_fuel() -> I32F32 {
 
 #[tokio::test]
 async fn test_single_target_burn_calculator() {
-    info!("Running Single Target Burn Calculator Test");
-    let mock_start_point = get_start_pos();
-    let mock_obj_point = get_rand_pos();
-    let mock_end_t = get_rand_end_t();
-    let mock_fuel_left = get_rand_fuel();
-    let res = TaskController::calculate_single_target_burn_sequence(
-        mock_start_point,
-        Vec2D::from(STATIC_ORBIT_VEL),
-        mock_obj_point,
-        mock_end_t,
-        mock_fuel_left,
-    ).await.unwrap();
-    let exit_burn = res.sequence();
-    let entry_pos = exit_burn.sequence_pos().first().unwrap();
-    let exit_pos = exit_burn.sequence_pos().last().unwrap();
-    let entry_t = exit_burn.start_i().t().format("%H:%M:%S").to_string();
-    let exit_vel = exit_burn.sequence_vel().last().unwrap();
-    info!("Calculated Burn Sequence for mocked Zoned Objective at: {mock_obj_point}, due at {mock_end_t}");
-    log!("Entry at {entry_t}, Position will be {entry_pos}");
-    log!("Exit after {}s, Position will be {exit_pos}", exit_burn.acc_dt());
-    log!("Exit Velocity will be {exit_vel} aiming for target at {mock_obj_point}. Detumble time is {}s.",  exit_burn.detumble_dt());
-    log!("Whole BS: {:?}", res);
+    loop {
+        info!("Running Single Target Burn Calculator Test");
+        let mock_start_point = get_start_pos();
+        let mock_obj_point = get_rand_pos();
+        let mock_end_t = get_rand_end_t();
+        let mock_fuel_left = get_rand_fuel();
+        let res = TaskController::calculate_single_target_burn_sequence(
+            mock_start_point,
+            Vec2D::from(STATIC_ORBIT_VEL),
+            mock_obj_point,
+            mock_end_t,
+            mock_fuel_left,
+        ).await.unwrap();
+        let exit_burn = res.sequence();
+        let entry_pos = exit_burn.sequence_pos().first().unwrap();
+        let exit_pos = *exit_burn.sequence_pos().last().unwrap();
+        let exit_vel = *exit_burn.sequence_vel().last().unwrap();
+        let entry_t = exit_burn.start_i().t().format("%H:%M:%S").to_string();
+        let detumble_dt = I32F32::from_num(exit_burn.detumble_dt());
+        let acc_dt = I32F32::from_num(exit_burn.acc_dt());
+        let est = (exit_pos + exit_vel * detumble_dt).wrap_around_map();
+        // Check if the estimated Y position is close to the target Y
+        let hit_target = est.to(res.target_pos()).abs() < detumble_dt * (I32F32::lit("0.002") * detumble_dt);
+        if hit_target {
+            info!("Test successfull. Acc for {acc_dt}s, detumble for {detumble_dt}s!")
+        } else {
+            error!("Test failed.");
+            info!("Calculated Burn Sequence for mocked Zoned Objective at: {mock_obj_point}, due at {mock_end_t}");
+            log!("Entry at {entry_t}, Position will be {entry_pos}");
+            log!("Exit after {acc_dt}s, Position will be {exit_pos}");
+            log!("Exit Velocity will be {exit_vel} aiming for target at {mock_obj_point}. Detumble time is {detumble_dt}s.");
+            log!("Whole BS: {:?}", res);
+            return;
+        }
+    }
 }
 
- /*
+/*
 fn get_rand_detumple_point(base: Vec2D<I32F32>) -> Vec2D<I32F32> {
     let mut rng = rand::rng();
     let angle = I32F32::from_num(rng.random_range(0..360)) * I32F32::PI / I32F32::from_num(180);

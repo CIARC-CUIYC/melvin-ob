@@ -530,8 +530,15 @@ impl Vec2D<i32> {
     }
 }
 
+pub enum WrapDirection {
+    None,
+    WrapX,
+    WrapY,
+    Both,
+}
+
 impl<T> Vec2D<T>
-where T: Add<Output = T> + Rem<Output = T> + Copy + MapSize<Output = T>
+where T: Add<Output = T> + Rem<Output = T> + Copy + MapSize<Output = T> + PartialEq
 {
     /// Wraps the vector around a predefined 2D map.
     ///
@@ -546,6 +553,41 @@ where T: Add<Output = T> + Rem<Output = T> + Copy + MapSize<Output = T>
             Self::wrap_coordinate(self.x, map_size_x),
             Self::wrap_coordinate(self.y, map_size_y),
         )
+    }
+
+    pub fn wraps(&self) -> WrapDirection {
+        let map_size_x = T::map_size().x;
+        let map_size_y = T::map_size().y;
+        let wrapped_y = Self::wrap_coordinate(self.y, map_size_y);
+        let wrapped_x = Self::wrap_coordinate(self.x, map_size_x);
+        if wrapped_x == self.x && wrapped_y == self.y {
+            WrapDirection::None
+        } else if wrapped_x == self.x {
+            WrapDirection::WrapY
+        } else if wrapped_y == self.y {
+            WrapDirection::WrapX
+        } else {
+            WrapDirection::Both
+        }
+    }
+    
+    pub fn wrap_by(&self, dir: &WrapDirection) -> Self {
+        match dir {
+            WrapDirection::None => *self,
+            WrapDirection::WrapX => {
+                let map_size_x = T::map_size().x;
+                let wrapped_x = Self::wrap_coordinate(self.x, map_size_x);
+                Vec2D::new(wrapped_x, self.y)
+            },
+            WrapDirection::WrapY => {
+                let map_size_y = T::map_size().y;
+                let wrapped_y = Self::wrap_coordinate(self.y, map_size_y);
+                Vec2D::new(self.x, wrapped_y)
+            }
+            WrapDirection::Both => {
+                self.wrap_around_map()
+            }
+        }
     }
 
     /// Wraps a single coordinate around a specific maximum value.

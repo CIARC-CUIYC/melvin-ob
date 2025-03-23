@@ -1,13 +1,10 @@
-use crate::flight_control::{
-    objective::objective_base::ObjectiveBase,
-    task::base_task::Task,
-};
+use crate::flight_control::{objective::objective_base::ObjectiveBase, task::base_task::Task};
 use crate::mode_control::{
     base_mode::{BaseMode, BaseWaitExitSignal},
     mode_context::ModeContext,
-    signal::{WaitExitSignal, ExecExitSignal, OpExitSignal},
+    signal::{ExecExitSignal, OpExitSignal, WaitExitSignal},
 };
-use crate::{fatal, info, log, warn, DT_0_STD};
+use crate::{DT_0_STD, fatal, info, log, warn};
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use std::{future::Future, pin::Pin, sync::Arc};
@@ -20,7 +17,9 @@ pub trait GlobalMode: Sync {
     fn new_zo_rationale(&self) -> &'static str { "newly discovered ZO!" }
     fn new_bo_rationale(&self) -> &'static str { "newly discovered BO!" }
     fn tasks_done_rationale(&self) -> &'static str { "tasks list done!" }
-    fn tasks_done_exit_rationale(&self) -> &'static str { "tasks list done and exited orbit for ZO Retrieval!" }
+    fn tasks_done_exit_rationale(&self) -> &'static str {
+        "tasks list done and exited orbit for ZO Retrieval!"
+    }
     fn bo_done_rationale(&self) -> &'static str { "BO done or expired!" }
     fn bo_left_rationale(&self) -> &'static str { "necessary rescheduling for remaining BOs!" }
     fn type_name(&self) -> &'static str;
@@ -54,7 +53,7 @@ pub trait GlobalMode: Sync {
                         };
                     }
                     WaitExitSignal::BODoneEvent(sig) => {
-                        return self.b_o_done_handler(context, sig).await
+                        return self.b_o_done_handler(context, sig).await;
                     }
                 };
             }
@@ -77,7 +76,7 @@ pub trait GlobalMode: Sync {
         OpExitSignal::Continue
     }
     async fn exec_task_wait(&self, context: Arc<ModeContext>, due: DateTime<Utc>)
-        -> WaitExitSignal;
+    -> WaitExitSignal;
     async fn exec_task(&self, context: Arc<ModeContext>, task: Task) -> ExecExitSignal;
     async fn safe_handler(&self, context: Arc<ModeContext>) -> OpExitSignal;
     async fn objective_handler(
@@ -85,6 +84,7 @@ pub trait GlobalMode: Sync {
         context: Arc<ModeContext>,
         obj: ObjectiveBase,
     ) -> Option<OpExitSignal>;
+    
     async fn b_o_done_handler(
         &self,
         context: Arc<ModeContext>,
@@ -95,7 +95,7 @@ pub trait GlobalMode: Sync {
 
 pub trait OrbitalMode: GlobalMode {
     fn get_max_dt() -> TimeDelta { TimeDelta::seconds(10) }
-    
+
     fn base(&self) -> &BaseMode;
 
     async fn exec_task_wait(
@@ -106,7 +106,7 @@ pub trait OrbitalMode: GlobalMode {
         let safe_mon = context.super_v().safe_mon();
         let mut obj_mon = context.obj_mon().write().await;
         let cancel_task = CancellationToken::new();
-        
+
         let fut: Pin<Box<dyn Future<Output = Result<BaseWaitExitSignal, JoinError>> + Send>> =
             if (due - Utc::now()) > Self::get_max_dt() {
                 Box::pin(self.base().get_wait(Arc::clone(&context), due, cancel_task.clone()).await)
@@ -118,7 +118,7 @@ pub trait OrbitalMode: GlobalMode {
                     Ok(BaseWaitExitSignal::Continue)
                 })
             };
-       
+
         tokio::pin!(fut);
         tokio::select! {
             exit_sig = &mut fut => {

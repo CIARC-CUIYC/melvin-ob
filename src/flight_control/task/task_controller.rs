@@ -434,7 +434,6 @@ impl TaskController {
         self: Arc<TaskController>,
         orbit_lock: Arc<RwLock<ClosedOrbit>>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
-        scheduling_start_i: IndexedOrbitPosition,
     ) {
         
     }
