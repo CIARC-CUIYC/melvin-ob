@@ -140,7 +140,7 @@ impl BaseMode {
             }
             Join(join_handle) => Box::pin(async { join_handle.await.ok().unwrap() }),
         };
-
+        
         let start = Utc::now();
         info!("Starting Comms Listener.");
         loop {
@@ -149,7 +149,7 @@ impl BaseMode {
                 Ok(msg) = event_rx.recv() => {
                     let f_cont = context.k().f_cont();
                     let prolong = context.beac_cont().handle_poss_bo_ping(msg, due_t, f_cont).await;
-
+                    // TODO: reevaluate prolonging
                     if prolong {
                     fut = Box::pin(tokio::time::sleep_until(
                         Instant::now() + Self::BO_MSG_COMM_PROLONG_STD,

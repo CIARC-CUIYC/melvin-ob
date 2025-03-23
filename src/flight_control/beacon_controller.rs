@@ -51,7 +51,7 @@ impl BeaconController {
     pub fn new(
         rx_beac: Receiver<BeaconObjective>,
     ) -> (Self, watch::Receiver<BeaconControllerState>) {
-        let (tx, rx) = watch::channel(BeaconControllerState::ActiveBeacons);
+        let (tx, rx) = watch::channel(BeaconControllerState::NoActiveBeacons);
         (
             Self {
                 active_bo: RwLock::new(HashMap::new()),
@@ -101,7 +101,6 @@ impl BeaconController {
         due_t: Option<DateTime<Utc>>,
         f_cont: Arc<RwLock<FlightComputer>>,
     ) -> bool {
-        // TODO: improve returns
 
         let (t, val) = msg;
         if let Some((id, d_noisy)) = Self::extract_id_and_d(val.as_str()) {

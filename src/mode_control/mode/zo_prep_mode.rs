@@ -228,7 +228,7 @@ impl GlobalMode for ZOPrepMode {
         let new_base = self.base.bo_event();
         todo!()
     }
-    
+
     fn resched_event_handler(&self) -> Option<OpExitSignal> {
         Some(OpExitSignal::ReInit(Box::new(self.clone())))
     }
