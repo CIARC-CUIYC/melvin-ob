@@ -16,7 +16,7 @@ use crate::http_handler::{
         reset_get::ResetRequest,
     },
 };
-use crate::{error, fatal, info, log};
+use crate::{error, fatal, info, log, warn, STATIC_ORBIT_VEL};
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::{I32F32, I64F64};
 use num::{ToPrimitive, Zero};
@@ -25,8 +25,9 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::RwLock;
+use crate::flight_control::common::vec2d::WrapDirection;
 
-type TurnsClockCClockTup = (
+pub type TurnsClockCClockTup = (
     Vec<(Vec2D<I32F32>, Vec2D<I32F32>)>,
     Vec<(Vec2D<I32F32>, Vec2D<I32F32>)>,
 );
@@ -79,6 +80,10 @@ pub struct FlightComputer {
 }
 
 impl FlightComputer {
+    /// A constant I32F32 0.0 value for fuel and battery min values
+    pub const MIN_0: I32F32 = I32F32::ZERO;
+    /// A constant I32F32 100.0 value for fuel and battery max values
+    pub const MAX_100: I32F32 = I32F32::lit("100.0");
     /// Constant acceleration in target velocity vector direction
     pub const ACC_CONST: I32F32 = I32F32::lit("0.02");
     /// Constant fuel consumption per accelerating second
@@ -86,14 +91,14 @@ impl FlightComputer {
     /// Maximum decimal places that are used in the observation endpoint for velocity
     pub const VEL_BE_MAX_DECIMAL: u8 = MAX_DEC;
     /// Constant timeout for the `wait_for_condition`-method
-    const DEF_COND_TO: u16 = 3000;
+    const DEF_COND_TO: u32 = 3000;
     /// Constant timeout for the `wait_for_condition`-method
     const DEF_COND_PI: u16 = 500;
     /// Constant transition to SAFE sleep time for all states
     const TO_SAFE_SLEEP: Duration = Duration::from_secs(60);
     /// Minimum battery used in decision-making for after safe transition
     const AFTER_SAFE_MIN_BATT: I32F32 = I32F32::lit("50");
-    const EXIT_SAFE_MIN_BATT: I32F32 = I32F32::lit("1.0");
+    const EXIT_SAFE_MIN_BATT: I32F32 = I32F32::lit("10.0");
     /// Constant minimum delay between requests
     pub(crate) const STD_REQUEST_DELAY: Duration = Duration::from_millis(100);
     /// Legal Target States for State Change
@@ -152,6 +157,12 @@ impl FlightComputer {
         (Vec2D::new(trunc_x, trunc_y), Vec2D::new(dev_x, dev_y))
     }
 
+    pub fn round_vel_expand(vel: Vec2D<I32F32>) -> Vec2D<I32F32> {
+        let factor = I32F32::from_num(10f32.powi(i32::from(Self::VEL_BE_MAX_DECIMAL)));
+        let trunc_x = (vel.x() * factor).round();
+        let trunc_y = (vel.y() * factor).round();
+        Vec2D::new(trunc_x, trunc_y)
+    }
     pub fn round_vel(vel: Vec2D<I32F32>) -> (Vec2D<I32F32>, Vec2D<I64F64>) {
         let factor = I32F32::from_num(10f32.powi(i32::from(Self::VEL_BE_MAX_DECIMAL)));
         let factor_f64 = I64F64::from_num(10f64.powi(i32::from(Self::VEL_BE_MAX_DECIMAL)));
@@ -175,7 +186,6 @@ impl FlightComputer {
     /// - The second vector contains possible counterclockwise turns `(position, velocity)`.
     #[allow(clippy::cast_possible_truncation)]
     pub fn compute_possible_turns(init_vel: Vec2D<I32F32>) -> TurnsClockCClockTup {
-        info!("Precomputing possible turns...");
         let start_x = init_vel.x();
         let end_x = I32F32::zero();
         let start_y = init_vel.y();
@@ -193,7 +203,7 @@ impl FlightComputer {
             let i_last = (start_x / step_x).ceil().abs().to_num::<i32>();
             let mut next_pos = Vec2D::new(I32F32::zero(), I32F32::zero());
             let mut next_vel = init_vel + step;
-            x_pos_vel.push((next_pos, next_vel));
+            x_pos_vel.push((next_pos.round(), next_vel.round_to_2()));
             for i in 0..i_last {
                 next_pos = next_pos + next_vel;
                 if i == i_last - 1 {
@@ -201,7 +211,7 @@ impl FlightComputer {
                 } else {
                     next_vel = next_vel + step;
                 }
-                x_pos_vel.push((next_pos, next_vel));
+                x_pos_vel.push((next_pos.round(), next_vel.round_to_2()));
             }
             x_pos_vel
         };
@@ -213,7 +223,7 @@ impl FlightComputer {
             let i_last = (start_y / step_y).ceil().abs().to_num::<i32>();
             let mut next_pos = Vec2D::new(I32F32::zero(), I32F32::zero());
             let mut next_vel = init_vel + step;
-            y_pos_vel.push((next_pos, next_vel));
+            y_pos_vel.push((next_pos.round(), next_vel.round_to_2()));
             for i in 0..i_last {
                 next_pos = next_pos + next_vel;
                 if i == i_last - 1 {
@@ -221,25 +231,15 @@ impl FlightComputer {
                 } else {
                     next_vel = next_vel + step;
                 }
-                y_pos_vel.push((next_pos, next_vel));
+                y_pos_vel.push((next_pos.round(), next_vel.round_to_2()));
             }
             y_pos_vel
         };
 
         // Determine the ordering of clockwise and counterclockwise turns based on the direction of steps.
         if step_x.signum() == step_y.signum() {
-            info!(
-                "Possible turns: {} clockwise and {} counter clockwise.",
-                y_const_x_change.len(),
-                x_const_y_change.len()
-            );
             (y_const_x_change, x_const_y_change)
         } else {
-            info!(
-                "Possible turns: {} clockwise and {} counter clockwise.",
-                x_const_y_change.len(),
-                y_const_x_change.len()
-            );
             (x_const_y_change, y_const_x_change)
         }
     }
@@ -350,31 +350,38 @@ impl FlightComputer {
     async fn wait_for_condition<F>(
         self_lock: &RwLock<Self>,
         (condition, rationale): (F, String),
-        timeout_millis: u16,
+        timeout_millis: u32,
         poll_interval: u16,
+        mute: bool,
     ) where
         F: Fn(&Self) -> bool,
     {
-        log!("Waiting for condition: {rationale}");
+        if !mute {
+            log!("Waiting for condition: {rationale}");
+        }
         let start_time = Instant::now();
         while start_time.elapsed().as_millis() < u128::from(timeout_millis) {
             let cond = { condition(&*self_lock.read().await) };
             if cond {
-                log!(
-                    "Condition met after {} ms",
-                    start_time.elapsed().as_millis()
-                );
+                if !mute {
+                    let dt = start_time.elapsed().as_millis();
+                    log!("Condition met after {dt} ms");
+                }
                 return;
             }
             tokio::time::sleep(Duration::from_millis(u64::from(poll_interval))).await;
         }
-        log!("Condition not met after {timeout_millis} ms");
+        if mute {
+            warn!("Condition: {rationale} not met after {timeout_millis:#?} ms");
+        } else {
+            warn!("Condition not met after {timeout_millis:#?} ms");
+        }
     }
 
-    pub async fn escape_safe(self_lock: Arc<RwLock<Self>>) {
+    pub async fn escape_safe(self_lock: Arc<RwLock<Self>>, force_charge: bool) {
         let target_state = {
             let init_batt = self_lock.read().await.current_battery();
-            if init_batt <= Self::AFTER_SAFE_MIN_BATT {
+            if init_batt <= Self::AFTER_SAFE_MIN_BATT || force_charge {
                 FlightState::Charge
             } else {
                 FlightState::Acquisition
@@ -392,6 +399,7 @@ impl FlightComputer {
             cond_not_trans,
             Self::DEF_COND_TO,
             Self::DEF_COND_PI,
+            false
         )
         .await;
         let state = self_lock.read().await.state();
@@ -399,10 +407,10 @@ impl FlightComputer {
             error!("State is not safe but {}", state);
         }
         let cond_min_charge = (
-            |cont: &FlightComputer| cont.current_battery() >= Self::EXIT_SAFE_MIN_BATT,
+            |cont: &FlightComputer| cont.current_battery() > Self::EXIT_SAFE_MIN_BATT,
             format!("Battery level is higher than {}", Self::EXIT_SAFE_MIN_BATT),
         );
-        Self::wait_for_condition(&self_lock, cond_min_charge, 30000, Self::DEF_COND_PI).await;
+        Self::wait_for_condition(&self_lock, cond_min_charge, 450_000, Self::DEF_COND_PI, false).await;
         Self::set_state_wait(self_lock, target_state).await;
     }
 
@@ -410,11 +418,14 @@ impl FlightComputer {
     pub async fn get_to_comms(self_lock: Arc<RwLock<Self>>) -> DateTime<Utc> {
         if self_lock.read().await.state() == FlightState::Comms {
             let batt_diff =
-                self_lock.read().await.current_battery() - TaskController::MIN_COMMS_START_CHARGE;
+                self_lock.read().await.current_battery() - TaskController::MIN_BATTERY_THRESHOLD;
             let rem_t = (batt_diff / FlightState::Comms.get_charge_rate()).abs().ceil();
-            return Utc::now() + TimeDelta::seconds(rem_t.to_num::<i64>());
+            let add_t = TimeDelta::seconds(rem_t.to_num::<i64>()).min(TimeDelta::seconds(
+                TaskController::IN_COMMS_SCHED_SECS as i64,
+            ));
+            return Utc::now() + add_t;
         }
-        let charge_dt = Self::get_charge_dt(&self_lock).await;
+        let charge_dt = Self::get_charge_dt_comms(&self_lock).await;
         log!("Charge time for comms: {}", charge_dt);
 
         if charge_dt > 0 {
@@ -428,19 +439,34 @@ impl FlightComputer {
     }
 
     #[allow(clippy::cast_possible_wrap)]
+    pub async fn escape_if_comms(self_lock: Arc<RwLock<Self>>) -> DateTime<Utc> {
+        let (state, batt) = {
+            let f_cont = self_lock.read().await;
+            (f_cont.state(), f_cont.current_battery())
+        };
+        if state == FlightState::Comms {
+            let half_batt =
+                (TaskController::MAX_BATTERY_THRESHOLD + TaskController::MIN_BATTERY_THRESHOLD) / 2;
+            if batt > half_batt {
+                FlightComputer::set_state_wait(Arc::clone(&self_lock), FlightState::Acquisition)
+                    .await;
+            } else {
+                FlightComputer::set_state_wait(Arc::clone(&self_lock), FlightState::Charge).await;
+            }
+        }
+        Utc::now()
+    }
+
+    #[allow(clippy::cast_possible_wrap)]
     pub async fn get_to_comms_dt_est(self_lock: Arc<RwLock<Self>>) -> (u64, TimeDelta) {
-        let t_time = TimeDelta::from_std(
-            *TRANS_DEL.get(&(FlightState::Charge, FlightState::Comms)).unwrap(),
-        )
-        .unwrap();
+        let t_time = FlightState::Charge.td_dt_to(FlightState::Comms);
         if self_lock.read().await.state() == FlightState::Comms {
             let batt_diff =
                 self_lock.read().await.current_battery() - TaskController::MIN_COMMS_START_CHARGE;
             let rem_t = (batt_diff / FlightState::Comms.get_charge_rate()).abs().ceil();
             return (0, TimeDelta::seconds(rem_t.to_num::<i64>()));
         }
-        let charge_dt = Self::get_charge_dt(&self_lock).await;
-        log!("Charge time for comms: {}", charge_dt);
+        let charge_dt = Self::get_charge_dt_comms(&self_lock).await;
 
         if charge_dt > 0 {
             (charge_dt, TimeDelta::seconds(charge_dt as i64) + t_time * 2)
@@ -449,11 +475,47 @@ impl FlightComputer {
         }
     }
 
-    async fn get_charge_dt(self_lock: &Arc<RwLock<Self>>) -> u64 {
+    pub async fn get_to_static_orbit_vel(self_lock: Arc<RwLock<Self>>) {
+        let orbit_vel = Vec2D::from(STATIC_ORBIT_VEL);
+        let (batt, vel) = {
+            let f_cont = self_lock.read().await;
+            (f_cont.current_battery(), f_cont.current_vel())
+        };
+        let vel_change_dt = Duration::from_secs_f32(
+            (orbit_vel.to(&vel).abs() / Self::ACC_CONST).to_num::<f32>(),
+        );
+        let charge_needed = {
+            let acq_batt = FlightState::Acquisition.get_charge_rate() + FlightState::ACQ_ACC_ADDITION;
+            TaskController::MIN_BATTERY_THRESHOLD + I32F32::from_num(vel_change_dt.as_secs()) * acq_batt
+        };
+        if batt < charge_needed {
+            FlightComputer::charge_full_wait(&self_lock).await;
+        }
+        let state = self_lock.read().await.state();
+        if !matches!(state, FlightState::Acquisition) {
+            FlightComputer::set_state_wait(Arc::clone(&self_lock), FlightState::Acquisition).await;
+        }
+        FlightComputer::set_vel_wait(Arc::clone(&self_lock), orbit_vel, false).await;
+    }
+
+    async fn get_charge_dt_comms(self_lock: &Arc<RwLock<Self>>) -> u64 {
         let batt_diff = (self_lock.read().await.current_battery()
             - TaskController::MIN_COMMS_START_CHARGE)
             .min(I32F32::zero());
         (-batt_diff / FlightState::Charge.get_charge_rate()).ceil().to_num::<u64>()
+    }
+
+    async fn charge_full_wait(self_lock: &Arc<RwLock<Self>>) {
+       let state = self_lock.read().await.state();
+        if state == FlightState::Safe {
+            FlightComputer::escape_safe(Arc::clone(self_lock), true).await;
+            FlightComputer::set_state_wait(Arc::clone(self_lock), FlightState::Charge).await;
+        } else {
+            FlightComputer::set_state_wait(Arc::clone(self_lock), FlightState::Charge).await;
+        }
+        let batt = self_lock.read().await.current_battery();
+        let dt = (Self::MAX_100 - batt) / FlightState::Charge.get_charge_rate();
+        Self::wait_for_duration(Duration::from_secs(dt.to_num::<u64>())).await;
     }
 
     /// Transitions the satellite to a new operational state and waits for transition completion.
@@ -483,7 +545,7 @@ impl FlightComputer {
             |cont: &FlightComputer| cont.state() == new_state,
             format!("State equals {new_state}"),
         );
-        Self::wait_for_condition(&self_lock, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
+        Self::wait_for_condition(&self_lock, cond, Self::DEF_COND_TO, Self::DEF_COND_PI, false).await;
         self_lock.write().await.target_state = None;
     }
 
@@ -492,7 +554,7 @@ impl FlightComputer {
     /// # Arguments
     /// - `self_lock`: A `RwLock<Self>` reference to the active flight computer.
     /// - `new_vel`: The target velocity vector.
-    pub async fn set_vel_wait(self_lock: Arc<RwLock<Self>>, new_vel: Vec2D<I32F32>) {
+    pub async fn set_vel_wait(self_lock: Arc<RwLock<Self>>, new_vel: Vec2D<I32F32>, mute: bool) {
         let (current_state, current_vel) = {
             let f_cont_read = self_lock.read().await;
             (f_cont_read.state(), f_cont_read.current_vel())
@@ -503,15 +565,16 @@ impl FlightComputer {
         let vel_change_dt = Duration::from_secs_f32(
             (new_vel.to(&current_vel).abs() / Self::ACC_CONST).to_num::<f32>(),
         );
-        self_lock.read().await.set_vel(new_vel).await;
-
-        Self::wait_for_duration(vel_change_dt).await;
-        let (comp_new_vel, _) = Self::round_vel(new_vel);
+        self_lock.read().await.set_vel(new_vel, mute).await;
+        if vel_change_dt.as_secs() > 0 {
+            Self::wait_for_duration(vel_change_dt).await;
+        }
+        let comp_new_vel = Self::round_vel_expand(new_vel);
         let cond = (
-            |cont: &FlightComputer| cont.current_vel() == comp_new_vel,
-            format!("Vel equals {new_vel}"),
+            |cont: &FlightComputer| Self::round_vel_expand(cont.current_vel()) == comp_new_vel,
+            format!("Scaled Vel equals {new_vel}"),
         );
-        Self::wait_for_condition(&self_lock, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
+        Self::wait_for_condition(&self_lock, cond, Self::DEF_COND_TO, Self::DEF_COND_PI, mute).await;
     }
 
     /// Adjusts the satellite's camera angle and waits until the target angle is reached.
@@ -543,7 +606,7 @@ impl FlightComputer {
             |cont: &FlightComputer| cont.current_angle() == new_angle,
             format!("Lens equals {new_angle}"),
         );
-        Self::wait_for_condition(&self_lock, cond, Self::DEF_COND_TO, Self::DEF_COND_PI).await;
+        Self::wait_for_condition(&self_lock, cond, Self::DEF_COND_TO, Self::DEF_COND_PI, false).await;
     }
 
     /// Executes a sequence of thruster burns that affect the trajectory of MELVIN.
@@ -552,44 +615,95 @@ impl FlightComputer {
     /// - `self_lock`: A `RwLock<Self>` reference to the active flight computer.
     /// - `burn_sequence`: A reference to the sequence of executed thruster burns.
     pub async fn execute_burn(self_lock: Arc<RwLock<Self>>, burn: &BurnSequence) {
+        let burn_start = Utc::now();
         for vel_change in burn.sequence_vel() {
             let st = tokio::time::Instant::now();
             let dt = Duration::from_secs(1);
-            FlightComputer::set_vel_wait(Arc::clone(&self_lock), *vel_change).await;
+            FlightComputer::set_vel_wait(Arc::clone(&self_lock), *vel_change, true).await;
             let el = st.elapsed();
             if el < dt {
                 tokio::time::sleep(dt).await;
             }
         }
-    }
-
-    /// Evaluates how a sequence of thruster burns has affected the MELVIN's trajectory.
-    ///
-    /// # Arguments
-    /// - `locked_self`: A `RwLock<Self>` reference to the active flight computer.
-    /// - `burn_sequence`: A reference to the sequence of executed thruster burns.
-    /// - `target_pos`: The target position for the satellite.
-    ///
-    /// # Returns
-    /// - A tuple containing:
-    ///   - The current velocity of the satellite after evaluating the burn sequence.
-    ///   - The deviation of the projected position from the target position.
-    pub async fn evaluate_burn(
-        self_lock: Arc<RwLock<Self>>,
-        burn_sequence: &BurnSequence,
-        target_pos: Vec2D<I32F32>,
-    ) -> (Vec2D<I32F32>, Vec2D<I32F32>) {
-        let (act_pos, act_vel) = {
+        let target_pos = burn.sequence_pos().last().unwrap();
+        let target_vel = burn.sequence_vel().last().unwrap();
+        let (pos, vel) = {
             let f_cont = self_lock.read().await;
             (f_cont.current_pos(), f_cont.current_vel())
         };
-        let projected_res_pos = act_pos + act_vel * I32F32::from_num(burn_sequence.detumble_dt());
-        let deviation = projected_res_pos.to(&target_pos);
-        log!(
-            "Evaluated Velocity change. Expected target position: {target_pos}, \
-            resulting position: {projected_res_pos}, deviation: {deviation}"
-        );
-        (act_vel, deviation)
+        let burn_dt = (Utc::now() - burn_start).num_seconds();
+        log!("Burn sequence finished after {burn_dt}s! Position: {pos}, Velocity: {vel}, expected Position: {target_pos}, expected Velocity: {target_vel}.");
+    }
+
+    pub async fn detumble_to(
+        self_lock: Arc<RwLock<Self>>,
+        mut target: Vec2D<I32F32>,
+        lens: CameraAngle,
+    ) -> DateTime<Utc> {
+        let ticker: i32 = 0;
+        let max_speed = lens.get_max_speed();
+        let detumble_start = Utc::now();
+
+        let (pos, vel) = {
+            let f_locked = self_lock.read().await;
+            (f_locked.current_pos(), f_locked.current_vel())
+        };
+        let mut to_target = pos.to(&target);
+        let mut dt = to_target.abs() / vel.abs();
+        let mut dx = to_target - (vel.normalize() * dt);
+        let mut last_to_target = to_target;
+        
+        loop {
+
+            let (pos, vel) = {
+                let f_locked = self_lock.read().await;
+                (f_locked.current_pos(), f_locked.current_vel())
+            };
+            to_target = pos.to(&target);
+            
+            // sudden jumps mean we wrapped and we need to wrap the corresponding coordinate too
+            if to_target.x().abs() > 2 * last_to_target.x().abs() {
+                target.wrap_by(&WrapDirection::WrapX);
+                to_target = pos.to(&target);
+            }
+            if to_target.y().abs() > 2 * last_to_target.y().abs() {
+                target.wrap_by(&WrapDirection::WrapY);
+                to_target = pos.to(&target);
+            }
+            last_to_target = to_target;
+            dt = to_target.abs() / vel.abs();
+            dx = to_target - (vel.normalize() * dt);
+            
+            let acc = dx.normalize() * Self::ACC_CONST;
+            let overspeed = vel.abs() > max_speed;
+            if ticker % 10 == 0 {
+                log!("Detumbling: DX: {dx}, direct DT: {dt:2}s");
+                if overspeed {
+                    let overspeed_amount = vel.abs() - max_speed;
+                    warn!("Overspeeding by {overspeed_amount}");
+                }
+            }
+            let cond = if overspeed {
+                let min_brake_dt = ((vel.abs() - max_speed) / Self::ACC_CONST).to_num::<i64>();
+                overspeed && (dt.to_num::<i64>() < 10 + min_brake_dt)
+            } else {
+                dt.to_num::<i64>() < 10
+            };
+            if dx.abs() < I32F32::lit("1.0") || cond {
+                let detumble_dt = (Utc::now() - detumble_start).num_seconds();
+                log!("Detumbling finished after {detumble_dt}s with remaining DX: {dx} and dt {dt:2}s");
+                if overspeed {
+                    todo!();
+                } else {
+                    self_lock.write().await.set_vel(vel, true).await;
+                }
+                FlightComputer::set_angle_wait(Arc::clone(&self_lock), lens).await;
+                return Utc::now() + TimeDelta::seconds(dt.to_num::<i64>());
+            }
+            let (new_vel, _) = FlightComputer::trunc_vel(vel + acc);
+            self_lock.write().await.set_vel(new_vel, true).await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
     }
 
     /// Updates the satellite's internal fields with the latest observation data.
@@ -603,9 +717,9 @@ impl FlightComputer {
                 self.current_state = FlightState::from(obs.state());
                 self.current_angle = CameraAngle::from(obs.angle());
                 self.last_observation_timestamp = obs.timestamp();
-                self.current_battery = I32F32::from_num(obs.battery());
-                self.max_battery = I32F32::from_num(obs.max_battery());
-                self.fuel_left = I32F32::from_num(obs.fuel());
+                self.current_battery = I32F32::from_num(obs.battery()).clamp(Self::MIN_0, Self::MAX_100);
+                self.max_battery = I32F32::from_num(obs.max_battery()).clamp(Self::MIN_0, Self::MAX_100);
+                self.fuel_left = I32F32::from_num(obs.fuel()).clamp(Self::MIN_0, Self::MAX_100);
                 return;
             }
             error!("Unnoticed HTTP Error in updateObservation()");
@@ -638,7 +752,7 @@ impl FlightComputer {
     ///
     /// # Arguments
     /// - `new_vel`: The new velocity.
-    async fn set_vel(&self, new_vel: Vec2D<I32F32>) {
+    async fn set_vel(&self, new_vel: Vec2D<I32F32>, mute: bool) {
         let (vel, _) = Self::round_vel(new_vel);
         let req = ControlSatelliteRequest {
             vel_x: vel.x().to_f64().unwrap(),
@@ -647,8 +761,10 @@ impl FlightComputer {
             state: self.current_state.into(),
         };
         loop {
-            if req.send_request(&self.request_client).await.is_ok() {
-                info!("Velocity change commanded to [{}, {}]", vel.x(), vel.y());
+            if req.send_request(&self.request_client).await.is_ok()  {
+                if !mute {
+                    info!("Velocity change commanded to [{}, {}]", vel.x(), vel.y());
+                }
                 return;
             }
             error!("Unnoticed HTTP Error in set_vel()");

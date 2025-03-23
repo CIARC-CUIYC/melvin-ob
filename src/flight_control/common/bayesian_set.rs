@@ -27,11 +27,7 @@ impl SquareSlice {
         self.offset + self.offset.unwrapped_to_top_right(&p)
     }
 
-    fn map_right_bottom(&self, p: Vec2D<I32F32>) -> Vec2D<I32F32> {
-        self.offset + self.offset.unwrapped_to_bottom_right(&p)
-    }
-
-    pub fn intersect(&self, other: &SquareSlice) -> Self {
+    pub fn intersect(&self, other: &SquareSlice) -> Option<Self> {
         let corr_offs = self.map_right_top(other.offset);
         let start_x = self.offset.x().max(corr_offs.x());
         let start_y = self.offset.y().max(corr_offs.y());
@@ -45,28 +41,16 @@ impl SquareSlice {
             println!("I think wrapping should have occured here");
         }
 
-        // If there's no overlap, return a zero-sized square
+        // If there's no overlap, return None
         if start_x >= end_x || start_y >= end_y {
-            println!(
-                "corr_offs: {corr_offs}, self_offs: {}, other_offs: {}",
-                self.offset, other.offset
-            );
-            println!(
-                "self_side_length: {}, other_side_length: {}",
-                self.side_length, other.side_length
-            );
-            println!("start_x: {start_x}, start_y: {start_y}, end_x: {end_x}, end_y: {end_y}");
-            return Self {
-                offset: Vec2D::new(start_x, start_y),
-                side_length: Vec2D::new(I32F32::from_num(0), I32F32::from_num(0)),
-            };
+            return None;
         }
 
         // Create a new square slice representing the intersection
-        Self {
+        Some(Self {
             offset: Vec2D::new(start_x, start_y),
             side_length: Vec2D::new(end_x - start_x, end_y - start_y),
-        }
+        })
     }
 
     pub fn get_coord_set(
@@ -177,8 +161,10 @@ impl BayesianSet {
     pub fn update(&mut self, meas: &BeaconMeas) {
         let (min_dist, max_dist) = Self::get_dists(I32F32::from_num(meas.rssi()));
         let pos = meas.corr_pos();
-        let slice =
-            self.curr_slice.intersect(&SquareSlice::new(pos, Vec2D::new(max_dist, max_dist)));
+        let slice = self
+            .curr_slice
+            .intersect(&SquareSlice::new(pos, Vec2D::new(max_dist, max_dist)))
+            .expect("No possible intersection");
         let new_set = slice.get_coord_set(pos, min_dist, max_dist);
         self.set = self.set.intersection(&new_set).copied().collect();
         self.curr_slice = slice;

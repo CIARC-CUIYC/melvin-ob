@@ -53,25 +53,19 @@ fn test_bayesian_filter() {
     );
     */
     let meas_pos = vec![
-        Vec2D::new(I32F32::from_num(19064), I32F32::from_num(194)),
-        Vec2D::new(I32F32::from_num(19259), I32F32::from_num(420)),
-        Vec2D::new(I32F32::from_num(19455), I32F32::from_num(646)),
-        Vec2D::new(I32F32::from_num(19650), I32F32::from_num(871)),
-        Vec2D::new(I32F32::from_num(19845), I32F32::from_num(1097)),
-        Vec2D::new(I32F32::from_num(20040), I32F32::from_num(1323)),
-        Vec2D::new(I32F32::from_num(20235), I32F32::from_num(1549)),
-        Vec2D::new(I32F32::from_num(20431), I32F32::from_num(1774)),
-        Vec2D::new(I32F32::from_num(20626), I32F32::from_num(2000)),
-        Vec2D::new(I32F32::from_num(20821), I32F32::from_num(2226)),
-        Vec2D::new(I32F32::from_num(21016), I32F32::from_num(2451)),
-        Vec2D::new(I32F32::from_num(21211), I32F32::from_num(2677)),
-        Vec2D::new(I32F32::from_num(21407), I32F32::from_num(2903)),
+        Vec2D::new(I32F32::from_num(271), I32F32::from_num(64)),
+        Vec2D::new(I32F32::from_num(466), I32F32::from_num(290)),
+        Vec2D::new(I32F32::from_num(661), I32F32::from_num(516)),
+        Vec2D::new(I32F32::from_num(856), I32F32::from_num(741)),
+        Vec2D::new(I32F32::from_num(1051), I32F32::from_num(967)),
+        Vec2D::new(I32F32::from_num(1247), I32F32::from_num(1193)),
+        Vec2D::new(I32F32::from_num(1442), I32F32::from_num(1418)),
+        Vec2D::new(I32F32::from_num(1637), I32F32::from_num(1644)),
+        Vec2D::new(I32F32::from_num(1832), I32F32::from_num(1870)),
+        Vec2D::new(I32F32::from_num(2027), I32F32::from_num(2096)),
     ];
 
-    let d_noisy = vec![
-        2119.04, 1673.24, 1244.1, 1031.66, 627.32, 480.06, 367.34, 429.4, 732.25, 954.28, 1073.27,
-        1295.16, 1906.66,
-    ];
+    let d_noisy = vec![1783.39, 1955.2, 1474.0, 1310.44, 1125.43, 1220.42, 1006.02, 1349.5, 1423.85, 1671.7];
 
     //println!("Generated beacon Position: {beacon_pos}");
 

@@ -3,9 +3,9 @@ use crate::flight_control::{
     flight_computer::FlightComputer,
     flight_state::FlightState,
     orbit::IndexedOrbitPosition,
-    task::{switch_state_task::SwitchStateTask, TaskController},
+    task::{TaskController, switch_state_task::SwitchStateTask},
 };
-use crate::{fatal, info, log, warn};
+use crate::{error, fatal, info, log};
 
 use crate::flight_control::task::end_condition::EndCondition;
 use crate::mode_control::base_mode::TaskEndSignal::{Join, Timestamp};
@@ -15,6 +15,8 @@ use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 use strum_macros::Display;
 use tokio::{sync::oneshot, task::JoinHandle, time::Instant};
 use tokio_util::sync::CancellationToken;
+use crate::flight_control::beacon_controller::BeaconControllerState;
+use crate::mode_control::signal::BaseWaitExitSignal;
 
 pub(crate) enum TaskEndSignal {
     Timestamp(DateTime<Utc>),
@@ -31,12 +33,6 @@ pub enum PeriodicImagingEndSignal {
 pub enum BaseMode {
     MappingMode,
     BeaconObjectiveScanningMode,
-}
-
-pub enum BaseWaitExitSignal {
-    Continue,
-    ReturnAllDone,
-    ReturnSomeLeft,
 }
 
 impl BaseMode {
@@ -75,7 +71,6 @@ impl BaseMode {
                         k_clone.con(),
                         (end_t, rx),
                         img_dt,
-                        Self::DEF_MAPPING_ANGLE,
                         i_start.index(),
                     )
                     .await
@@ -136,13 +131,7 @@ impl BaseMode {
 
     async fn exec_comms(context: Arc<ModeContext>, due: TaskEndSignal, c_tok: CancellationToken) {
         let mut event_rx = context.super_v().subscribe_event_hub();
-        let due_t = {
-            if let Timestamp(t) = due {
-                Some(t)
-            } else {
-                None
-            }
-        };
+        let due_t = { if let Timestamp(t) = due { Some(t) } else { None } };
 
         let mut fut: Pin<Box<dyn Future<Output = ()> + Send>> = match due {
             Timestamp(t) => {
@@ -159,7 +148,7 @@ impl BaseMode {
                 // Wait for a message
                 Ok(msg) = event_rx.recv() => {
                     let f_cont = context.k().f_cont();
-                    let prolong = context.beac_cont().scan_active_beacons(msg, due_t, f_cont).await;
+                    let prolong = context.beac_cont().handle_poss_bo_ping(msg, due_t, f_cont).await;
 
                     if prolong {
                     fut = Box::pin(tokio::time::sleep_until(
@@ -184,7 +173,7 @@ impl BaseMode {
 
     pub async fn handle_sched_preconditions(&self, context: Arc<ModeContext>) -> DateTime<Utc> {
         match self {
-            BaseMode::MappingMode => Utc::now(),
+            BaseMode::MappingMode => FlightComputer::escape_if_comms(context.k().f_cont()).await,
             BaseMode::BeaconObjectiveScanningMode => {
                 FlightComputer::get_to_comms(context.k().f_cont()).await
             }
@@ -257,26 +246,24 @@ impl BaseMode {
         });
         let task_fut: Pin<Box<dyn Future<Output = BaseWaitExitSignal> + Send>> = match current_state
         {
+            FlightState::Charge => def,
             FlightState::Acquisition => Box::pin(async move {
                 Self::exec_map(context, Timestamp(due), c_tok).await;
                 BaseWaitExitSignal::Continue
             }),
-            FlightState::Charge => match self {
-                BaseMode::MappingMode => def,
-                BaseMode::BeaconObjectiveScanningMode => Box::pin(async move {
-                    let signal = context.beac_cont().check_exit_signal().await;
-                    signal
-                }),
-            },
-
             FlightState::Comms => {
                 if let Self::BeaconObjectiveScanningMode = self {
                     Box::pin(async move {
-                        let signal = context.beac_cont().check_exit_signal().await;
-                        signal
+                        Self::exec_comms(context, Timestamp(due), c_tok).await;
+                        if Utc::now() > due + Self::MAX_COMM_PROLONG_RESCHEDULE || Utc::now() < due - Self::MAX_COMM_PROLONG_RESCHEDULE {
+                            log!("Prolonging or shortening detected. Rescheduling.");
+                            BaseWaitExitSignal::ReSchedule
+                        } else {
+                            BaseWaitExitSignal::Continue
+                        }
                     })
                 } else {
-                    warn!("No known Beacon Objectives. Waiting!");
+                    error!("Not in Beacon Objective Scanning Mode. Waiting for Comms to end.");
                     def
                 }
             }
@@ -314,25 +301,18 @@ impl BaseMode {
             _ => fatal!("Illegal target state!"),
         }
     }
-
-    pub(crate) async fn handle_b_o(&self) -> Option<Self> {
+    
+    pub fn get_rel_bo_event(&self) -> BeaconControllerState {
         match self {
-            BaseMode::MappingMode => Some(BaseMode::BeaconObjectiveScanningMode),
-            BaseMode::BeaconObjectiveScanningMode => None,
+            BaseMode::MappingMode => BeaconControllerState::ActiveBeacons,
+            BaseMode::BeaconObjectiveScanningMode => BeaconControllerState::NoActiveBeacons,
         }
     }
-
-    pub(crate) async fn exit_base(&self, context: Arc<ModeContext>) -> BaseMode {
+    
+    pub fn bo_event(&self) -> Self {
         match self {
-            BaseMode::MappingMode => BaseMode::MappingMode,
-            BaseMode::BeaconObjectiveScanningMode => {
-                let signal = context.beac_cont().check_exit_signal().await;
-                if let BaseWaitExitSignal::ReturnAllDone = signal {
-                    return BaseMode::MappingMode;
-                }
-
-                self.clone()
-            }
+            BaseMode::MappingMode => Self::BeaconObjectiveScanningMode,
+            BaseMode::BeaconObjectiveScanningMode => Self::MappingMode,
         }
     }
 }

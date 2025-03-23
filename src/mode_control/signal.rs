@@ -1,7 +1,6 @@
-use crate::flight_control::objective::{
-    known_img_objective::KnownImgObjective, objective_base::ObjectiveBase,
-};
-use crate::mode_control::{base_mode::BaseWaitExitSignal, mode::global_mode::GlobalMode};
+use crate::flight_control::objective::known_img_objective::KnownImgObjective;
+use crate::mode_control::base_mode::BaseMode;
+use crate::mode_control::mode::global_mode::GlobalMode;
 
 pub enum OpExitSignal {
     ReInit(Box<dyn GlobalMode>),
@@ -11,13 +10,18 @@ pub enum OpExitSignal {
 pub enum ExecExitSignal {
     Continue,
     SafeEvent,
-    NewObjectiveEvent(ObjectiveBase),
-    ExitedOrbit(KnownImgObjective),
+    NewZOEvent(KnownImgObjective),
 }
 
 pub enum WaitExitSignal {
     Continue,
     SafeEvent,
-    NewObjectiveEvent(ObjectiveBase),
-    BODoneEvent(BaseWaitExitSignal),
+    NewZOEvent(KnownImgObjective),
+    BOEvent,
+    RescheduleEvent
+}
+
+pub enum BaseWaitExitSignal {
+    Continue,
+    ReSchedule,
 }

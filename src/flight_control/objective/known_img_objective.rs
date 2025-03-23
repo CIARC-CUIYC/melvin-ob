@@ -13,7 +13,7 @@ pub struct KnownImgObjective {
     end: DateTime<Utc>,
     zone: [i32; 4],
     optic_required: CameraAngle,
-    coverage_required: f32,
+    coverage_required: f64,
 }
 
 impl KnownImgObjective {
@@ -24,7 +24,7 @@ impl KnownImgObjective {
         end: DateTime<Utc>,
         zone: [i32; 4],
         optic_required: CameraAngle,
-        coverage_required: f32,
+        coverage_required: f64,
     ) -> KnownImgObjective {
         KnownImgObjective { id, name, start, end, zone, optic_required, coverage_required }
     }
@@ -34,7 +34,10 @@ impl KnownImgObjective {
     pub fn name(&self) -> &str { &self.name }
     pub fn zone(&self) -> [i32; 4] { self.zone }
     pub fn optic_required(&self) -> CameraAngle { self.optic_required }
-    pub fn coverage_required(&self) -> f32 { self.coverage_required }
+    pub fn coverage_required(&self) -> f64 { self.coverage_required }
+    
+    pub fn width(&self) -> i32 { self.zone[2] - self.zone[0] }
+    pub fn height(&self) -> i32 { self.zone[3] - self.zone[1] }
 
     pub fn get_imaging_points(&self) -> Vec<Vec2D<I32F32>> {
         // TODO: this has to be adapted for multiple imaging points later
@@ -47,17 +50,15 @@ impl KnownImgObjective {
 
     #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
     pub fn min_images(&self) -> i32 {
-        let lens_square_side_length = self.optic_required().get_square_side_length();
-
+        let lens_square_side_length = u32::from(self.optic_required().get_square_side_length());
         let zone_width = self.zone[2] - self.zone[0];
         let zone_height = self.zone[3] - self.zone[1];
 
-        let total_zone_area_size = (zone_width * zone_height) as f32;
-        let lens_area_size = f32::from(lens_square_side_length.pow(2));
-
+        let total_zone_area_size = f64::from(zone_width * zone_height);
+        let lens_area_size = f64::from(lens_square_side_length.pow(2));
         let min_area_required = total_zone_area_size * self.coverage_required;
-
-        let min_number_of_images_required = (min_area_required / lens_area_size).ceil();
+        
+        let min_number_of_images_required = (min_area_required / lens_area_size).round();
         min_number_of_images_required.to_i32().unwrap()
     }
 }

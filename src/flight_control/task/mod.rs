@@ -8,4 +8,7 @@ mod task_controller;
 pub(crate) mod vel_change_task;
 pub(crate) mod end_condition;
 
+#[cfg(test)]
+mod tests;
+
 pub use task_controller::TaskController;

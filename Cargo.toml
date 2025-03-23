@@ -1,9 +1,9 @@
 [package]
 name = "melvin-ob"
 authors = ["Felix Renzikowski <felix.renzi@outlook.de", "Nicolai Kallis <nicolai.kallis@gmx.de>"]
-version = "0.5.1"
-edition = "2021"
-rust-version = "1.80.0"
+version = "0.6.0"
+edition = "2024"
+rust-version = "1.85.0"
 license-file = "LICENSE"
 repository = "https://github.com/CIARC-CUIYC/melvin-ob"
 readme = "README.md"

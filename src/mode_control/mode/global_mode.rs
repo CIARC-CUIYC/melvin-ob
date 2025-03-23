@@ -1,18 +1,22 @@
-use crate::flight_control::{
-    objective::{objective_base::ObjectiveBase, objective_type::ObjectiveType},
-    task::base_task::Task,
-};
+use crate::flight_control::task::base_task::Task;
 use crate::mode_control::{
-    base_mode::{BaseMode, BaseWaitExitSignal},
+    base_mode::BaseMode,
     mode_context::ModeContext,
-    signal::{WaitExitSignal, ExecExitSignal, OpExitSignal},
+    signal::{ExecExitSignal, OpExitSignal, WaitExitSignal},
 };
-use crate::{fatal, info, log, warn};
+use crate::{DT_0_STD, fatal, info, log, warn};
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
-use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
+use std::{future::Future, pin::Pin, sync::Arc};
+use std::mem::discriminant;
+use std::ops::Deref;
+use tokio::sync::{RwLock, RwLockWriteGuard};
+use tokio::sync::watch::Receiver;
 use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
+use crate::flight_control::beacon_controller::BeaconControllerState;
+use crate::flight_control::objective::known_img_objective::KnownImgObjective;
+use crate::mode_control::signal::BaseWaitExitSignal;
 
 #[async_trait]
 pub trait GlobalMode: Sync {
@@ -20,8 +24,11 @@ pub trait GlobalMode: Sync {
     fn new_zo_rationale(&self) -> &'static str { "newly discovered ZO!" }
     fn new_bo_rationale(&self) -> &'static str { "newly discovered BO!" }
     fn tasks_done_rationale(&self) -> &'static str { "tasks list done!" }
+    fn tasks_done_exit_rationale(&self) -> &'static str {
+        "tasks list done and exited orbit for ZO Retrieval!"
+    }
     fn bo_done_rationale(&self) -> &'static str { "BO done or expired!" }
-    fn bo_left_rationale(&self) -> &'static str { "necessary Rescheduling for remaining BOs!" }
+    fn bo_left_rationale(&self) -> &'static str { "necessary rescheduling for remaining BOs!" }
     fn type_name(&self) -> &'static str;
     async fn init_mode(&self, context: Arc<ModeContext>) -> OpExitSignal;
 
@@ -36,29 +43,35 @@ pub trait GlobalMode: Sync {
             drop(sched_lock);
             t
         } {
-            let due_time = task.dt() - Utc::now();
+            let due_time = task.t() - Utc::now();
             let task_type = task.task_type();
             info!("TASK {tasks}: {task_type} in  {}s!", due_time.num_seconds());
-            while task.dt() > Utc::now() + TimeDelta::seconds(2) {
+            while task.t() > Utc::now() + TimeDelta::seconds(2) {
                 let context_clone = Arc::clone(&context);
-                match self.exec_task_wait(context_clone, task.dt()).await {
+                match self.exec_task_wait(context_clone, task.t()).await {
                     WaitExitSignal::Continue => {}
                     WaitExitSignal::SafeEvent => {
                         return self.safe_handler(context_local).await;
                     }
-                    WaitExitSignal::NewObjectiveEvent(obj) => {
+                    WaitExitSignal::NewZOEvent(obj) => {
                         let context_clone = Arc::clone(&context);
-                        let ret = self.objective_handler(context_clone, obj).await;
-                        if let Some(opt) = ret {
+                        if let Some(opt) = self.zo_handler(context_clone, obj).await {
                             return opt;
                         };
                     }
-                    WaitExitSignal::BODoneEvent(sig) => {
-                        return self.b_o_done_handler(context, sig).await
+                    WaitExitSignal::BOEvent => {
+                        if let Some(opt) = self.bo_event_handler() {
+                            return opt;
+                        };
+                    }
+                    WaitExitSignal::RescheduleEvent => {
+                        if let Some(opt) = self.resched_event_handler() {
+                            return opt;
+                        }
                     }
                 };
             }
-            let task_delay = (task.dt() - Utc::now()).num_milliseconds() as f32 / 1000.0;
+            let task_delay = (task.t() - Utc::now()).num_milliseconds() as f32 / 1000.0;
             if task_delay.abs() > 2.0 {
                 log!("Task {tasks} delayed by {task_delay}s!");
             }
@@ -68,11 +81,8 @@ pub trait GlobalMode: Sync {
                 ExecExitSignal::SafeEvent => {
                     return self.safe_handler(context_local).await;
                 }
-                ExecExitSignal::NewObjectiveEvent(_) => {
+                ExecExitSignal::NewZOEvent(_) => {
                     fatal!("Unexpected task exit signal!");
-                }
-                ExecExitSignal::ExitedOrbit(zo) => {
-                    todo!()
                 }
             };
             tasks += 1;
@@ -80,19 +90,12 @@ pub trait GlobalMode: Sync {
         OpExitSignal::Continue
     }
     async fn exec_task_wait(&self, context: Arc<ModeContext>, due: DateTime<Utc>)
-        -> WaitExitSignal;
+    -> WaitExitSignal;
     async fn exec_task(&self, context: Arc<ModeContext>, task: Task) -> ExecExitSignal;
     async fn safe_handler(&self, context: Arc<ModeContext>) -> OpExitSignal;
-    async fn objective_handler(
-        &self,
-        context: Arc<ModeContext>,
-        obj: ObjectiveBase,
-    ) -> Option<OpExitSignal>;
-    async fn b_o_done_handler(
-        &self,
-        context: Arc<ModeContext>,
-        b_sig: BaseWaitExitSignal,
-    ) -> OpExitSignal;
+    async fn zo_handler(&self, context: Arc<ModeContext>, obj: KnownImgObjective) -> Option<OpExitSignal>;
+    fn bo_event_handler(&self) -> Option<OpExitSignal>;
+    fn resched_event_handler(&self) -> Option<OpExitSignal>;
     async fn exit_mode(&self, context: Arc<ModeContext>) -> Box<dyn GlobalMode>;
 }
 
@@ -107,26 +110,29 @@ pub trait OrbitalMode: GlobalMode {
         due: DateTime<Utc>,
     ) -> WaitExitSignal {
         let safe_mon = context.super_v().safe_mon();
-        let mut obj_mon = context.obj_mon().write().await;
+        let mut zo_mon = context.zo_mon().write().await;
+        let mut bo_mon = context.bo_mon();
         let cancel_task = CancellationToken::new();
+
         let fut: Pin<Box<dyn Future<Output = Result<BaseWaitExitSignal, JoinError>> + Send>> =
             if (due - Utc::now()) > Self::get_max_dt() {
                 Box::pin(self.base().get_wait(Arc::clone(&context), due, cancel_task.clone()).await)
             } else {
                 warn!("Task wait time too short. Just waiting!");
                 Box::pin(async {
-                    let sleep = (due - Utc::now()).to_std().unwrap_or(Duration::from_secs(0));
+                    let sleep = (due - Utc::now()).to_std().unwrap_or(DT_0_STD);
                     tokio::time::timeout(sleep, cancel_task.cancelled()).await.ok().unwrap_or(());
                     Ok(BaseWaitExitSignal::Continue)
                 })
             };
+        let bo_change_signal = self.base().get_rel_bo_event();
         tokio::pin!(fut);
         tokio::select! {
             exit_sig = &mut fut => {
                 let sig = exit_sig.expect("[FATAL] Task wait hung up!");
                 match sig {
                     BaseWaitExitSignal::Continue => WaitExitSignal::Continue,
-                    signal => WaitExitSignal::BODoneEvent(signal)
+                    BaseWaitExitSignal::ReSchedule => WaitExitSignal::RescheduleEvent
                 }
             },
             () = safe_mon.notified() => {
@@ -134,24 +140,32 @@ pub trait OrbitalMode: GlobalMode {
                 fut.await.ok();
                 WaitExitSignal::SafeEvent
             },
-            obj = async move {
-                // TODO: later we shouldn't block zoned objectives anymore
-                while let Some(msg) = obj_mon.recv().await {
-                    match msg.obj_type() {
-                        ObjectiveType::Beacon { .. } => {
-                            return WaitExitSignal::NewObjectiveEvent(msg);
-                        },
-                        ObjectiveType::KnownImage { .. } => {
-                            continue;
-                        }
-                    }
-                }
-                fatal!("Objective monitor hung up!")
-                } => {
+            msg =  zo_mon.recv() => {
+                let img_obj = msg.expect("[FATAL] Objective monitor hung up!");
                 cancel_task.cancel();
-                //fut.await.ok();
-                obj
+                fut.await.ok();
+                WaitExitSignal::NewZOEvent(img_obj)
             }
+            _ = Self::monitor_bo_mon_change(bo_change_signal, bo_mon) => {
+                cancel_task.cancel();
+                fut.await.ok();
+                WaitExitSignal::BOEvent            
+            }
+            
+        }
+    }
+    
+    async fn monitor_bo_mon_change(sig: BeaconControllerState, bo_mon: &RwLock<Receiver<BeaconControllerState>>) {
+        let mut bo_mon_lock = bo_mon.write().await;
+        loop {
+            if let Ok(()) = bo_mon_lock.changed().await {
+                let sent_sig = bo_mon_lock.borrow_and_update();
+                let sent_sig_ref = sent_sig.deref();
+                if discriminant(&sig) == discriminant(sent_sig_ref) {
+                    return;
+                }
+            }
+            
         }
     }
 }

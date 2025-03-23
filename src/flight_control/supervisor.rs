@@ -27,8 +27,8 @@ pub struct Supervisor {
     f_cont_lock: Arc<RwLock<FlightComputer>>,
     safe_mon: Arc<Notify>,
     reset_pos_mon: Arc<Notify>,
-    obj_mon: mpsc::Sender<ObjectiveBase>,
-    beac_mon: mpsc::Sender<BeaconObjective>,
+    zo_mon: mpsc::Sender<KnownImgObjective>,
+    bo_mon: mpsc::Sender<BeaconObjective>,
     event_hub: broadcast::Sender<(DateTime<Utc>, String)>,
 }
 
@@ -44,7 +44,7 @@ impl Supervisor {
         f_cont_lock: Arc<RwLock<FlightComputer>>,
     ) -> (
         Supervisor,
-        Receiver<ObjectiveBase>,
+        Receiver<KnownImgObjective>,
         Receiver<BeaconObjective>,
     ) {
         let (tx_obj, rx_obj) = mpsc::channel(10);
@@ -55,8 +55,8 @@ impl Supervisor {
                 f_cont_lock,
                 safe_mon: Arc::new(Notify::new()),
                 reset_pos_mon: Arc::new(Notify::new()),
-                obj_mon: tx_obj,
-                beac_mon: tx_beac,
+                zo_mon: tx_obj,
+                bo_mon: tx_beac,
                 event_hub: event_send,
             },
             rx_obj,
@@ -198,29 +198,28 @@ impl Supervisor {
             if last_objective_check + Self::OBJ_UPDATE_INTERVAL < Utc::now() {
                 let handle = self.f_cont_lock.read().await.client();
                 let objective_list = ObjectiveListRequest {}.send_request(&handle).await.unwrap();
-                let mut send_objs = Vec::new();
+                let mut send_img_objs = Vec::new();
                 let mut send_beac_objs = Vec::new();
 
                 for img_obj in objective_list.img_objectives() {
                     let obj_on = img_obj.start() < Utc::now() && img_obj.end() > Utc::now();
                     let is_secret = matches!(img_obj.zone_type(), ZoneType::SecretZone(_));
                     if obj_on && !id_list.contains(&img_obj.id()) && !is_secret {
-                        send_objs.push(ObjectiveBase::from(img_obj.clone()));
+                        send_img_objs.push(KnownImgObjective::try_from(img_obj.clone()).unwrap());
                     }
                 }
                 for b_o in objective_list.beacon_objectives() {
                     let obj_on = b_o.start() < Utc::now() && b_o.end() > Utc::now();
                     if obj_on && !id_list.contains(&b_o.id()) {
-                        send_objs.push(ObjectiveBase::from(b_o.clone()));
                         send_beac_objs.push(BeaconObjective::from(b_o.clone()));
                     }
                 }
-                for obj in send_objs {
+                for obj in send_img_objs {
                     id_list.insert(obj.id());
-                    self.obj_mon.send(obj).await.unwrap();
+                    self.zo_mon.send(obj).await.unwrap();
                 }
                 for beac_obj in send_beac_objs {
-                    self.beac_mon.send(beac_obj).await.unwrap();
+                    self.bo_mon.send(beac_obj).await.unwrap();
                 }
                 last_objective_check = Utc::now();
             }

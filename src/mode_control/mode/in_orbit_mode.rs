@@ -1,14 +1,11 @@
 use crate::flight_control::{
     flight_computer::FlightComputer,
-    objective::{
-        beacon_objective::BeaconObjective, known_img_objective::KnownImgObjective,
-        objective_base::ObjectiveBase, objective_type::ObjectiveType,
-    },
+    objective::known_img_objective::KnownImgObjective,
     task::base_task::{BaseTask, Task},
 };
 use crate::mode_control::mode::zo_prep_mode::ZOPrepMode;
 use crate::mode_control::{
-    base_mode::{BaseMode, BaseWaitExitSignal},
+    base_mode::BaseMode,
     mode::global_mode::{GlobalMode, OrbitalMode},
     mode_context::ModeContext,
     signal::{ExecExitSignal, OpExitSignal, WaitExitSignal},
@@ -86,7 +83,7 @@ impl GlobalMode for InOrbitMode {
     }
 
     async fn safe_handler(&self, context: Arc<ModeContext>) -> OpExitSignal {
-        FlightComputer::escape_safe(context.k().f_cont()).await;
+        FlightComputer::escape_safe(context.k().f_cont(), false).await;
         context.o_ch_lock().write().await.finish(
             context.k().f_cont().read().await.current_pos(),
             self.safe_mode_rationale(),
@@ -94,85 +91,30 @@ impl GlobalMode for InOrbitMode {
         OpExitSignal::ReInit(Box::new(self.clone()))
     }
 
-    async fn objective_handler(
+    async fn zo_handler(
         &self,
-        context: Arc<ModeContext>,
-        obj: ObjectiveBase,
+        c: Arc<ModeContext>,
+        obj: KnownImgObjective,
     ) -> Option<OpExitSignal> {
-        match obj.obj_type() {
-            ObjectiveType::Beacon { .. } => {
-                let b_obj = BeaconObjective::new(
-                    obj.id(),
-                    String::from(obj.name()),
-                    obj.start(),
-                    obj.end(),
-                );
-                obj!("Found new Beacon Objective {}!", obj.id());
-                if let Some(base) = self.base.handle_b_o().await {
-                    context.o_ch_lock().write().await.finish(
-                        context.k().f_cont().read().await.current_pos(),
-                        self.new_bo_rationale(),
-                    );
-                    Some(OpExitSignal::ReInit(Box::new(Self { base })))
-                } else {
-                    None
-                }
-            }
-            ObjectiveType::KnownImage {
-                zone,
-                optic_required,
-                coverage_required,
-            } => {
-                obj!("Found new Zoned Objective {}!", obj.id());
-                let k_obj = KnownImgObjective::new(
-                    obj.id(),
-                    String::from(obj.name()),
-                    obj.start(),
-                    obj.end(),
-                    *zone,
-                    *optic_required,
-                    *coverage_required,
-                );
-                context.o_ch_lock().write().await.finish(
-                    context.k().f_cont().read().await.current_pos(),
-                    self.new_zo_rationale(),
-                );
-                ZOPrepMode::from_obj(context, k_obj, self.base.clone())
-                    .await
-                    .map(|mode| OpExitSignal::ReInit(Box::new(mode)))
-            }
-        }
+        obj!("Found new Zoned Objective {}!", obj.id());
+
+        c.o_ch_lock().write().await.finish(
+            c.k().f_cont().read().await.current_pos(),
+            self.new_zo_rationale(),
+        );
+        ZOPrepMode::from_obj(c, obj, self.base.clone())
+            .await
+            .map(|mode| OpExitSignal::ReInit(Box::new(mode)))
     }
 
-    async fn b_o_done_handler(
-        &self,
-        context: Arc<ModeContext>,
-        b_sig: BaseWaitExitSignal,
-    ) -> OpExitSignal {
-        match b_sig {
-            BaseWaitExitSignal::Continue => OpExitSignal::Continue,
-            BaseWaitExitSignal::ReturnAllDone => {
-                context.o_ch_lock().write().await.finish(
-                    context.k().f_cont().read().await.current_pos(),
-                    self.bo_done_rationale(),
-                );
-                OpExitSignal::ReInit(Box::new(Self {
-                    base: BaseMode::MappingMode,
-                }))
-            }
-            BaseWaitExitSignal::ReturnSomeLeft => {
-                context.o_ch_lock().write().await.finish(
-                    context.k().f_cont().read().await.current_pos(),
-                    self.bo_left_rationale(),
-                );
-                OpExitSignal::ReInit(Box::new(self.clone()))
-            }
-        }
+    fn bo_event_handler(&self) -> Option<OpExitSignal> {
+        let base = self.base.bo_event();
+        Some(OpExitSignal::ReInit(Box::new(Self { base })))
     }
 
-    async fn exit_mode(&self, c: Arc<ModeContext>) -> Box<dyn GlobalMode> {
-        Box::new(Self {
-            base: self.base.exit_base(c).await,
-        })
+    fn resched_event_handler(&self) -> Option<OpExitSignal> {
+        Some(OpExitSignal::ReInit(Box::new(self.clone())))
     }
+
+    async fn exit_mode(&self, _: Arc<ModeContext>) -> Box<dyn GlobalMode> { Box::new(self.clone()) }
 }
