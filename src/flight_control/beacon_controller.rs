@@ -1,7 +1,6 @@
 use crate::flight_control::flight_computer::FlightComputer;
 use crate::flight_control::objective::beacon_objective::{BeaconMeas, BeaconObjective};
 use crate::flight_control::objective::beacon_objective_done::BeaconObjectiveDone;
-use crate::flight_control::task::TaskController;
 use crate::http_handler::http_client::HTTPClient;
 use crate::mode_control::mode_context::ModeContext;
 use crate::{event, obj, warn};
@@ -98,19 +97,13 @@ impl BeaconController {
     pub async fn handle_poss_bo_ping(
         &self,
         msg: (DateTime<Utc>, String),
-        due_t: Option<DateTime<Utc>>,
         f_cont: Arc<RwLock<FlightComputer>>,
-    ) -> bool {
-
+    ) {
         let (t, val) = msg;
         if let Some((id, d_noisy)) = Self::extract_id_and_d(val.as_str()) {
-            let (pos, res_batt) = {
-                let f_cont_lock = f_cont.read().await;
-                (
-                    f_cont_lock.current_pos(),
-                    f_cont_lock.batt_in_dt(Self::BO_MSG_COMM_PROLONG),
-                )
-            };
+            let f_cont_lock = f_cont.read().await;
+            let pos = f_cont_lock.current_pos();
+
             let msg_delay = Utc::now() - t;
             let meas = BeaconMeas::new(id, pos, d_noisy, msg_delay);
             obj!("Received BO measurement at {pos} for ID {id} with distance {d_noisy}.");
@@ -118,22 +111,11 @@ impl BeaconController {
             if let Some(obj) = active_lock.get_mut(&id) {
                 obj!("Updating BO {id} and prolonging!");
                 obj.append_measurement(meas);
-                let new_end = Utc::now() + Self::BO_MSG_COMM_PROLONG;
-                if let Some(t) = due_t {
-                    let is_last = active_lock.len() == 1;
-                    let prolong_cond = new_end > t || is_last;
-                    if prolong_cond && res_batt > TaskController::MIN_BATTERY_THRESHOLD {
-                        return true;
-                    }
-                }
-                false
             } else {
                 warn!("Unknown BO ID {id}. Ignoring!");
-                false
             }
         } else {
             event!("Message has unknown format {val:#?}. Ignoring.");
-            false
         }
     }
 
@@ -151,7 +133,7 @@ impl BeaconController {
 
     async fn move_to_done(&self, finished: HashMap<usize, BeaconObjective>) {
         let mut done_bo = self.done_bo.write().await;
-        finished.into_iter().for_each(|(id, beacon)| {
+        for (id, beacon) in finished {
             let done_beacon = BeaconObjectiveDone::from(beacon);
             if done_beacon.guesses().is_empty() {
                 //done_beacon.gen_random_guesses()
@@ -161,7 +143,7 @@ impl BeaconController {
                 obj!("Finished Beacon objective: ID {id} with {guesses} guesses.");
             }
             done_bo.insert(done_beacon.id(), done_beacon.clone());
-        });
+        }
     }
 
     async fn check_approaching_end(&self, handler: &Arc<HTTPClient>) {
@@ -184,7 +166,9 @@ impl BeaconController {
         };
         self.move_to_done(finished).await;
         if no_more_beacons {
-            self.state_rx.send(BeaconControllerState::NoActiveBeacons).expect("Failed to send state");
+            self.state_rx
+                .send(BeaconControllerState::NoActiveBeacons)
+                .expect("Failed to send state");
         }
         self.handle_beacon_submission(handler).await;
     }

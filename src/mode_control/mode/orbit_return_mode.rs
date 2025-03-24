@@ -52,7 +52,5 @@ impl GlobalMode for OrbitReturnMode {
 
     fn bo_event_handler(&self) -> Option<OpExitSignal> { unimplemented!() }
 
-    fn resched_event_handler(&self) -> Option<OpExitSignal> { unimplemented!() }
-
     async fn exit_mode(&self, c: Arc<ModeContext>) -> Box<dyn GlobalMode> { todo!() }
 }

@@ -112,9 +112,5 @@ impl GlobalMode for InOrbitMode {
         Some(OpExitSignal::ReInit(Box::new(Self { base })))
     }
 
-    fn resched_event_handler(&self) -> Option<OpExitSignal> {
-        Some(OpExitSignal::ReInit(Box::new(self.clone())))
-    }
-
     async fn exit_mode(&self, _: Arc<ModeContext>) -> Box<dyn GlobalMode> { Box::new(self.clone()) }
 }
