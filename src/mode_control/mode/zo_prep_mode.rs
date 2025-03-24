@@ -57,23 +57,31 @@ impl ZOPrepMode {
         zo: KnownImgObjective,
         curr_base: BaseMode,
     ) -> Option<Self> {
-        let targets = zo.get_imaging_points();
+        let due = zo.end();
+        let (current_vel, fuel_left) = {
+            let f_cont_lock = context.k().f_cont();
+            let f_cont = f_cont_lock.read().await;
+            (f_cont.current_vel(), f_cont.fuel_left())
+        };
         let exit_burn = if zo.min_images() == 1 {
-            let due = zo.end();
-            let (current_vel, fuel_left) = {
-                let f_cont_lock = context.k().f_cont();
-                let f_cont = f_cont_lock.read().await;
-                (f_cont.current_vel(), f_cont.fuel_left())
-            };
+            let target = zo.get_single_image_point();
             TaskController::calculate_single_target_burn_sequence(
                 context.o_ch_clone().await.i_entry(),
                 current_vel,
-                targets[0],
+                target,
                 due,
                 fuel_left,
             )
             .await
         } else {
+            let entries = zo.get_corners();
+            TaskController::calculate_multi_target_burn_sequence(
+                context.o_ch_clone().await.i_entry(),
+                current_vel,
+                entries,
+                due,
+                fuel_left
+            ).await;
             // TODO: multiple imaging points?
             fatal!("Zoned Objective with multiple images not yet supported");
         }?;
@@ -88,7 +96,8 @@ impl ZOPrepMode {
         let exit_pos = exit_burn_seq.sequence_pos().last().unwrap();
         let entry_t = exit_burn_seq.start_i().t().format("%H:%M:%S").to_string();
         let vel = exit_burn_seq.sequence_vel().last().unwrap();
-        let tar = target.get_imaging_points()[0];
+        let tar = exit_burn.target_pos();
+        let add_tar = exit_burn.to_add_target();
         let det_dt = exit_burn_seq.detumble_dt();
         let acq_dt = exit_burn_seq.acc_dt();
         let tar_unwrap = exit_burn.unwrapped_target();
@@ -99,6 +108,9 @@ impl ZOPrepMode {
         log!("Entry at {entry_t}, Position will be {entry_pos}");
         log!("Exit after {acq_dt}s, Position will be {exit_pos}. Detumble time is {det_dt}s.");
         log!("Exit Velocity will be {vel} aiming for target at {tar} unwrapped to {tar_unwrap}.");
+        if let Some(tar2) = add_tar {
+            log!("Additional Target will be {tar2}");
+        }
         log!("Whole BS: {:?}", exit_burn);
     }
 
@@ -241,6 +253,7 @@ impl GlobalMode for ZOPrepMode {
         if self.left_orbit.load(Ordering::Acquire) {
             Box::new(ZORetrievalMode::new(
                 self.target.clone(),
+                self.exit_burn.to_add_target(),
                 *self.exit_burn.unwrapped_target(),
             ))
         } else {

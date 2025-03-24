@@ -225,15 +225,25 @@ impl TaskController {
     fn find_last_possible_dt(
         i: &IndexedOrbitPosition,
         vel: &Vec2D<I32F32>,
-        target_pos: &Vec2D<I32F32>,
+        targets: &[(Vec2D<I32F32>, Vec2D<I32F32>)],
         max_dt: usize,
     ) -> usize {
         let orbit_vel_abs = vel.abs();
 
         for dt in (Self::OBJECTIVE_SCHEDULE_MIN_DT..max_dt).rev() {
             let pos = (i.pos() + *vel * I32F32::from_num(dt)).wrap_around_map();
-            let to_target = pos.unwrapped_to(target_pos);
-            let min_dt = (to_target.abs() / orbit_vel_abs).abs().round().to_num::<usize>();
+            let mut min_dt = usize::MAX;
+
+            for target_pos in targets {
+                let to_target = pos.unwrapped_to(&target_pos.0);
+                let this_min_dt = ((to_target.abs() + target_pos.1.abs()) / orbit_vel_abs)
+                    .abs()
+                    .round()
+                    .to_num::<usize>();
+                if this_min_dt < min_dt {
+                    min_dt = this_min_dt;
+                }
+            }
 
             if min_dt + dt < max_dt {
                 return dt;
@@ -278,8 +288,8 @@ impl TaskController {
         target_end_time: DateTime<Utc>,
         fuel_left: I32F32,
     ) -> Option<ExitBurnResult> {
-        info!("Starting to calculate single target burn towards {target_pos}");
-
+        info!("Starting to calculate single-target burn towards {target_pos}");
+        let target = [(target_pos, Vec2D::zero())];
         // Calculate maximum allowed time delta for the maneuver
         let time_left = target_end_time - curr_i.t();
         let max_dt = {
@@ -293,7 +303,12 @@ impl TaskController {
         let turns_handle =
             tokio::spawn(async move { FlightComputer::compute_possible_turns(curr_vel) });
 
-        let last_possible_dt = Self::find_last_possible_dt(&curr_i, &curr_vel, &target_pos, max_dt);
+        let last_possible_dt = Self::find_last_possible_dt(
+            &curr_i,
+            &curr_vel,
+            &target,
+            max_dt,
+        );
 
         // Define range for evaluation and initialize best burn sequence tracker
         let remaining_range = Self::OBJECTIVE_SCHEDULE_MIN_DT..=last_possible_dt;
@@ -303,7 +318,62 @@ impl TaskController {
         let mut evaluator = BurnSequenceEvaluator::new(
             curr_i,
             curr_vel,
-            target_pos,
+            &target,
+            max_dt,
+            max_off_orbit_dt,
+            turns,
+            fuel_left,
+        );
+
+        for dt in remaining_range.rev() {
+            evaluator.process_dt(dt, Self::MAX_BATTERY_THRESHOLD);
+        }
+        // Return the best burn sequence, panicking if none was found
+        evaluator.get_best_burn()
+    }
+
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
+        clippy::cast_possible_wrap,
+        clippy::too_many_lines
+    )]
+    pub async fn calculate_multi_target_burn_sequence(
+        curr_i: IndexedOrbitPosition,
+        curr_vel: Vec2D<I32F32>,
+        entries: [(Vec2D<I32F32>, Vec2D<I32F32>); 4],
+        target_end_time: DateTime<Utc>,
+        fuel_left: I32F32,
+    ) -> Option<ExitBurnResult> {
+        info!("Starting to calculate multi-target burn sequence!");
+
+        // Calculate maximum allowed time delta for the maneuver
+        let time_left = target_end_time - curr_i.t();
+        
+        let max_dt = {
+            let max = usize::try_from(time_left.num_seconds()).unwrap_or(0);
+            max - Self::OBJECTIVE_MIN_RETRIEVAL_TOL
+        };
+
+        let max_off_orbit_dt = max_dt - Self::OBJECTIVE_SCHEDULE_MIN_DT;
+
+        // Spawn a task to compute possible turns asynchronously
+        let turns_handle =
+            tokio::spawn(async move { FlightComputer::compute_possible_turns(curr_vel) });
+        
+        let last_possible_dt =
+            Self::find_last_possible_dt(&curr_i, &curr_vel, &entries, max_dt);
+
+        // Define range for evaluation and initialize best burn sequence tracker
+        let remaining_range = Self::OBJECTIVE_SCHEDULE_MIN_DT..=last_possible_dt;
+
+        // Await the result of possible turn computations
+        let turns = turns_handle.await.unwrap();
+        let mut evaluator = BurnSequenceEvaluator::new(
+            curr_i,
+            curr_vel,
+            &entries,
             max_dt,
             max_off_orbit_dt,
             turns,
