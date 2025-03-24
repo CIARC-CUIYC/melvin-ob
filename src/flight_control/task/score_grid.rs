@@ -21,11 +21,7 @@ impl ScoreGrid {
     /// # Returns
     /// A `ScoreGrid` instance with all scores initialized to `0`.
     pub fn new(e_len: usize, s_len: usize) -> Self {
-        Self {
-            e_len,
-            s_len,
-            score: vec![0i32; e_len * s_len].into_boxed_slice(),
-        }
+        Self { e_len, s_len, score: vec![0i32; e_len * s_len].into_boxed_slice() }
     }
 
     /// Creates a `ScoreGrid` and initializes scores based on the specified condition.
@@ -44,11 +40,7 @@ impl ScoreGrid {
         s_len: usize,
         (end_s, end_min_e): (Option<usize>, usize),
     ) -> Self {
-        let (end_st, step) = if let Some(s) = end_s {
-            (s, s_len)
-        } else {
-            (0, 1)
-        };
+        let (end_st, step) = if let Some(s) = end_s { (s, s_len) } else { (0, 1) };
         let mut min_score = vec![i32::MIN; e_len * s_len].into_boxed_slice();
         if end_st < s_len && end_min_e < e_len {
             let start_ind = end_min_e * s_len + end_st;
@@ -58,11 +50,7 @@ impl ScoreGrid {
             }
         }
 
-        Self {
-            e_len,
-            s_len,
-            score: min_score,
-        }
+        Self { e_len, s_len, score: min_score }
     }
 
     /// Retrieves the score at a specific position in the grid.

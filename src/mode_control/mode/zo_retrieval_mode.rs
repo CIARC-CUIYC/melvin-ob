@@ -4,16 +4,16 @@ use crate::flight_control::flight_state::{FlightState, TRANS_DEL};
 use crate::flight_control::imaging::map_image::OffsetZOImage;
 use crate::flight_control::task::base_task::BaseTask;
 use crate::flight_control::{
-    objective::known_img_objective::KnownImgObjective,
-    task::base_task::Task,
+    objective::known_img_objective::KnownImgObjective, task::base_task::Task,
 };
 use crate::mode_control::mode::orbit_return_mode::OrbitReturnMode;
+use crate::mode_control::signal::OptOpExitSignal;
 use crate::mode_control::{
     mode::global_mode::GlobalMode,
     mode_context::ModeContext,
     signal::{ExecExitSignal, OpExitSignal, WaitExitSignal},
 };
-use crate::{DT_0_STD, error, info, log, warn};
+use crate::{DT_0_STD, error, log, warn};
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
@@ -46,7 +46,13 @@ impl GlobalMode for ZORetrievalMode {
         .await;
         let t_cont = context.k().t_cont();
         t_cont.clear_schedule().await; // Just to be sure
-        t_cont.schedule_retrieval_phase(target_t, self.unwrapped_pos.wrap_around_map(), self.target.optic_required()).await;
+        t_cont
+            .schedule_retrieval_phase(
+                target_t,
+                self.unwrapped_pos.wrap_around_map(),
+                self.target.optic_required(),
+            )
+            .await;
         OpExitSignal::Continue
     }
 
@@ -56,7 +62,6 @@ impl GlobalMode for ZORetrievalMode {
         due: DateTime<Utc>,
     ) -> WaitExitSignal {
         let safe_mon = context.super_v().safe_mon();
-        let mut obj_mon = context.zo_mon().write().await;
         let dt = (due - Utc::now()).to_std().unwrap_or(DT_0_STD);
         tokio::select! {
             () = tokio::time::sleep(dt) => {
@@ -64,10 +69,6 @@ impl GlobalMode for ZORetrievalMode {
             },
             () = safe_mon.notified() => {
                 WaitExitSignal::SafeEvent
-            },
-            msg =  obj_mon.recv() => {
-                let obj = msg.expect("[FATAL] Objective monitor hung up!");
-                WaitExitSignal::NewZOEvent(obj)
             }
         }
     }
@@ -125,24 +126,28 @@ impl GlobalMode for ZORetrievalMode {
             }
         }
         warn!("Objective not reachable after safe event, exiting ZORetrievalMode");
+        context.o_ch_lock().write().await.finish(
+            context.k().f_cont().read().await.current_pos(),
+            self.out_of_orbit_rationale(),
+        );
         OpExitSignal::ReInit(Box::new(OrbitReturnMode::new()))
     }
-    
-    async fn zo_handler(&self, context: Arc<ModeContext>, task: KnownImgObjective) -> Option<OpExitSignal> {
-        context.k_buffer().lock().await.push(task);
-        None
-    }
 
-    fn bo_event_handler(&self) -> Option<OpExitSignal> {
-        unimplemented!()
-    }
-    
-    fn resched_event_handler(&self) -> Option<OpExitSignal> {
+    async fn zo_handler(&self, _: &Arc<ModeContext>, _: KnownImgObjective) -> OptOpExitSignal {
         unimplemented!()
     }
 
-    async fn exit_mode(&self, _: Arc<ModeContext>) -> Box<dyn GlobalMode> {
-        info!("Exiting ZORetrievalMode");
+    async fn bo_event_handler(&self, _: &Arc<ModeContext>) -> OptOpExitSignal {
+        unimplemented!()
+    }
+
+    fn resched_event_handler(&self) -> OptOpExitSignal { unimplemented!() }
+
+    async fn exit_mode(&self, context: Arc<ModeContext>) -> Box<dyn GlobalMode> {
+        context.o_ch_lock().write().await.finish(
+            context.k().f_cont().read().await.current_pos(),
+            self.tasks_done_rationale(),
+        );
         Box::new(OrbitReturnMode::new())
     }
 }

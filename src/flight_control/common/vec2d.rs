@@ -10,6 +10,7 @@ use std::{
     fmt::Display,
     ops::{Add, Deref, Div, Mul, Rem, Sub},
 };
+use strum_macros::Display;
 
 /// A 2D vector generic over any numeric type.
 ///
@@ -24,6 +25,12 @@ pub struct Vec2D<T> {
     x: T,
     /// The y-component of the vector.
     y: T,
+}
+
+#[derive(Debug, Copy, Clone, Display)]
+pub enum VecAxis {
+    X,
+    Y,
 }
 
 /// A 2D vector wrapper with fixed-size wrapping capabilities.
@@ -112,10 +119,7 @@ impl MapSize for I32F32 {
     /// # Returns
     /// A `Vec2D` with fixed-point components representing the map dimensions.
     fn map_size() -> Vec2D<I32F32> {
-        Vec2D {
-            x: I32F32::from_num(21600.0),
-            y: I32F32::from_num(10800.0),
-        }
+        Vec2D { x: I32F32::from_num(21600.0), y: I32F32::from_num(10800.0) }
     }
 }
 
@@ -128,10 +132,7 @@ impl MapSize for I96F32 {
     /// # Returns
     /// A `Vec2D` with fixed-point components representing the map dimensions.
     fn map_size() -> Vec2D<I96F32> {
-        Vec2D {
-            x: I96F32::from_num(21600.0),
-            y: I96F32::from_num(10800.0),
-        }
+        Vec2D { x: I96F32::from_num(21600.0), y: I96F32::from_num(10800.0) }
     }
 }
 
@@ -141,12 +142,7 @@ impl MapSize for f64 {
     ///
     /// # Returns
     /// A `Vec2D` with floating-point components representing the map dimensions.
-    fn map_size() -> Vec2D<f64> {
-        Vec2D {
-            x: 21600.0,
-            y: 10800.0,
-        }
-    }
+    fn map_size() -> Vec2D<f64> { Vec2D { x: 21600.0, y: 10800.0 } }
 }
 
 /// Implementation of the `MapSize` trait for the `I32F0` fixed-point number type.
@@ -157,12 +153,7 @@ impl MapSize for I32F0 {
     ///
     /// # Returns
     /// A `Vec2D` with fixed-point integer components representing the map dimensions.
-    fn map_size() -> Vec2D<I32F0> {
-        Vec2D {
-            x: I32F0::from_num(21600),
-            y: I32F0::from_num(10800),
-        }
-    }
+    fn map_size() -> Vec2D<I32F0> { Vec2D { x: I32F0::from_num(21600), y: I32F0::from_num(10800) } }
 }
 
 /// Implementation of the `MapSize` trait for the `u32` type.
@@ -212,12 +203,7 @@ where T: FixedSigned + NumAssignOps
 
     pub fn abs_sq(&self) -> T { self.x * self.x + self.y * self.y }
 
-    pub fn round(&self) -> Self {
-        Self {
-            x: self.x.round(),
-            y: self.y.round(),
-        }
-    }
+    pub fn round(&self) -> Self { Self { x: self.x.round(), y: self.y.round() } }
 
     pub fn round_to_2(&self) -> Self {
         let factor = T::from_num(100);
@@ -230,10 +216,7 @@ where T: FixedSigned + NumAssignOps
 
     pub fn from_real<R>(&other: &Vec2D<R>) -> Self
     where R: Copy + ToFixed {
-        Self {
-            x: T::from_num(other.x()),
-            y: T::from_num(other.y()),
-        }
+        Self { x: T::from_num(other.x()), y: T::from_num(other.y()) }
     }
 
     /// Creates a vector pointing from the current vector (`self`) to another vector (`other`).
@@ -247,6 +230,50 @@ where T: FixedSigned + NumAssignOps
 
     pub fn to_num<R: FromFixed + Copy>(self) -> Vec2D<R> {
         Vec2D::new(self.x.to_num::<R>(), self.y.to_num::<R>())
+    }
+
+    pub fn project_overboundary_fw(&self, dir: &Self) -> Self {
+        let map_size = I32F32::map_size().to_num::<T>();
+        let t_x = if dir.x().is_positive() {
+            (map_size.x() - self.x()) / dir.x()
+        } else if dir.x().is_negative() {
+            (T::ZERO - self.x()) / dir.x()
+        } else {
+            T::MAX
+        };
+
+        // intersection times with horizontal boundaries
+        let t_y = if dir.y().is_positive() {
+            (map_size.y() - self.y()) / dir.y()
+        } else if dir.y().is_negative() {
+            (T::ZERO - self.y()) / dir.y()
+        } else {
+            T::MAX // no intersection vertically, moving horizontally
+        };
+        let t_adjust = t_x.min(t_y).ceil();
+        *self + *dir * t_adjust
+    }
+
+    pub fn project_overboundary_bw(&self, dir: &Self) -> Self {
+        let map_size = I32F32::map_size().to_num::<T>();
+        let t_x = if dir.x().is_positive() {
+            self.x() / dir.x()
+        } else if dir.x().is_negative() {
+            (self.x() - map_size.x()) / dir.x()
+        } else {
+            T::MAX
+        };
+
+        let t_y = if dir.y().is_positive() {
+            self.y() / dir.y()
+        } else if dir.y().is_negative() {
+            (self.y() - map_size.y()) / dir.y()
+        } else {
+            T::MAX
+        };
+
+        let t_adjust = t_x.min(t_y).ceil();
+        *self + *dir * (t_adjust * T::from_num(-1.0))
     }
 
     /// Computes an "unwrapped" vector pointing from the current vector (`self`) to another vector (`other`).
@@ -264,7 +291,7 @@ where T: FixedSigned + NumAssignOps
         let options = self.get_projected_in_range(other, (&[1, 0, -1], &[1, 0, -1]));
         options
             .into_iter()
-            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Less))
+            .min_by(|a, b| a.1.cmp(&b.1))
             .unwrap()
             .0
     }
@@ -278,7 +305,7 @@ where T: FixedSigned + NumAssignOps
         let options = self.get_projected_in_range(other, (&[1, 0], &[1, 0]));
         options
             .into_iter()
-            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Less))
+            .min_by(|a, b| a.1.cmp(&b.1))
             .unwrap()
             .0
     }
@@ -287,7 +314,7 @@ where T: FixedSigned + NumAssignOps
         let options = self.get_projected_in_range(other, (&[1, 0], &[-1, 0]));
         options
             .into_iter()
-            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Less))
+            .min_by(|a, b| a.1.cmp(&b.1))
             .unwrap()
             .0
     }
@@ -441,6 +468,13 @@ where T: FixedSigned + NumAssignOps
     pub fn euclid_distance_sq(&self, other: &Self) -> T {
         (self.x - other.x) * (self.x - other.x) + (self.y - other.y) * (self.y - other.y)
     }
+
+    pub fn from_axis_and_val(axis: VecAxis, val: T) -> Self {
+        match axis {
+            VecAxis::X => Self{x: val, y: T::zero()},
+            VecAxis::Y => Self{x: T::zero(), y: val},
+        }
+    }
 }
 
 impl<T: Copy> Vec2D<T> {
@@ -465,6 +499,13 @@ impl<T: Copy> Vec2D<T> {
     /// # Returns
     /// The `y` value of type `T`.
     pub const fn y(&self) -> T { self.y }
+
+    pub const fn get(&self, axis: VecAxis) -> T {
+        match axis {
+            VecAxis::X => self.x,
+            VecAxis::Y => self.y,
+        }
+    }
 }
 
 impl<T: Fixed + Copy> Vec2D<T> {
@@ -522,12 +563,7 @@ impl Vec2D<i32> {
     /// # Note
     /// The conversion may cause loss of sign. Negative values will wrap around.
     #[allow(clippy::cast_sign_loss)]
-    pub fn to_unsigned(self) -> Vec2D<u32> {
-        Vec2D {
-            x: self.x as u32,
-            y: self.y as u32,
-        }
-    }
+    pub fn to_unsigned(self) -> Vec2D<u32> { Vec2D { x: self.x as u32, y: self.y as u32 } }
 }
 
 pub enum WrapDirection {
@@ -570,7 +606,7 @@ where T: Add<Output = T> + Rem<Output = T> + Copy + MapSize<Output = T> + Partia
             WrapDirection::Both
         }
     }
-    
+
     pub fn wrap_by(&self, dir: &WrapDirection) -> Self {
         match dir {
             WrapDirection::None => *self,
@@ -578,15 +614,13 @@ where T: Add<Output = T> + Rem<Output = T> + Copy + MapSize<Output = T> + Partia
                 let map_size_x = T::map_size().x;
                 let wrapped_x = Self::wrap_coordinate(self.x, map_size_x);
                 Vec2D::new(wrapped_x, self.y)
-            },
+            }
             WrapDirection::WrapY => {
                 let map_size_y = T::map_size().y;
                 let wrapped_y = Self::wrap_coordinate(self.y, map_size_y);
                 Vec2D::new(self.x, wrapped_y)
             }
-            WrapDirection::Both => {
-                self.wrap_around_map()
-            }
+            WrapDirection::Both => self.wrap_around_map(),
         }
     }
 
@@ -616,10 +650,7 @@ where T: Add<Output = T>
     /// # Returns
     /// A new `Vec2D` representing the sum of the vectors.
     fn add(self, rhs: Vec2D<T>) -> Self::Output {
-        Self::Output {
-            x: self.x + rhs.x,
-            y: self.y + rhs.y,
-        }
+        Self::Output { x: self.x + rhs.x, y: self.y + rhs.y }
     }
 }
 
@@ -638,10 +669,7 @@ where
     /// # Returns
     /// A new scaled vector.
     fn mul(self, rhs: TMul) -> Self::Output {
-        Self::Output {
-            x: self.x * T::from_num(rhs),
-            y: self.y * T::from_num(rhs),
-        }
+        Self::Output { x: self.x * T::from_num(rhs), y: self.y * T::from_num(rhs) }
     }
 }
 
@@ -657,12 +685,7 @@ where T: Div<T, Output = T> + Copy
     ///
     /// # Returns
     /// A new scaled vector.
-    fn div(self, rhs: T) -> Self::Output {
-        Self::Output {
-            x: self.x / rhs,
-            y: self.y / rhs,
-        }
-    }
+    fn div(self, rhs: T) -> Self::Output { Self::Output { x: self.x / rhs, y: self.y / rhs } }
 }
 
 impl<T, TSub> Sub<Vec2D<TSub>> for Vec2D<T>
@@ -680,10 +703,7 @@ where
     /// # Returns
     /// A new vector.
     fn sub(self, rhs: Vec2D<TSub>) -> Self::Output {
-        Self::Output {
-            x: self.x - T::from_num(rhs.x),
-            y: self.y - T::from_num(rhs.y),
-        }
+        Self::Output { x: self.x - T::from_num(rhs.x), y: self.y - T::from_num(rhs.y) }
     }
 }
 
@@ -695,12 +715,7 @@ impl<T: Num> From<(T, T)> for Vec2D<T> {
     ///
     /// # Returns
     /// A new `Vec2D` created from the tuple.
-    fn from(tuple: (T, T)) -> Self {
-        Vec2D {
-            x: tuple.0,
-            y: tuple.1,
-        }
-    }
+    fn from(tuple: (T, T)) -> Self { Vec2D { x: tuple.0, y: tuple.1 } }
 }
 
 impl<T: Num> From<Vec2D<T>> for (T, T) {
@@ -724,12 +739,7 @@ where T: Copy
     ///
     /// # Returns
     /// A new `Vec2D` created from the slice.
-    fn from(slice: &[T; 2]) -> Self {
-        Self {
-            x: slice[0],
-            y: slice[1],
-        }
-    }
+    fn from(slice: &[T; 2]) -> Self { Self { x: slice[0], y: slice[1] } }
 }
 
 impl<T> From<Vec2D<T>> for [T; 2]

@@ -1,7 +1,7 @@
 use super::task_controller::TaskController;
-use crate::{error, info, log, STATIC_ORBIT_VEL};
 use crate::flight_control::common::vec2d::Vec2D;
 use crate::flight_control::orbit::IndexedOrbitPosition;
+use crate::{STATIC_ORBIT_VEL, error, info, log};
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use rand::Rng;
@@ -17,7 +17,8 @@ fn get_rand_pos() -> Vec2D<I32F32> {
     Vec2D::new(
         I32F32::from_num(rng.random_range(0..21600)),
         I32F32::from_num(rng.random_range(0..10800)),
-    ).round()
+    )
+    .round()
 }
 
 fn get_rand_end_t() -> DateTime<Utc> {
@@ -50,7 +51,9 @@ async fn test_single_target_burn_calculator() {
             mock_obj_point,
             mock_end_t,
             mock_fuel_left,
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
         let exit_burn = res.sequence();
         let entry_pos = exit_burn.sequence_pos().first().unwrap();
         let exit_pos = *exit_burn.sequence_pos().last().unwrap();
@@ -60,15 +63,20 @@ async fn test_single_target_burn_calculator() {
         let acc_dt = I32F32::from_num(exit_burn.acc_dt());
         let est = (exit_pos + exit_vel * detumble_dt).wrap_around_map();
         // Check if the estimated Y position is close to the target Y
-        let hit_target = est.to(res.target_pos()).abs() < detumble_dt * (I32F32::lit("0.002") * detumble_dt);
+        let hit_target = est.euclid_distance(res.target_pos())
+            < detumble_dt * (I32F32::lit("0.002") * detumble_dt);
         if hit_target {
-            info!("Test successfull. Acc for {acc_dt}s, detumble for {detumble_dt}s!")
+            info!("Test successfull. Acc for {acc_dt}s, detumble for {detumble_dt}s!");
         } else {
             error!("Test failed.");
-            info!("Calculated Burn Sequence for mocked Zoned Objective at: {mock_obj_point}, due at {mock_end_t}");
+            info!(
+                "Calculated Burn Sequence for mocked Zoned Objective at: {mock_obj_point}, due at {mock_end_t}"
+            );
             log!("Entry at {entry_t}, Position will be {entry_pos}");
             log!("Exit after {acc_dt}s, Position will be {exit_pos}");
-            log!("Exit Velocity will be {exit_vel} aiming for target at {mock_obj_point}. Detumble time is {detumble_dt}s.");
+            log!(
+                "Exit Velocity will be {exit_vel} aiming for target at {mock_obj_point}. Detumble time is {detumble_dt}s."
+            );
             log!("Whole BS: {:?}", res);
             return;
         }
@@ -97,7 +105,7 @@ fn test_zo_retrieval_burn_calculator() {
     rotated_dir.rotate_by(I32F32::from_num(random_angle_deg));
     let (random_vel, _) = FlightComputer::trunc_vel(rotated_dir.normalize() * I32F32::from_num(rng.random_range(5.0..9.0)));
     let dt = rotated_dir.abs() / random_vel.abs();
-    let deviation = direction_to - random_vel * dt;    
+    let deviation = direction_to - random_vel * dt;
     let due = Utc::now() +  TimeDelta::seconds(dt.to_num::<i64>());
     info!("Calculated Burn for mocked Target: {mock_obj_point}, with base point at {}", mock_start_point.pos());
     log!("Current velocity is randomized at {random_vel}, arrival will be in {dt}s, deviation will be {deviation}");

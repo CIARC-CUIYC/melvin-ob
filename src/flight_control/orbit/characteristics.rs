@@ -1,12 +1,9 @@
-use chrono::{DateTime, TimeDelta, Utc};
-use crate::flight_control::{
-    flight_computer::FlightComputer,
-    common::vec2d::Vec2D
-};
 use super::{closed_orbit::ClosedOrbit, index::IndexedOrbitPosition};
+use crate::flight_control::{common::vec2d::Vec2D, flight_computer::FlightComputer};
+use crate::info;
+use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use tokio::sync::RwLock;
-use crate::info;
 
 /// Represents the characteristics of an orbital path including imaging frequency,
 /// orbital period, and the entry position. This struct provides utilities to initialize
@@ -15,8 +12,6 @@ use crate::info;
 pub struct OrbitCharacteristics {
     /// The maximum time interval between image captures.
     img_dt: I32F32,
-    /// The timestamp at which the orbital segment ends.
-    orbit_s_end: DateTime<Utc>,
     /// The full period of the orbit in terms of iterations.
     orbit_full_period: usize,
     /// The entry position of the orbit indexed in time and position.
@@ -42,32 +37,21 @@ impl OrbitCharacteristics {
     /// `usize` or `i64`.
     pub async fn new(c_orbit: &ClosedOrbit, f_cont: &RwLock<FlightComputer>) -> Self {
         let img_dt = c_orbit.max_image_dt();
-        let orbit_s_end = c_orbit.base_orbit_ref().start_timestamp()
-            + TimeDelta::seconds(c_orbit.period().0.to_num::<i64>());
         let orbit_full_period = c_orbit.period().0.to_num::<usize>();
         let i_entry =
             IndexedOrbitPosition::new(0, orbit_full_period, f_cont.read().await.current_pos());
-        Self {
-            img_dt,
-            orbit_s_end,
-            orbit_full_period,
-            i_entry,
-            mode_switches: 0
-        }
+        Self { img_dt, orbit_full_period, i_entry, mode_switches: 0}
     }
 
     /// Retrieves the maximum image capture time interval.
     pub fn img_dt(&self) -> I32F32 { self.img_dt }
-
-    /// Retrieves the end timestamp of the orbital segment.
-    pub fn orbit_s_end(&self) -> DateTime<Utc> { self.orbit_s_end }
 
     /// Retrieves the full orbital period.
     pub fn orbit_full_period(&self) -> usize { self.orbit_full_period }
 
     /// Retrieves the indexed entry position of the current orbit entry.
     pub fn i_entry(&self) -> IndexedOrbitPosition { self.i_entry }
-    
+
     pub fn mode_switches(&self) -> usize { self.mode_switches }
     /// Marks the end of an orbital task schedule and updates the entry position.
     ///
@@ -75,7 +59,18 @@ impl OrbitCharacteristics {
     /// - `now`: The new `IndexedOrbitPosition` representing the current state.
     pub fn finish(&mut self, now_pos: Vec2D<I32F32>, rationale: &str) {
         let now = self.i_entry.new_from_pos(now_pos);
-        info!("Finished Phase after: {}s, due to: {rationale}",
+        info!(
+            "Finished Phase after: {}s, due to: {rationale}",
+            (now.t() - self.i_entry.t()).num_seconds()
+        );
+        self.i_entry = now;
+        self.mode_switches += 1;
+    }
+    
+    pub fn finish_entry(&mut self, now_pos: Vec2D<I32F32>, index: usize) {
+        let now = IndexedOrbitPosition::new(index, self.orbit_full_period, now_pos);
+        info!(
+            "Finished Phase after: {}s, due to: Orbit Reentry",
             (now.t() - self.i_entry.t()).num_seconds()
         );
         self.i_entry = now;

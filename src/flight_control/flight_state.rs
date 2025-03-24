@@ -1,7 +1,7 @@
+use chrono::TimeDelta;
 use fixed::types::I32F32;
 use num::Zero;
 use std::{collections::HashMap, sync::LazyLock, time::Duration};
-use chrono::TimeDelta;
 use strum_macros::Display;
 
 /// Represents the various states of a flight system.
@@ -56,7 +56,7 @@ impl FlightState {
             _ => panic!("Invalid state"),
         }
     }
-    
+
     pub fn to_dp_usize(self) -> usize {
         match self {
             FlightState::Charge => 0,
@@ -66,9 +66,7 @@ impl FlightState {
         }
     }
 
-    pub fn dt_to(self, other: Self) -> Duration {
-        *TRANS_DEL.get(&(self, other)).unwrap()
-    }
+    pub fn dt_to(self, other: Self) -> Duration { *TRANS_DEL.get(&(self, other)).unwrap() }
 
     pub fn td_dt_to(self, other: Self) -> TimeDelta {
         TimeDelta::from_std(*TRANS_DEL.get(&(self, other)).unwrap()).unwrap()

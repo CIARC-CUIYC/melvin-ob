@@ -1,15 +1,22 @@
+use super::{file_based_buffer::FileBackedBuffer, sub_buffer::SubBuffer};
+use crate::fatal;
+use crate::flight_control::common::{
+    bitmap::Bitmap,
+    vec2d::{MapSize, Vec2D},
+};
+use fixed::types::I32F32;
+use image::{
+    DynamicImage, EncodableLayout, GenericImage, GenericImageView, ImageBuffer, Pixel,
+    PixelWithColorType, Rgb, RgbImage, Rgba, RgbaImage,
+    codecs::png::{CompressionType, FilterType, PngDecoder, PngEncoder},
+    imageops,
+};
 use std::{
     io::{BufReader, Cursor},
     ops::{Deref, DerefMut},
     path::Path,
 };
-use fixed::types::I32F32;
-use image::{codecs::png::{CompressionType, FilterType, PngDecoder, PngEncoder}, imageops, DynamicImage, EncodableLayout, GenericImage, GenericImageView, ImageBuffer, Pixel, PixelWithColorType, Rgb, RgbImage, Rgba, RgbaImage};
 use tokio::{fs::File, io::AsyncReadExt};
-use crate::fatal;
-use crate::flight_control::common::{bitmap::Bitmap, vec2d::{Vec2D, MapSize}};
-use super::{file_based_buffer::FileBackedBuffer, sub_buffer::SubBuffer};
-
 
 /// Represents an extracted and encoded image with metadata.
 ///
@@ -44,7 +51,7 @@ pub(crate) trait MapImage {
     type Pixel: PixelWithColorType;
 
     /// The container for the pixel data.
-    type Container: Deref<Target=[<Self::Pixel as Pixel>::Subpixel]> + DerefMut;
+    type Container: Deref<Target = [<Self::Pixel as Pixel>::Subpixel]> + DerefMut;
 
     /// A view of a sub-region of the image.
     type ViewSubBuffer: GenericImageView<Pixel: PixelWithColorType>;
@@ -89,9 +96,7 @@ pub(crate) trait MapImage {
     /// # Errors
     /// Returns an error if the PNG encoding process fails.
     fn export_as_png(&self) -> Result<EncodedImageExtract, Box<dyn std::error::Error>>
-    where
-        [<Self::Pixel as Pixel>::Subpixel]: EncodableLayout,
-    {
+    where [<Self::Pixel as Pixel>::Subpixel]: EncodableLayout {
         let mut writer = Cursor::new(Vec::<u8>::new());
         let buffer = self.buffer();
         buffer.write_with_encoder(PngEncoder::new(&mut writer))?;
@@ -135,11 +140,7 @@ pub(crate) trait MapImage {
         area_image.copy_from(&area_view, 0, 0).unwrap();
         let mut writer = Cursor::new(Vec::<u8>::new());
         area_image.write_with_encoder(PngEncoder::new(&mut writer))?;
-        Ok(EncodedImageExtract {
-            offset,
-            size,
-            data: writer.into_inner(),
-        })
+        Ok(EncodedImageExtract { offset, size, data: writer.into_inner() })
     }
 
     /// Saves the current image buffer as a snapshot in PNG format.
@@ -153,9 +154,7 @@ pub(crate) trait MapImage {
     /// Returns `Ok(())` if the save operation is successful.
     /// Returns an error if the save process fails.
     fn create_snapshot<P: AsRef<Path>>(&self, path: P) -> Result<(), Box<dyn std::error::Error>>
-    where
-        [<Self::Pixel as Pixel>::Subpixel]: EncodableLayout,
-    {
+    where [<Self::Pixel as Pixel>::Subpixel]: EncodableLayout {
         self.buffer().save(path)?;
         Ok(())
     }
@@ -168,7 +167,7 @@ pub(crate) trait MapImage {
     /// # Arguments
     /// * `offset` - The top-left corner of the target sub-region to update.
     /// * `image` - The new image data to copy into the target sub-region.
-    fn update_area<I: GenericImageView<Pixel=Self::Pixel>>(
+    fn update_area<I: GenericImageView<Pixel = Self::Pixel>>(
         &mut self,
         offset: Vec2D<u32>,
         image: I,
@@ -200,14 +199,14 @@ pub(crate) struct OffsetZOImage {
 
 impl OffsetZOImage {
     pub fn new(bottom_left: Vec2D<I32F32>, dimensions: Vec2D<u32>) -> Self {
-        
-        Self {
-            offset: bottom_left,
-            image_buffer: ImageBuffer::new(dimensions.x(), dimensions.y()),
-        }
+        Self { offset: bottom_left, image_buffer: ImageBuffer::new(dimensions.x(), dimensions.y()) }
     }
 
-    pub fn cut_image(&self, mut image: RgbImage, img_bot_left: Vec2D<I32F32>) -> Option<(RgbImage, Vec2D<u32>)> {
+    pub fn cut_image(
+        &self,
+        mut image: RgbImage,
+        img_bot_left: Vec2D<I32F32>,
+    ) -> Option<(RgbImage, Vec2D<u32>)> {
         let corr_offs = self.offset + self.offset.unwrapped_to_top_right(&img_bot_left);
         let start_x = self.offset.x().max(corr_offs.x()).to_num::<u32>();
         let start_y = self.offset.y().max(corr_offs.y()).to_num::<u32>();
@@ -225,8 +224,8 @@ impl OffsetZOImage {
         let mapped_start_x = start_x - corr_offs_u32.x();
         let mapped_start_y = start_y - corr_offs_u32.y();
         let mapped_end_y = end_y - corr_offs_u32.y();
-        
-        let crop_width =  end_x - corr_offs_u32.x() - mapped_start_x;
+
+        let crop_width = end_x - corr_offs_u32.x() - mapped_start_x;
         let crop_height = mapped_end_y - mapped_start_y;
 
         let rgb_start_y = image.height() - mapped_end_y;
@@ -238,8 +237,12 @@ impl OffsetZOImage {
                 rgb_start_y,
                 crop_width,
                 crop_height,
-            ).to_image();
-            return Some((img, self.map_offset(Vec2D::from_real(&Vec2D::new(start_x, start_y)))));
+            )
+            .to_image();
+            return Some((
+                img,
+                self.map_offset(Vec2D::from_real(&Vec2D::new(start_x, start_y))),
+            ));
         }
         fatal!("Image Coordinates aren't matching, this should never happen!");
     }
@@ -257,13 +260,9 @@ impl OffsetZOImage {
 impl GenericImageView for OffsetZOImage {
     type Pixel = Rgb<u8>;
 
-    fn dimensions(&self) -> (u32, u32) {
-        self.image_buffer.dimensions()
-    }
+    fn dimensions(&self) -> (u32, u32) { self.image_buffer.dimensions() }
 
-    fn get_pixel(&self, x: u32, y: u32) -> Self::Pixel {
-        *self.image_buffer.get_pixel(x, y)
-    }
+    fn get_pixel(&self, x: u32, y: u32) -> Self::Pixel { *self.image_buffer.get_pixel(x, y) }
 }
 
 impl MapImage for OffsetZOImage {
@@ -271,7 +270,10 @@ impl MapImage for OffsetZOImage {
     type Container = Vec<u8>;
     type ViewSubBuffer = OffsetZOImage;
 
-    fn mut_vec_view(&mut self, offset: Vec2D<u32>) -> SubBuffer<&mut ImageBuffer<Self::Pixel, Self::Container>> {
+    fn mut_vec_view(
+        &mut self,
+        offset: Vec2D<u32>,
+    ) -> SubBuffer<&mut ImageBuffer<Self::Pixel, Self::Container>> {
         SubBuffer {
             buffer: &mut self.image_buffer,
             buffer_size: u32::map_size(),
@@ -281,23 +283,16 @@ impl MapImage for OffsetZOImage {
     }
 
     fn vec_view(&self, offset: Vec2D<u32>, size: Vec2D<u32>) -> SubBuffer<&Self::ViewSubBuffer> {
-        SubBuffer {
-            buffer: self,
-            buffer_size: u32::map_size(),
-            offset,
-            size,
-        }
+        SubBuffer { buffer: self, buffer_size: u32::map_size(), offset, size }
     }
 
-    fn buffer(&self) -> &ImageBuffer<Self::Pixel, Self::Container> {
-        &self.image_buffer
-    }
+    fn buffer(&self) -> &ImageBuffer<Self::Pixel, Self::Container> { &self.image_buffer }
 }
 
 impl FullsizeMapImage {
     /// Opens a full-sized map image from a file.
     ///
-    /// This function initializes a `FileBackedBuffer` for efficient memory-mapped file access 
+    /// This function initializes a `FileBackedBuffer` for efficient memory-mapped file access
     /// and creates an `ImageBuffer` using the data in the mapped file.
     ///
     /// # Arguments
@@ -312,9 +307,8 @@ impl FullsizeMapImage {
     /// * The `FileBackedBuffer` cannot be created.
     /// * The `ImageBuffer` cannot be created from the `FileBackedBuffer`.
     pub(crate) fn open<P: AsRef<Path>>(path: P) -> Self {
-        let fullsize_buffer_size: usize = (u32::map_size().x() as usize)
-            * (u32::map_size().y() as usize)
-            * 3;
+        let fullsize_buffer_size: usize =
+            (u32::map_size().x() as usize) * (u32::map_size().y() as usize) * 3;
         let file_based_buffer = FileBackedBuffer::open(path, fullsize_buffer_size).unwrap();
         Self {
             coverage: Bitmap::from_map_size(),
@@ -323,7 +317,7 @@ impl FullsizeMapImage {
                 u32::map_size().y(),
                 file_based_buffer,
             )
-                .unwrap(),
+            .unwrap(),
         }
     }
 }
@@ -336,9 +330,7 @@ impl GenericImageView for FullsizeMapImage {
     ///
     /// # Returns
     /// A tuple containing the width and height of the image buffer.
-    fn dimensions(&self) -> (u32, u32) {
-        self.image_buffer.dimensions()
-    }
+    fn dimensions(&self) -> (u32, u32) { self.image_buffer.dimensions() }
 
     /// Retrieves the pixel at the given `(x, y)` coordinates.
     ///
@@ -398,15 +390,10 @@ impl MapImage for FullsizeMapImage {
     /// * `size` - The dimensions of the region to view.
     ///
     /// # Returns
-    /// A `SubBuffer` containing a reference to the `FullsizeMapImage` starting 
+    /// A `SubBuffer` containing a reference to the `FullsizeMapImage` starting
     /// from the specified offset and region size.
     fn vec_view(&self, offset: Vec2D<u32>, size: Vec2D<u32>) -> SubBuffer<&FullsizeMapImage> {
-        SubBuffer {
-            buffer: self,
-            buffer_size: u32::map_size(),
-            offset,
-            size,
-        }
+        SubBuffer { buffer: self, buffer_size: u32::map_size(), offset, size }
     }
 
     /// Returns a reference to the entire image buffer.
@@ -465,12 +452,7 @@ impl MapImage for ThumbnailMapImage {
         offset: Vec2D<u32>,
         size: Vec2D<u32>,
     ) -> SubBuffer<&ImageBuffer<Rgba<u8>, Vec<u8>>> {
-        SubBuffer {
-            buffer: &self.image_buffer,
-            buffer_size: Self::thumbnail_size(),
-            offset,
-            size,
-        }
+        SubBuffer { buffer: &self.image_buffer, buffer_size: Self::thumbnail_size(), offset, size }
     }
 
     /// Returns a reference to the entire image buffer of the thumbnail.
@@ -493,9 +475,7 @@ impl ThumbnailMapImage {
     ///
     /// # Returns
     /// A `Vec2D<u32>` representing the dimensions of the thumbnail.
-    pub(crate) fn thumbnail_size() -> Vec2D<u32> {
-        u32::map_size() / Self::THUMBNAIL_SCALE_FACTOR
-    }
+    pub(crate) fn thumbnail_size() -> Vec2D<u32> { u32::map_size() / Self::THUMBNAIL_SCALE_FACTOR }
 
     /// Generates a thumbnail from a given full-sized map image.
     ///
@@ -564,7 +544,7 @@ impl ThumbnailMapImage {
             let old_snapshot = DynamicImage::from_decoder(PngDecoder::new(&mut Cursor::new(
                 old_snapshot_encoded,
             ))?)?
-                .to_rgba8();
+            .to_rgba8();
             let mut current_snapshot = self.image_buffer.clone();
 
             for (current_pixel, new_pixel) in

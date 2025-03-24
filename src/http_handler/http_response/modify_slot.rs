@@ -1,5 +1,5 @@
-use chrono::{DateTime, Utc};
 use crate::http_handler::http_response::response_common::SerdeJSONBodyHTTPResponseType;
+use chrono::{DateTime, Utc};
 
 #[derive(serde::Deserialize, Debug)]
 pub struct ModifySlotResponse {

@@ -9,17 +9,16 @@ use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use std::{future::Future, pin::Pin, sync::Arc};
 use std::mem::discriminant;
-use std::ops::Deref;
-use tokio::sync::{RwLock, RwLockWriteGuard};
+use tokio::sync::RwLock;
 use tokio::sync::watch::Receiver;
 use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
 use crate::flight_control::beacon_controller::BeaconControllerState;
 use crate::flight_control::objective::known_img_objective::KnownImgObjective;
-use crate::mode_control::signal::BaseWaitExitSignal;
+use crate::mode_control::signal::{BaseWaitExitSignal, OptOpExitSignal};
 
 #[async_trait]
-pub trait GlobalMode: Sync {
+pub trait GlobalMode: Sync + Send {
     fn safe_mode_rationale(&self) -> &'static str { "SAFE mode Event!" }
     fn new_zo_rationale(&self) -> &'static str { "newly discovered ZO!" }
     fn new_bo_rationale(&self) -> &'static str { "newly discovered BO!" }
@@ -27,6 +26,7 @@ pub trait GlobalMode: Sync {
     fn tasks_done_exit_rationale(&self) -> &'static str {
         "tasks list done and exited orbit for ZO Retrieval!"
     }
+    fn out_of_orbit_rationale(&self) -> &'static str { "out of orbit without purpose!" }
     fn bo_done_rationale(&self) -> &'static str { "BO done or expired!" }
     fn bo_left_rationale(&self) -> &'static str { "necessary rescheduling for remaining BOs!" }
     fn type_name(&self) -> &'static str;
@@ -54,13 +54,12 @@ pub trait GlobalMode: Sync {
                         return self.safe_handler(context_local).await;
                     }
                     WaitExitSignal::NewZOEvent(obj) => {
-                        let context_clone = Arc::clone(&context);
-                        if let Some(opt) = self.zo_handler(context_clone, obj).await {
+                        if let Some(opt) = self.zo_handler(&context, obj).await {
                             return opt;
                         };
                     }
                     WaitExitSignal::BOEvent => {
-                        if let Some(opt) = self.bo_event_handler() {
+                        if let Some(opt) = self.bo_event_handler(&context).await {
                             return opt;
                         };
                     }
@@ -93,9 +92,9 @@ pub trait GlobalMode: Sync {
     -> WaitExitSignal;
     async fn exec_task(&self, context: Arc<ModeContext>, task: Task) -> ExecExitSignal;
     async fn safe_handler(&self, context: Arc<ModeContext>) -> OpExitSignal;
-    async fn zo_handler(&self, context: Arc<ModeContext>, obj: KnownImgObjective) -> Option<OpExitSignal>;
-    fn bo_event_handler(&self) -> Option<OpExitSignal>;
-    fn resched_event_handler(&self) -> Option<OpExitSignal>;
+    async fn zo_handler(&self, context: &Arc<ModeContext>, obj: KnownImgObjective) -> OptOpExitSignal;
+    async fn bo_event_handler(&self, context: &Arc<ModeContext>) -> OptOpExitSignal;
+    fn resched_event_handler(&self) -> OptOpExitSignal;
     async fn exit_mode(&self, context: Arc<ModeContext>) -> Box<dyn GlobalMode>;
 }
 
@@ -111,7 +110,7 @@ pub trait OrbitalMode: GlobalMode {
     ) -> WaitExitSignal {
         let safe_mon = context.super_v().safe_mon();
         let mut zo_mon = context.zo_mon().write().await;
-        let mut bo_mon = context.bo_mon();
+        let bo_mon = context.bo_mon();
         let cancel_task = CancellationToken::new();
 
         let fut: Pin<Box<dyn Future<Output = Result<BaseWaitExitSignal, JoinError>> + Send>> =
@@ -146,7 +145,7 @@ pub trait OrbitalMode: GlobalMode {
                 fut.await.ok();
                 WaitExitSignal::NewZOEvent(img_obj)
             }
-            _ = Self::monitor_bo_mon_change(bo_change_signal, bo_mon) => {
+            () = Self::monitor_bo_mon_change(bo_change_signal, bo_mon) => {
                 cancel_task.cancel();
                 fut.await.ok();
                 WaitExitSignal::BOEvent            
@@ -160,12 +159,25 @@ pub trait OrbitalMode: GlobalMode {
         loop {
             if let Ok(()) = bo_mon_lock.changed().await {
                 let sent_sig = bo_mon_lock.borrow_and_update();
-                let sent_sig_ref = sent_sig.deref();
+                let sent_sig_ref = &*sent_sig;
                 if discriminant(&sig) == discriminant(sent_sig_ref) {
                     return;
                 }
             }
             
+        }
+    }
+    
+    async fn log_bo_event(&self, context: &Arc<ModeContext>, base: BaseMode) {
+        match base {
+            BaseMode::BeaconObjectiveScanningMode => context.o_ch_lock().write().await.finish(
+                context.k().f_cont().read().await.current_pos(),
+                self.new_bo_rationale(),
+            ),
+            BaseMode::MappingMode => context.o_ch_lock().write().await.finish(
+                context.k().f_cont().read().await.current_pos(),
+                self.bo_done_rationale(),
+            ),
         }
     }
 }

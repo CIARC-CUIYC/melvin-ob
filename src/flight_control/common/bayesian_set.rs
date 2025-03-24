@@ -17,10 +17,7 @@ impl SquareSlice {
 
     pub fn new(pos: Vec2D<I32F32>, max_dist: Vec2D<I32F32>) -> Self {
         let offset = (pos - max_dist).wrap_around_map();
-        Self {
-            offset,
-            side_length: max_dist * I32F32::from_num(2),
-        }
+        Self { offset, side_length: max_dist * I32F32::from_num(2) }
     }
 
     pub fn map_right_top(&self, p: Vec2D<I32F32>) -> Vec2D<I32F32> {
@@ -151,11 +148,7 @@ impl BayesianSet {
         let pos = meas.corr_pos();
         let slice = SquareSlice::new(pos, Vec2D::new(side_len, side_len));
         let set = slice.get_coord_set(pos, min_dist, max_dist);
-        Self {
-            set,
-            curr_slice: slice,
-            measurements: vec![meas],
-        }
+        Self { set, curr_slice: slice, measurements: vec![meas] }
     }
 
     pub fn update(&mut self, meas: &BeaconMeas) {

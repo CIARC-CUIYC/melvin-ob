@@ -37,8 +37,6 @@ impl DailyMapRequest {
                 "Path is not a valid file",
             ));
         }
-        Ok(Self {
-            image_path: path.to_string_lossy().to_string(),
-        })
+        Ok(Self { image_path: path.to_string_lossy().to_string() })
     }
 }

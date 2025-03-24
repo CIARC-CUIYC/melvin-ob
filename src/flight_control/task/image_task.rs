@@ -38,11 +38,7 @@ impl ImageTask {
     /// # Returns
     /// - A new `ImageTask` instance with the given parameters.
     pub fn new(planned_pos: Vec2D<u32>, lens: CameraAngle) -> Self {
-        Self {
-            image_status: ImageTaskStatus::Planned,
-            planned_pos,
-            lens,
-        }
+        Self { image_status: ImageTaskStatus::Planned, planned_pos, lens }
     }
 
     /// Marks the task as completed and records the actual capture position.
@@ -59,10 +55,7 @@ impl ImageTask {
         let center_dev_y = (f64::from(self.planned_pos.y()) - f64::from(actual_pos.y())).abs();
         let px_dev = square_side * center_dev_x + (square_side - center_dev_x) * center_dev_y;
         let px_dev_rel = I64F64::from_num(px_dev / (square_side * square_side));
-        let new_status = ImageTaskStatus::Done {
-            actual_pos,
-            px_dev_rel,
-        };
+        let new_status = ImageTaskStatus::Done { actual_pos, px_dev_rel };
         self.image_status = new_status;
         // TODO: maybe we could also perform a check here which redundant pixels where photographed and which pixels were "lost", we would need to pass a camera_controller reference for that maybe?
     }

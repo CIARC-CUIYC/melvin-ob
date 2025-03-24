@@ -1,7 +1,7 @@
-use chrono::{DateTime, Utc};
 use crate::flight_control::camera_state::CameraAngle;
 use crate::flight_control::objective::objective_type::ObjectiveType;
 use crate::http_handler::{BeaconObjective, ImageObjective, ZoneType};
+use chrono::{DateTime, Utc};
 
 #[derive(Debug, Clone)]
 pub struct ObjectiveBase {
@@ -42,7 +42,7 @@ impl From<ImageObjective> for ObjectiveBase {
 
 impl From<BeaconObjective> for ObjectiveBase {
     fn from(obj: BeaconObjective) -> Self {
-        let obj_type = ObjectiveType::Beacon{attempts_made: obj.attempts_made()};
+        let obj_type = ObjectiveType::Beacon { attempts_made: obj.attempts_made() };
         Self {
             id: obj.id(),
             name: String::from(obj.name()),

@@ -41,11 +41,7 @@ impl BeaconObjectiveDone {
         'outer: for (i, guess) in self.guesses().iter().enumerate() {
             let width = guess.x().abs().to_num::<u32>();
             let height = guess.y().abs().to_num::<u32>();
-            let req = BeaconPositionRequest {
-                beacon_id: id_u16,
-                width,
-                height,
-            };
+            let req = BeaconPositionRequest { beacon_id: id_u16, width, height };
             obj!("Sending request for beacon {id_u16} with width {width} and height {height}...");
             loop {
                 if let Ok(msg) = req.send_request(&client).await {

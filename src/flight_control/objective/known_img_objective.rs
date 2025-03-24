@@ -1,9 +1,9 @@
-use std::cmp::Ordering;
-use chrono::{DateTime, Utc};
 use crate::flight_control::{camera_state::CameraAngle, common::vec2d::Vec2D};
 use crate::http_handler::{ImageObjective, ZoneType};
+use chrono::{DateTime, Utc};
 use fixed::types::I32F32;
 use num::ToPrimitive;
+use std::cmp::Ordering;
 
 #[derive(Debug, Clone)]
 pub struct KnownImgObjective {
@@ -35,7 +35,7 @@ impl KnownImgObjective {
     pub fn zone(&self) -> [i32; 4] { self.zone }
     pub fn optic_required(&self) -> CameraAngle { self.optic_required }
     pub fn coverage_required(&self) -> f64 { self.coverage_required }
-    
+
     pub fn width(&self) -> i32 { self.zone[2] - self.zone[0] }
     pub fn height(&self) -> i32 { self.zone[3] - self.zone[1] }
 
@@ -57,7 +57,7 @@ impl KnownImgObjective {
         let total_zone_area_size = f64::from(zone_width * zone_height);
         let lens_area_size = f64::from(lens_square_side_length.pow(2));
         let min_area_required = total_zone_area_size * self.coverage_required;
-        
+
         let min_number_of_images_required = (min_area_required / lens_area_size).round();
         min_number_of_images_required.to_i32().unwrap()
     }
@@ -75,7 +75,7 @@ impl TryFrom<ImageObjective> for KnownImgObjective {
                 end: obj.end(),
                 zone: *zone,
                 optic_required: CameraAngle::from(obj.optic_required()),
-                coverage_required: obj.coverage_required()
+                coverage_required: obj.coverage_required(),
             }),
             ZoneType::SecretZone(_) => Err(std::io::Error::new(
                 std::io::ErrorKind::Other,

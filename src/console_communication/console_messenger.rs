@@ -7,7 +7,7 @@ use crate::flight_control::{
     camera_state::CameraAngle,
     common::vec2d::Vec2D,
     flight_state::FlightState,
-    task::{base_task::BaseTask, image_task::ImageTaskStatus, TaskController},
+    task::{TaskController, base_task::BaseTask, image_task::ImageTaskStatus},
 };
 use crate::info;
 
@@ -129,10 +129,7 @@ impl ConsoleMessenger {
                             }
                             endpoint_local_clone.send_downstream(
                                 melvin_messages::DownstreamContent::SubmitResponse(
-                                    melvin_messages::SubmitResponse {
-                                        success,
-                                        objective_id: None,
-                                    },
+                                    melvin_messages::SubmitResponse { success, objective_id: None },
                                 ),
                             );
                         });
@@ -142,11 +139,7 @@ impl ConsoleMessenger {
             }
         });
 
-        Self {
-            camera_controller,
-            task_controller,
-            endpoint,
-        }
+        Self { camera_controller, task_controller, endpoint }
     }
 
     /// Sends a thumbnail image to the operator console.

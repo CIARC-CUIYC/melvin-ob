@@ -90,10 +90,7 @@ impl Task {
     /// # Returns
     /// - A new `Task` instance representing the image capture task.
     pub fn image_task(planned_pos: Vec2D<u32>, lens: CameraAngle, t: DateTime<Utc>) -> Self {
-        Self {
-            task_type: BaseTask::TakeImage(ImageTask::new(planned_pos, lens)),
-            t,
-        }
+        Self { task_type: BaseTask::TakeImage(ImageTask::new(planned_pos, lens)), t }
     }
 
     /// Creates a new task for velocity change.
@@ -109,10 +106,7 @@ impl Task {
         rationale: VelocityChangeTaskRationale,
         t: DateTime<Utc>,
     ) -> Self {
-        Self {
-            task_type: BaseTask::ChangeVelocity(VelocityChangeTask::new(burn, rationale)),
-            t,
-        }
+        Self { task_type: BaseTask::ChangeVelocity(VelocityChangeTask::new(burn, rationale)), t }
     }
     /// Returns an immutable reference to the task's time delay.
     ///

@@ -1,5 +1,4 @@
 use crate::flight_control::objective::known_img_objective::KnownImgObjective;
-use crate::mode_control::base_mode::BaseMode;
 use crate::mode_control::mode::global_mode::GlobalMode;
 
 pub enum OpExitSignal {
@@ -18,10 +17,12 @@ pub enum WaitExitSignal {
     SafeEvent,
     NewZOEvent(KnownImgObjective),
     BOEvent,
-    RescheduleEvent
+    RescheduleEvent,
 }
 
 pub enum BaseWaitExitSignal {
     Continue,
     ReSchedule,
 }
+
+pub type OptOpExitSignal = Option<OpExitSignal>;

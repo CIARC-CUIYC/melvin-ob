@@ -1,22 +1,23 @@
 use crate::flight_control::{
+    beacon_controller::BeaconControllerState,
     camera_state::CameraAngle,
     flight_computer::FlightComputer,
     flight_state::FlightState,
     orbit::IndexedOrbitPosition,
+    task::end_condition::EndCondition,
     task::{TaskController, switch_state_task::SwitchStateTask},
 };
+use crate::mode_control::{
+    base_mode::TaskEndSignal::{Join, Timestamp},
+    mode_context::ModeContext,
+    signal::BaseWaitExitSignal,
+};
 use crate::{error, fatal, info, log};
-
-use crate::flight_control::task::end_condition::EndCondition;
-use crate::mode_control::base_mode::TaskEndSignal::{Join, Timestamp};
-use crate::mode_control::mode_context::ModeContext;
 use chrono::{DateTime, TimeDelta, Utc};
 use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 use strum_macros::Display;
 use tokio::{sync::oneshot, task::JoinHandle, time::Instant};
 use tokio_util::sync::CancellationToken;
-use crate::flight_control::beacon_controller::BeaconControllerState;
-use crate::mode_control::signal::BaseWaitExitSignal;
 
 pub(crate) enum TaskEndSignal {
     Timestamp(DateTime<Utc>),
@@ -29,7 +30,7 @@ pub enum PeriodicImagingEndSignal {
     KillLastImage,
 }
 
-#[derive(Display, Clone)]
+#[derive(Display, Clone, Copy)]
 pub enum BaseMode {
     MappingMode,
     BeaconObjectiveScanningMode,
@@ -37,12 +38,8 @@ pub enum BaseMode {
 
 impl BaseMode {
     const DT_0_STD: Duration = Duration::from_secs(0);
-    const MAX_MSG_DT: TimeDelta = TimeDelta::milliseconds(300);
     const DEF_MAPPING_ANGLE: CameraAngle = CameraAngle::Narrow;
     const BO_MSG_COMM_PROLONG_STD: Duration = Duration::from_secs(60);
-    const BO_MSG_COMM_PROLONG: TimeDelta = TimeDelta::seconds(60);
-    const MIN_COMM_DT: Duration = Duration::from_secs(60);
-    const MAX_COMM_INTERVAL: Duration = Duration::from_secs(500);
     const MAX_COMM_PROLONG_RESCHEDULE: TimeDelta = TimeDelta::seconds(2);
     const BEACON_OBJ_RETURN_MIN_DELAY: TimeDelta = TimeDelta::minutes(10);
 
@@ -140,7 +137,7 @@ impl BaseMode {
             }
             Join(join_handle) => Box::pin(async { join_handle.await.ok().unwrap() }),
         };
-        
+
         let start = Utc::now();
         info!("Starting Comms Listener.");
         loop {
@@ -255,7 +252,9 @@ impl BaseMode {
                 if let Self::BeaconObjectiveScanningMode = self {
                     Box::pin(async move {
                         Self::exec_comms(context, Timestamp(due), c_tok).await;
-                        if Utc::now() > due + Self::MAX_COMM_PROLONG_RESCHEDULE || Utc::now() < due - Self::MAX_COMM_PROLONG_RESCHEDULE {
+                        if Utc::now() > due + Self::MAX_COMM_PROLONG_RESCHEDULE
+                            || Utc::now() < due - Self::MAX_COMM_PROLONG_RESCHEDULE
+                        {
                             log!("Prolonging or shortening detected. Rescheduling.");
                             BaseWaitExitSignal::ReSchedule
                         } else {
@@ -301,15 +300,15 @@ impl BaseMode {
             _ => fatal!("Illegal target state!"),
         }
     }
-    
-    pub fn get_rel_bo_event(&self) -> BeaconControllerState {
+
+    pub fn get_rel_bo_event(self) -> BeaconControllerState {
         match self {
             BaseMode::MappingMode => BeaconControllerState::ActiveBeacons,
             BaseMode::BeaconObjectiveScanningMode => BeaconControllerState::NoActiveBeacons,
         }
     }
-    
-    pub fn bo_event(&self) -> Self {
+
+    pub fn bo_event(self) -> Self {
         match self {
             BaseMode::MappingMode => Self::BeaconObjectiveScanningMode,
             BaseMode::BeaconObjectiveScanningMode => Self::MappingMode,

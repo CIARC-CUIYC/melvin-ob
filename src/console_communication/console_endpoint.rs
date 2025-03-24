@@ -1,4 +1,5 @@
 use super::melvin_messages;
+use crate::{info, warn};
 use prost::Message;
 use std::{
     io::{Cursor, ErrorKind},
@@ -7,12 +8,11 @@ use std::{
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{
-        tcp::{ReadHalf, WriteHalf},
         TcpListener,
+        tcp::{ReadHalf, WriteHalf},
     },
     sync::{broadcast, oneshot},
 };
-use crate::{info, warn};
 
 /// Represents the different console endpoint event types.
 ///
@@ -62,9 +62,8 @@ impl ConsoleEndpoint {
             let mut buffer = vec![0u8; length as usize];
             socket.read_exact(&mut buffer).await?;
 
-            if let Ok(melvin_messages::Upstream {
-                content: Some(content),
-            }) = melvin_messages::Upstream::decode(&mut Cursor::new(buffer))
+            if let Ok(melvin_messages::Upstream { content: Some(content) }) =
+                melvin_messages::Upstream::decode(&mut Cursor::new(buffer))
             {
                 info!("Received upstream message: {content:?}");
                 upstream_event_sender.send(ConsoleEvent::Message(content)).unwrap();

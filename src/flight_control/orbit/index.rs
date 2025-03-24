@@ -26,12 +26,7 @@ impl IndexedOrbitPosition {
     /// # Returns
     /// A new `IndexedOrbitPosition` instance with the current UTC time.
     pub fn new(index: usize, period: usize, pos: Vec2D<I32F32>) -> Self {
-        Self {
-            t: Utc::now(),
-            index,
-            pos,
-            period,
-        }
+        Self { t: Utc::now(), index, pos, period }
     }
 
     /// Returns the timestamp of the position.
@@ -100,12 +95,7 @@ impl IndexedOrbitPosition {
     /// # Returns
     /// A new `IndexedOrbitPosition` instance with updated position and time.
     pub fn new_from_pos(&self, pos: Vec2D<I32F32>) -> Self {
-        Self {
-            t: Utc::now(),
-            index: self.index_now(),
-            pos,
-            period: self.period,
-        }
+        Self { t: Utc::now(), index: self.index_now(), pos, period: self.period }
     }
 
     /// Creates a new `IndexedOrbitPosition` with a future timestamp and given 2D position vector.
@@ -117,12 +107,7 @@ impl IndexedOrbitPosition {
     /// # Returns
     /// A new `IndexedOrbitPosition` instance with updated position and future timestamp.
     pub fn new_from_future_pos(&self, pos: Vec2D<I32F32>, t: DateTime<Utc>) -> Self {
-        Self {
-            t,
-            index: self.index_then(t),
-            pos,
-            period: self.period,
-        }
+        Self { t, index: self.index_then(t), pos, period: self.period }
     }
 
     /// Calculates the current index in the orbit based on the elapsed time.

@@ -1,5 +1,5 @@
-use crate::flight_control::common::{bayesian_set::BayesianSet, vec2d::Vec2D};
 use crate::STATIC_ORBIT_VEL;
+use crate::flight_control::common::{bayesian_set::BayesianSet, vec2d::Vec2D};
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use std::cmp::Ordering;
@@ -14,12 +14,7 @@ pub struct BeaconMeas {
 
 impl BeaconMeas {
     pub fn new(id: usize, pos: Vec2D<I32F32>, rssi: f64, delay: TimeDelta) -> Self {
-        Self {
-            id,
-            pos,
-            rssi,
-            delay,
-        }
+        Self { id, pos, rssi, delay }
     }
     pub fn id(&self) -> usize { self.id }
     pub fn pos(&self) -> &Vec2D<I32F32> { &self.pos }
@@ -43,13 +38,7 @@ pub struct BeaconObjective {
 
 impl BeaconObjective {
     pub fn new(id: usize, name: String, start: DateTime<Utc>, end: DateTime<Utc>) -> Self {
-        Self {
-            id,
-            name,
-            start,
-            end,
-            measurements: None,
-        }
+        Self { id, name, start, end, measurements: None }
     }
     pub fn id(&self) -> usize { self.id }
     pub fn name(&self) -> &str { &self.name }
