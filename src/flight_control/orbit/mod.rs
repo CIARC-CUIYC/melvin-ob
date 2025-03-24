@@ -4,6 +4,9 @@ mod closed_orbit;
 mod index;
 mod orbit_base;
 
+#[cfg(test)]
+mod tests;
+
 pub use burn_sequence::BurnSequence;
 pub use burn_sequence::BurnSequenceEvaluator;
 pub use burn_sequence::ExitBurnResult;

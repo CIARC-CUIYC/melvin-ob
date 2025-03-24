@@ -26,6 +26,12 @@ pub struct Vec2D<T> {
     y: T,
 }
 
+#[derive(Debug, Copy, Clone)]
+pub enum VecAxis {
+    X,
+    Y,
+}
+
 /// A 2D vector wrapper with fixed-size wrapping capabilities.
 ///
 /// This struct is generic over a numeric type `T` and two constants `X` and `Y`,
@@ -284,7 +290,7 @@ where T: FixedSigned + NumAssignOps
         let options = self.get_projected_in_range(other, (&[1, 0, -1], &[1, 0, -1]));
         options
             .into_iter()
-            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Less))
+            .min_by(|a, b| a.1.cmp(&b.1))
             .unwrap()
             .0
     }
@@ -298,7 +304,7 @@ where T: FixedSigned + NumAssignOps
         let options = self.get_projected_in_range(other, (&[1, 0], &[1, 0]));
         options
             .into_iter()
-            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Less))
+            .min_by(|a, b| a.1.cmp(&b.1))
             .unwrap()
             .0
     }
@@ -307,7 +313,7 @@ where T: FixedSigned + NumAssignOps
         let options = self.get_projected_in_range(other, (&[1, 0], &[-1, 0]));
         options
             .into_iter()
-            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Less))
+            .min_by(|a, b| a.1.cmp(&b.1))
             .unwrap()
             .0
     }
@@ -461,6 +467,13 @@ where T: FixedSigned + NumAssignOps
     pub fn euclid_distance_sq(&self, other: &Self) -> T {
         (self.x - other.x) * (self.x - other.x) + (self.y - other.y) * (self.y - other.y)
     }
+
+    pub fn from_axis_and_val(axis: VecAxis, val: T) -> Self {
+        match axis {
+            VecAxis::X => Self{x: val, y: T::zero()},
+            VecAxis::Y => Self{x: T::zero(), y: val},
+        }
+    }
 }
 
 impl<T: Copy> Vec2D<T> {
@@ -485,6 +498,13 @@ impl<T: Copy> Vec2D<T> {
     /// # Returns
     /// The `y` value of type `T`.
     pub const fn y(&self) -> T { self.y }
+
+    pub const fn get(&self, axis: VecAxis) -> T {
+        match axis {
+            VecAxis::X => self.x,
+            VecAxis::Y => self.y,
+        }
+    }
 }
 
 impl<T: Fixed + Copy> Vec2D<T> {

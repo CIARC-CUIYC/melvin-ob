@@ -3,7 +3,9 @@ use crate::STATIC_ORBIT_VEL;
 use crate::flight_control::objective::beacon_objective::BeaconMeas;
 use chrono::TimeDelta;
 use fixed::types::I32F32;
+use num::traits::FloatConst;
 use rand::{Rng, rng};
+use crate::flight_control::common::vec2d::MapSize;
 
 const MAX_MEASURE_POINTS: usize = 6;
 const MEASURE_PERIOD: I32F32 = I32F32::lit("60");
@@ -18,7 +20,7 @@ fn get_d_noisy(d_true: f32) -> f32 {
 #[test]
 fn test_bayesian_filter() {
     println!("Running Bayesian Filter Test");
-    /*let offset = {
+    let offset = {
         let map_fixed: Vec2D<I32F32> = Vec2D::map_size();
         let map_size = Vec2D::new(map_fixed.x().to_num::<f32>(), map_fixed.y().to_num::<f32>());
         let x = rng().random_range(0.0..map_size.x()).floor();
@@ -48,53 +50,35 @@ fn test_bayesian_filter() {
         beacon_pos.x().to_num::<i32>(),
         beacon_pos.y().to_num::<i32>(),
     );
-    */
-    let meas_pos = vec![
-        Vec2D::new(I32F32::from_num(271), I32F32::from_num(64)),
-        Vec2D::new(I32F32::from_num(466), I32F32::from_num(290)),
-        Vec2D::new(I32F32::from_num(661), I32F32::from_num(516)),
-        Vec2D::new(I32F32::from_num(856), I32F32::from_num(741)),
-        Vec2D::new(I32F32::from_num(1051), I32F32::from_num(967)),
-        Vec2D::new(I32F32::from_num(1247), I32F32::from_num(1193)),
-        Vec2D::new(I32F32::from_num(1442), I32F32::from_num(1418)),
-        Vec2D::new(I32F32::from_num(1637), I32F32::from_num(1644)),
-        Vec2D::new(I32F32::from_num(1832), I32F32::from_num(1870)),
-        Vec2D::new(I32F32::from_num(2027), I32F32::from_num(2096)),
-    ];
-
-    let d_noisy = vec![
-        1783.39, 1955.2, 1474.0, 1310.44, 1125.43, 1220.42, 1006.02, 1349.5, 1423.85, 1671.7,
-    ];
-
-    //println!("Generated beacon Position: {beacon_pos}");
-
-    let pos = meas_pos[0];
-    //let d_true = pos.unwrapped_to(&beacon_pos).abs().to_num::<f32>();
-    //println!("STEP 0: {pos}\n\t Distance: {d_true}");
-    let noisy = d_noisy[0];
+    
+    println!("Generated beacon Position: {beacon_pos}");
+    let pos = measure_positions[0];
+    let d_true = pos.unwrapped_to(&beacon_pos).abs().to_num::<f32>();
+    println!("STEP 0: {pos}\n\t Distance: {d_true}");
+    let noisy = get_d_noisy(d_true);
     println!("\t Distance Noisy: {noisy}");
     let meas = BeaconMeas::new(0, pos, f64::from(noisy), TimeDelta::zero());
     let mut bayesian_set = BayesianSet::new(meas);
     let min_guesses = bayesian_set.guess_estimate();
-    //println!("\t Minimum Guesses: {min_guesses}");
-    //assert!(bayesian_set.is_in_set(beacon_pos_i32));
+    println!("\t Minimum Guesses: {min_guesses}");
+    assert!(bayesian_set.is_in_set(beacon_pos_i32));
 
     let mut meas = 1;
-    for (i, pos) in meas_pos.iter().enumerate().skip(1) {
+    for (i, pos) in measure_positions.iter().enumerate().skip(1) {
         println!("Working on step {i}");
-        //let d_true = pos.unwrapped_to(&beacon_pos).abs().to_num::<f32>();
-        //println!("STEP {i}: {pos}\n\t Distance: {d_true}");
-        //if d_true > BayesianSet::MAX_DIST {
-        //println!("\t Distance too large, skipping");
-        //    continue;
-        // };
-        let noisy = d_noisy[i];
+        let d_true = pos.unwrapped_to(&beacon_pos).abs().to_num::<f32>();
+        println!("STEP {i}: {pos}\n\t Distance: {d_true}");
+        if d_true > BayesianSet::MAX_DIST {
+        println!("\t Distance too large, skipping");
+            continue;
+        };
+        let noisy = get_d_noisy(d_true);
         println!("\t Distance Noisy: {noisy}");
         let b_meas = BeaconMeas::new(0, *pos, f64::from(noisy), TimeDelta::zero());
         bayesian_set.update(&b_meas);
         let min_guesses = bayesian_set.guess_estimate();
-        //println!("\t Minimum Guesses: {min_guesses}");
-        //assert!(bayesian_set.is_in_set(beacon_pos_i32));
+        println!("\t Minimum Guesses: {min_guesses}");
+        assert!(bayesian_set.is_in_set(beacon_pos_i32));
         meas += 1;
     }
 
@@ -104,12 +88,11 @@ fn test_bayesian_filter() {
     for (i, center) in centers.iter().enumerate() {
         let c_fix = Vec2D::new(I32F32::from_num(center.x()), I32F32::from_num(center.y()));
         println!("\t Center {i}: {c_fix}");
-
-        /*let hits = c_fix.unwrapped_to(&beacon_pos).abs().to_num::<f32>()
+        let hits = c_fix.unwrapped_to(&beacon_pos).abs().to_num::<f32>()
             < BayesianSet::MAX_RES_UNCERTAINTY_RAD;
         if hits {
             println!("\t Finished. Hits on {i}. try with center: {center}");
             break;
-        }*/
+        }
     }
 }

@@ -5,7 +5,6 @@ use crate::flight_control::{
         vec2d::{MapSize, Vec2D},
     },
     flight_computer::FlightComputer,
-    flight_state::FlightState,
 };
 use chrono::{DateTime, Utc};
 use fixed::types::I32F32;
@@ -14,10 +13,6 @@ use fixed::types::I32F32;
 pub struct OrbitBase {
     /// The timestamp of the orbit initialization.
     init_timestamp: DateTime<Utc>,
-    /// The initial state of the flight.
-    init_state: FlightState,
-    /// The initial battery level of the flight computer.
-    init_battery: I32F32,
     /// The initial position (in fixed-point coordinates) of the object in orbit.
     fp: Vec2D<I32F32>,
     /// The velocity vector (in fixed-point coordinates) of the object in orbit.
@@ -40,10 +35,17 @@ impl OrbitBase {
         let vel = cont.current_vel();
         Self {
             init_timestamp: Utc::now(),
-            init_state: cont.state(),
-            init_battery: cont.current_battery(),
             fp: cont.current_pos(),
             vel,
+        }
+    }
+    
+    #[cfg(test)]
+    pub fn test(pos: Vec2D<I32F32>, vel: Vec2D<I32F32>) -> Self {
+        Self {
+            init_timestamp: Utc::now(),
+            fp: pos,
+            vel
         }
     }
 
@@ -121,33 +123,6 @@ impl OrbitBase {
             }
         } else {
             None
-        }
-    }
-
-    /// Checks whether the specified position on the map will be visited during the orbit.
-    ///
-    /// # Arguments
-    /// - `pos`: The position to check.
-    ///
-    /// # Returns
-    /// - `true`: If the position will be visited during the orbit.
-    /// - `false`: Otherwise.
-    pub fn will_visit(&self, pos: Vec2D<I32F32>) -> bool {
-        let pos_dist = pos - self.fp;
-        let map_x = Vec2D::<I32F32>::map_size().x();
-        let map_y = Vec2D::<I32F32>::map_size().y();
-        // Compute displacements modulo the map dimensions
-        let delta_x = fmod_fixed64(pos_dist.x(), map_x);
-        let delta_y = fmod_fixed64(pos_dist.y(), map_y);
-
-        // Check if the displacements align with the velocity ratios
-        if self.vel.x().abs() > f32::EPSILON && self.vel.y().abs() > f32::EPSILON {
-            let tx = delta_x / self.vel.x();
-            let ty = delta_y / self.vel.y();
-            // Check if the times align within tolerance
-            ((tx % map_x) - (ty % map_y)).abs() < f32::EPSILON
-        } else {
-            false
         }
     }
 
