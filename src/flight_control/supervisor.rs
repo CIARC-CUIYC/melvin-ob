@@ -6,10 +6,10 @@ use crate::flight_control::{
     objective::{known_img_objective::KnownImgObjective, objective_base::ObjectiveBase},
 };
 use crate::http_handler::{
+    ZoneType,
     http_request::{
         objective_list_get::ObjectiveListRequest, request_common::NoBodyHTTPRequestType,
     },
-    ZoneType,
 };
 use crate::{error, event, fatal, log, warn};
 use chrono::{DateTime, TimeDelta, Utc};
@@ -19,7 +19,7 @@ use futures::StreamExt;
 use reqwest_eventsource::{Event, EventSource};
 use std::{collections::HashSet, env, sync::Arc, time::Duration};
 use tokio::{
-    sync::{broadcast, mpsc, mpsc::Receiver, Notify, RwLock},
+    sync::{Notify, RwLock, broadcast, mpsc, mpsc::Receiver},
     time::Instant,
 };
 
@@ -219,6 +219,7 @@ impl Supervisor {
                     self.zo_mon.send(obj).await.unwrap();
                 }
                 for beac_obj in send_beac_objs {
+                    id_list.insert(beac_obj.id());
                     self.bo_mon.send(beac_obj).await.unwrap();
                 }
                 last_objective_check = Utc::now();
