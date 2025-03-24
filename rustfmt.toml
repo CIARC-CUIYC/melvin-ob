@@ -6,5 +6,6 @@ attr_fn_like_width = 100
 brace_style = 'SameLineWhere'
 chain_width = 100
 struct_lit_single_line = true
+struct_lit_width = 100
 where_single_line = true
 condense_wildcard_suffixes = true

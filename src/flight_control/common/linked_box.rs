@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
-/// A fixed-size linked list data structure. 
-/// This structure uses a `VecDeque` internally and maintains a maximum size. 
+/// A fixed-size linked list data structure.
+/// This structure uses a `VecDeque` internally and maintains a maximum size.
 /// When the maximum size is exceeded, the oldest element (at the back) is removed.
 pub struct LinkedBox<T> {
     /// `VecDeque` holding the actual data
@@ -19,12 +19,7 @@ impl<T> LinkedBox<T> {
     ///
     /// # Returns
     /// A new, empty `LinkedBox` instance.
-    pub fn new(size: usize) -> Self {
-        Self {
-            list: VecDeque::new(),
-            size,
-        }
-    }
+    pub fn new(size: usize) -> Self { Self { list: VecDeque::new(), size } }
 
     /// Pushes an element to the front of the list.
     ///

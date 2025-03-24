@@ -24,9 +24,7 @@ where
     type Pixel = <<T as Deref>::Target as GenericImageView>::Pixel;
 
     /// Returns the dimensions of the sub-buffer in pixels.
-    fn dimensions(&self) -> (u32, u32) {
-        (self.size.x(), self.size.y())
-    }
+    fn dimensions(&self) -> (u32, u32) { (self.size.x(), self.size.y()) }
 
     /// Fetches a pixel from the sub-buffer at the specified coordinates.
     ///

@@ -1,23 +1,18 @@
-use chrono::{DateTime, Utc};
 use crate::flight_control::{
     camera_state::CameraAngle,
     common::{
-        math::{fmod_fixed64, gcd_fixed64, lcm_fixed64, MAX_DEC},
-        vec2d::{Vec2D, MapSize},
+        math::{MAX_DEC, gcd_fixed64, lcm_fixed64},
+        vec2d::{MapSize, Vec2D},
     },
     flight_computer::FlightComputer,
-    flight_state::FlightState,
 };
+use chrono::{DateTime, Utc};
 use fixed::types::I32F32;
 
 /// Struct representing the base properties of an orbit.
 pub struct OrbitBase {
     /// The timestamp of the orbit initialization.
     init_timestamp: DateTime<Utc>,
-    /// The initial state of the flight.
-    init_state: FlightState,
-    /// The initial battery level of the flight computer.
-    init_battery: I32F32,
     /// The initial position (in fixed-point coordinates) of the object in orbit.
     fp: Vec2D<I32F32>,
     /// The velocity vector (in fixed-point coordinates) of the object in orbit.
@@ -40,10 +35,17 @@ impl OrbitBase {
         let vel = cont.current_vel();
         Self {
             init_timestamp: Utc::now(),
-            init_state: cont.state(),
-            init_battery: cont.current_battery(),
             fp: cont.current_pos(),
             vel,
+        }
+    }
+    
+    #[cfg(test)]
+    pub fn test(pos: Vec2D<I32F32>, vel: Vec2D<I32F32>) -> Self {
+        Self {
+            init_timestamp: Utc::now(),
+            fp: pos,
+            vel
         }
     }
 
@@ -51,9 +53,7 @@ impl OrbitBase {
     ///
     /// # Returns
     /// - A `chrono::DateTime` with the UTC initialization timestamp.
-    pub fn start_timestamp(&self) -> DateTime<Utc> {
-        self.init_timestamp
-    }
+    pub fn start_timestamp(&self) -> DateTime<Utc> { self.init_timestamp }
 
     /// Calculates the period of the orbit along with the individual periods in the x and y
     /// directions.
@@ -126,30 +126,6 @@ impl OrbitBase {
         }
     }
 
-    /// Checks whether the specified position on the map will be visited during the orbit.
-    ///
-    /// # Arguments
-    /// - `pos`: The position to check.
-    ///
-    /// # Returns
-    /// - `true`: If the position will be visited during the orbit.
-    /// - `false`: Otherwise.
-    pub fn will_visit(&self, pos: Vec2D<I32F32>) -> bool {
-        let pos_dist = pos - self.fp;
-        let map_x = Vec2D::<I32F32>::map_size().x();
-        let map_y = Vec2D::<I32F32>::map_size().y();
-        // Compute displacements modulo the map dimensions
-        let delta_x = fmod_fixed64(pos_dist.x(), map_x);
-        let delta_y = fmod_fixed64(pos_dist.y(), map_y);
-
-        // Check if the displacements align with the velocity ratios
-        if self.vel.x().abs() > f32::EPSILON && self.vel.y().abs() > f32::EPSILON {
-            let tx = delta_x / self.vel.x();
-            let ty = delta_y / self.vel.y();
-            // Check if the times align within tolerance
-            ((tx % map_x) - (ty % map_y)).abs() < f32::EPSILON
-        } else {
-            false
-        }
-    }
+    pub fn fp(&self) -> &Vec2D<I32F32> { &self.fp }
+    pub fn vel(&self) -> &Vec2D<I32F32> { &self.vel }
 }

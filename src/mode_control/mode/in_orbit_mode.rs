@@ -4,6 +4,7 @@ use crate::flight_control::{
     task::base_task::{BaseTask, Task},
 };
 use crate::mode_control::mode::zo_prep_mode::ZOPrepMode;
+use crate::mode_control::signal::OptOpExitSignal;
 use crate::mode_control::{
     base_mode::BaseMode,
     mode::global_mode::{GlobalMode, OrbitalMode},
@@ -60,12 +61,8 @@ impl GlobalMode for InOrbitMode {
         OpExitSignal::Continue
     }
 
-    async fn exec_task_wait(
-        &self,
-        context: Arc<ModeContext>,
-        due: DateTime<Utc>,
-    ) -> WaitExitSignal {
-        <Self as OrbitalMode>::exec_task_wait(self, context, due).await
+    async fn exec_task_wait(&self, c: Arc<ModeContext>, due: DateTime<Utc>) -> WaitExitSignal {
+        <Self as OrbitalMode>::exec_task_wait(self, c, due).await
     }
 
     async fn exec_task(&self, context: Arc<ModeContext>, task: Task) -> ExecExitSignal {
@@ -91,26 +88,28 @@ impl GlobalMode for InOrbitMode {
         OpExitSignal::ReInit(Box::new(self.clone()))
     }
 
-    async fn zo_handler(
-        &self,
-        c: Arc<ModeContext>,
-        obj: KnownImgObjective,
-    ) -> Option<OpExitSignal> {
+    async fn zo_handler(&self, c: &Arc<ModeContext>, obj: KnownImgObjective) -> OptOpExitSignal {
         obj!("Found new Zoned Objective {}!", obj.id());
-
         c.o_ch_lock().write().await.finish(
             c.k().f_cont().read().await.current_pos(),
             self.new_zo_rationale(),
         );
-        ZOPrepMode::from_obj(c, obj, self.base.clone())
+        ZOPrepMode::from_obj(c, obj, self.base)
             .await
             .map(|mode| OpExitSignal::ReInit(Box::new(mode)))
     }
 
-    fn bo_event_handler(&self) -> Option<OpExitSignal> {
+    async fn bo_event_handler(&self, context: &Arc<ModeContext>) -> OptOpExitSignal {
         let base = self.base.bo_event();
+        self.log_bo_event(context, base).await;
         Some(OpExitSignal::ReInit(Box::new(Self { base })))
     }
 
-    async fn exit_mode(&self, _: Arc<ModeContext>) -> Box<dyn GlobalMode> { Box::new(self.clone()) }
+    async fn exit_mode(&self, context: Arc<ModeContext>) -> Box<dyn GlobalMode> {
+        context.o_ch_lock().write().await.finish(
+            context.k().f_cont().read().await.current_pos(),
+            self.tasks_done_rationale(),
+        );
+        Box::new(self.clone())
+    }
 }

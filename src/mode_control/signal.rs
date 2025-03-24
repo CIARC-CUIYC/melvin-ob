@@ -18,3 +18,5 @@ pub enum WaitExitSignal {
     NewZOEvent(KnownImgObjective),
     BOEvent,
 }
+
+pub type OptOpExitSignal = Option<OpExitSignal>;

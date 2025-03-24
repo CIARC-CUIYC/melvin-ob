@@ -17,11 +17,11 @@ impl EndCondition {
             state: FlightState::Acquisition,
         }
     }
-    
-    pub fn time(&self) -> DateTime<Utc> {self.time}
-    pub fn charge(&self) -> I32F32 {self.charge}
-    pub fn state(&self) -> FlightState {self.state}
-    
+
+    pub fn time(&self) -> DateTime<Utc> { self.time }
+    pub fn charge(&self) -> I32F32 { self.charge }
+    pub fn state(&self) -> FlightState { self.state }
+
     pub fn abs_charge_dt(&self) -> TimeDelta {
         let secs = (self.charge() / FlightState::Charge.get_charge_rate()).round().to_num::<i64>();
         TimeDelta::seconds(secs)

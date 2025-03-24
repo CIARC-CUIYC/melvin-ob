@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code, clippy::similar_names)]
 #![warn(clippy::shadow_reuse, clippy::shadow_same, clippy::builtin_type_shadow)]
 mod console_communication;
 mod flight_control;
@@ -74,7 +74,7 @@ async fn init(url: &str) -> ModeContext {
         let (sv, rx_obj, rx_beac) = Supervisor::new(init_k_f_cont_clone);
         (Arc::new(sv), rx_obj, rx_beac)
     };
-    let (beac_cont, beac_rx) = {
+    let (beac_cont, beac_state_rx) = {
         let res = BeaconController::new(beac_rx);
         (Arc::new(res.0), res.1)
     };
@@ -115,7 +115,7 @@ async fn init(url: &str) -> ModeContext {
         KeychainWithOrbit::new(init_k, c_orbit),
         orbit_char,
         obj_rx,
-        beac_rx,
+        beac_state_rx,
         supervisor,
         beac_cont,
     )

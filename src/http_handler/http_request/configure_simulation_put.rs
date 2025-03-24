@@ -1,6 +1,6 @@
 use super::configure_simulation;
 use super::request_common::{
-    bool_to_string, HTTPRequestMethod, HTTPRequestType, NoBodyHTTPRequestType,
+    HTTPRequestMethod, HTTPRequestType, NoBodyHTTPRequestType, bool_to_string,
 };
 use std::collections::HashMap;
 

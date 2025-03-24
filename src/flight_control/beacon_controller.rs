@@ -16,13 +16,6 @@ use tokio::sync::{Mutex, RwLock, watch};
 use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
 
-pub struct ScanBeaconParams {
-    pub due_t: Option<DateTime<Utc>>,
-    pub context: Arc<ModeContext>,
-    pub c_tok: CancellationToken,
-    pub fut: Pin<Box<dyn Future<Output = ()> + Send>>,
-}
-
 pub struct BeaconController {
     active_bo: RwLock<HashMap<usize, BeaconObjective>>,
     done_bo: RwLock<HashMap<usize, BeaconObjectiveDone>>,
@@ -141,15 +134,9 @@ impl BeaconController {
         let mut done_bo = self.done_bo.write().await;
         for (id, beacon) in finished {
             let done_beacon = BeaconObjectiveDone::from(beacon);
-            let done_beacon_guesses = done_beacon.guesses();
-            if done_beacon_guesses.is_empty() {
-                obj!(
-                    "Ending Beacon objective: ID {id} with 0 guesses. Randomly generating 3 guesses."
-                );
-            } else {
-                let guesses = done_beacon.guesses().len();
-                obj!("Finished Beacon objective: ID {id} with {guesses} guesses.");
-            }
+            let guesses = done_beacon.guesses().len();
+            obj!("Finished Beacon objective: ID {id} with {guesses} guesses.");
+
             done_bo.insert(done_beacon.id(), done_beacon.clone());
         }
     }
@@ -160,16 +147,16 @@ impl BeaconController {
             let mut active_beacon_tasks = self.active_bo.write().await;
             active_beacon_tasks.retain(|id, beacon: &mut BeaconObjective| {
             if  beacon.end() < Utc::now() + Self::TIME_TO_NEXT_PASSIVE_CHECK {
-                obj!(
+                    obj!(
                     "Active Beacon objective end is less than {} s away: ID {id}. Submitting this now!",
                     Self::TIME_TO_NEXT_PASSIVE_CHECK.as_secs(),
                 );
-                finished.insert(*id, beacon.clone());
-                false
-            } else {
-                true
-            }
-        });
+                    finished.insert(*id, beacon.clone());
+                    false
+                } else {
+                    true
+                }
+            });
             active_beacon_tasks.is_empty()
         };
         self.move_to_done(finished).await;
