@@ -237,6 +237,21 @@ impl ClosedOrbit {
             .min_by(|a, b| a.abs().cmp(&b.abs()))
             .unwrap().abs() < I32F32::lit("1.0")
     }
+    
+    pub fn get_i(&self, pos: Vec2D<I32F32>) -> Option<usize> {
+        if self.will_visit(pos) {
+            let step = *self.base_orbit.vel();
+            let step_abs = step.abs();
+            let mut i_pos = *self.base_orbit.fp();
+            for i in 0..self.period.0.to_num::<usize>()  {
+                if i_pos.to(&pos).abs() < step_abs + I32F32::lit("0.5") {
+                    return Some(i);
+                }
+                i_pos = (i_pos + step).wrap_around_map();
+            }
+        }
+        None
+    }
 
     pub(super) fn segments(&self) -> &Vec<OrbitSegment> { &self.segments }
 }

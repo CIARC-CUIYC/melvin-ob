@@ -7,9 +7,7 @@ use crate::STATIC_ORBIT_VEL;
 
 #[test]
 fn test_orbit_segments_and_closest() {
-    let init_pos = get_rand_pos();
-    let o_b = OrbitBase::test(init_pos, Vec2D::from(STATIC_ORBIT_VEL));
-    let closed_orbit = ClosedOrbit::new(o_b, CameraAngle::Narrow).unwrap();
+    let closed_orbit = init_orbit();
     let segments = closed_orbit.segments();
     println!("Orbit segments: {segments:?}");
     let rand_pos = get_rand_pos();
@@ -19,6 +17,34 @@ fn test_orbit_segments_and_closest() {
     println!("Randomized Position: {rand_pos}, Closest Deviation: {closest_dist:?}, Prop on orbit: {prop_on_orbit_pos}");
 }
 
+#[test]
+fn test_orbit_get_i() {
+    let closed_orbit = init_orbit();
+    let (pos, i) = get_rand_orbit_pos(&closed_orbit);
+    let guess_i = closed_orbit.get_i(pos).unwrap();
+    let min_i = i.saturating_sub(1);
+    let max_i = (i + 1) % closed_orbit.period().0.to_num::<usize>();
+    assert!(guess_i > min_i && guess_i < max_i)   
+}
+
+fn init_orbit() -> ClosedOrbit {
+    let init_pos = get_rand_pos();
+    let o_b = OrbitBase::test(init_pos, Vec2D::from(STATIC_ORBIT_VEL));
+    ClosedOrbit::new(o_b, CameraAngle::Narrow).unwrap()
+}
+
+
+fn get_rand_orbit_pos(orbit: &ClosedOrbit) -> (Vec2D<I32F32>, usize) {
+    let mut rng = rand::rng();
+    let rand_step_count = rng.random_range(0..orbit.period().0.to_num::<usize>());
+    let step = *orbit.base_orbit_ref().vel();
+    let start = *orbit.base_orbit_ref().fp();
+    let rand_step_pos = (start + step * I32F32::from_num(rand_step_count)).wrap_around_map();
+    let rand_sub_step_x = I32F32::from_num(rng.random_range(0.0..1.0)) * step.x();
+    let rand_sub_step_y = I32F32::from_num(rng.random_range(0.0..1.0)) * step.y();
+    let rand_sub_step = Vec2D::new(rand_sub_step_x, rand_sub_step_y);
+    ((rand_step_pos + rand_sub_step).wrap_around_map(), rand_step_count)
+}
 
 fn get_rand_pos() -> Vec2D<I32F32> {
     let mut rng = rand::rng();
