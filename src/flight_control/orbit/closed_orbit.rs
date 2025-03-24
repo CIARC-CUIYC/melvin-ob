@@ -21,8 +21,8 @@ impl OrbitSegment {
         let delta = end - start;
         Self { start, end, delta }
     }
-    fn start(&self) -> &Vec2D<I32F32> { &self.start }
-    fn end(&self) -> &Vec2D<I32F32> { &self.end }
+    pub(crate) fn start(&self) -> &Vec2D<I32F32> { &self.start }
+    pub(crate) fn end(&self) -> &Vec2D<I32F32> { &self.end }
 
     fn get_proj_dist(&self, pos: &Vec2D<I32F32>) -> (VecAxis, I32F32, Vec2D<I32F32>) {
         let (t_x, t_y) = self.tx_tys(pos);
@@ -243,9 +243,15 @@ impl ClosedOrbit {
             let step = *self.base_orbit.vel();
             let step_abs = step.abs();
             let mut i_pos = *self.base_orbit.fp();
+            let mut closest_pos = *self.base_orbit.fp();
+            let mut closest_dist = I32F32::MAX;
             for i in 0..self.period.0.to_num::<usize>()  {
-                if i_pos.to(&pos).abs() < step_abs + I32F32::lit("0.5") {
+                if i_pos.to(&pos).abs() < step_abs {
                     return Some(i);
+                }
+                if i_pos.to(&pos).abs() < closest_dist {
+                    closest_dist = i_pos.to(&pos).abs();
+                    closest_pos = i_pos;
                 }
                 i_pos = (i_pos + step).wrap_around_map();
             }

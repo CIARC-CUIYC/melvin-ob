@@ -26,6 +26,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::RwLock;
+use crate::flight_control::orbit::ClosedOrbit;
 
 pub type TurnsClockCClockTup = (
     Vec<(Vec2D<I32F32>, Vec2D<I32F32>)>,
@@ -96,6 +97,10 @@ impl FlightComputer {
     const DEF_COND_PI: u16 = 500;
     /// Constant transition to SAFE sleep time for all states
     const TO_SAFE_SLEEP: Duration = Duration::from_secs(60);
+    /// Maximum absolute vel change for orbit return
+    const MAX_VEL_CHANGE_ABS: I32F32 = I32F32::lit("1.0");
+    /// Deviation at which `MAX_VEL_CHANGE_ABS` should occur
+    const MAX_VEL_CHANGE_DEV: I32F32 = I32F32::lit("160");
     /// Minimum battery used in decision-making for after safe transition
     const AFTER_SAFE_MIN_BATT: I32F32 = I32F32::lit("50");
     const EXIT_SAFE_MIN_BATT: I32F32 = I32F32::lit("10.0");
