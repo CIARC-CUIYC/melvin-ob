@@ -17,12 +17,6 @@ pub enum WaitExitSignal {
     SafeEvent,
     NewZOEvent(KnownImgObjective),
     BOEvent,
-    RescheduleEvent,
-}
-
-pub enum BaseWaitExitSignal {
-    Continue,
-    ReSchedule,
 }
 
 pub type OptOpExitSignal = Option<OpExitSignal>;

@@ -94,10 +94,8 @@ impl GlobalMode for OrbitReturnMode {
         c.k_buffer().lock().await.push(obj);
         None
     }
-
+    
     async fn bo_event_handler(&self, _: &Arc<ModeContext>) -> OptOpExitSignal { unimplemented!() }
-
-    fn resched_event_handler(&self) -> OptOpExitSignal { unimplemented!() }
 
     async fn exit_mode(&self, c: Arc<ModeContext>) -> Box<dyn GlobalMode> {
         if c.k().f_cont().read().await.current_battery() < TaskController::MIN_BATTERY_THRESHOLD {

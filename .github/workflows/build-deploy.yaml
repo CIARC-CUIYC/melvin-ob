@@ -1,6 +1,6 @@
 #file: noinspection SpellCheckingInspection
 name: "Build on pi01 and Deploy"
-on: [push]
+on: [ push ]
 jobs:
   build-deploy:
     runs-on: pi01

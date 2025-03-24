@@ -9,6 +9,7 @@ use crate::http_handler::{
 use crate::{error, obj};
 use chrono::{DateTime, Utc};
 use fixed::types::I32F32;
+use rand::Rng;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -22,6 +23,9 @@ pub struct BeaconObjectiveDone {
 }
 
 impl BeaconObjectiveDone {
+    const MAP_WIDTH_RANGE: std::ops::Range<u32> = 0..21600;
+    const MAP_HEIGHT_RANGE: std::ops::Range<u32> = 0..10800;
+    const MIN_DISTANCE_RAND_GUESSES: f32 = 75.0;
     pub fn id(&self) -> usize { self.id }
     pub fn name(&self) -> &str { &self.name }
     pub fn start(&self) -> DateTime<Utc> { self.start }
@@ -31,39 +35,99 @@ impl BeaconObjectiveDone {
 
     #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
     pub async fn guess_max(&mut self, client: Arc<HTTPClient>) {
+        self.submitted = true;
         obj!(
             "Guessing max for {}: {} guesses...",
             self.id,
             self.guesses.len()
         );
-        self.submitted = true;
         let id_u16 = self.id() as u16;
-        'outer: for (i, guess) in self.guesses().iter().enumerate() {
+        let guess_cloned = self.guesses().clone();
+        for (i, guess) in guess_cloned.iter().enumerate() {
             let width = guess.x().abs().to_num::<u32>();
             let height = guess.y().abs().to_num::<u32>();
             let req = BeaconPositionRequest { beacon_id: id_u16, width, height };
             obj!("Sending request for beacon {id_u16} with width {width} and height {height}...");
-            loop {
-                if let Ok(msg) = req.send_request(&client).await {
-                    if msg.is_success() {
-                        obj!("Found beacon {id_u16} at {guess}!");
-                        return;
-                    } else if msg.is_last() {
-                        obj!("Could not find beacon {id_u16} after {i} tries!");
-                        return;
-                    } else if msg.is_unknown() {
-                        obj!("Beacon {id_u16} is unknown!");
-                        return;
-                    } else if msg.is_fail() {
-                        continue 'outer;
-                    }
-                    obj!("Unknown Message: {}! Returning!", msg.msg());
-                    return;
-                }
-                error!("Unnoticed HTTP Error in updateObservation()");
-                tokio::time::sleep(FlightComputer::STD_REQUEST_DELAY).await;
-            }
+            self.submit_guess(req, client.clone(), guess, i).await;
         }
+    }
+
+    pub async fn randomize_no_meas_guesses(&mut self, client: Arc<HTTPClient>) {
+        if !self.guesses.is_empty() {
+            obj!("Guesses are provided already, skipping randomization.");
+            self.guess_max(client).await;
+            return;
+        }
+        obj!("No guesses for {}, randomizing 3 guesses.", self.id);
+
+        let random_guesses = self.generate_random_guesses();
+
+        for (i, guess) in random_guesses.iter().enumerate() {
+            let guess_req = BeaconPositionRequest {
+                beacon_id: self.id as u16,
+                width: guess.x().abs().to_num::<u32>(),
+                height: guess.y().abs().to_num::<u32>(),
+            };
+            self.submit_guess(guess_req, Arc::clone(&client), guess, i).await;
+        }
+    }
+
+    async fn submit_guess(
+        &mut self,
+        req: BeaconPositionRequest,
+        client: Arc<HTTPClient>,
+        guess: &Vec2D<I32F32>,
+        guess_num: usize,
+    ) {
+        loop {
+            if let Ok(msg) = req.send_request(&client).await {
+                if msg.is_success() {
+                    obj!("Found beacon {} at {}!", req.beacon_id, guess);
+                    return;
+                } else if msg.is_last() {
+                    obj!(
+                        "Could not find beacon {} after {} tries!",
+                        req.beacon_id,
+                        guess_num
+                    );
+                    return;
+                } else if msg.is_unknown() {
+                    obj!("Beacon {} is unknown!", req.beacon_id);
+                    return;
+                } else if msg.is_fail() {
+                    continue;
+                }
+                obj!("Unknown Message: {}! Returning!", msg.msg());
+                return;
+            }
+            error!("Unnoticed HTTP Error in updateObservation()");
+            tokio::time::sleep(FlightComputer::STD_REQUEST_DELAY).await;
+        }
+    }
+
+    fn generate_random_guesses(&self) -> Vec<Vec2D<I32F32>> {
+        let mut rng = rand::rng();
+        let mut random_guesses = Vec::new();
+        while random_guesses.len() < 2 {
+            let random_width = rng.random_range(Self::MAP_WIDTH_RANGE);
+            let random_height = rng.random_range(Self::MAP_HEIGHT_RANGE);
+            let rand_guess = Vec2D::new(
+                I32F32::from_num(random_width),
+                I32F32::from_num(random_height),
+            );
+
+            let too_close = random_guesses.iter().any(|prev_guesses: &Vec2D<I32F32>| {
+                prev_guesses.euclid_distance(&rand_guess)
+                    <= I32F32::from_num(Self::MIN_DISTANCE_RAND_GUESSES)
+            });
+
+            if too_close {
+                continue;
+            }
+
+            random_guesses.push(rand_guess);
+        }
+        random_guesses
     }
 }
 

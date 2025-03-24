@@ -1,4 +1,4 @@
-#![allow(clippy::similar_names)]
+#![allow(dead_code, clippy::similar_names)]
 #![warn(clippy::shadow_reuse, clippy::shadow_same, clippy::builtin_type_shadow)]
 mod console_communication;
 mod flight_control;

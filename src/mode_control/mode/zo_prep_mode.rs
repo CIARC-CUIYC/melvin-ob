@@ -233,10 +233,6 @@ impl GlobalMode for ZOPrepMode {
         }
     }
 
-    fn resched_event_handler(&self) -> OptOpExitSignal {
-        Some(OpExitSignal::ReInit(Box::new(self.clone())))
-    }
-
     async fn exit_mode(&self, context: Arc<ModeContext>) -> Box<dyn GlobalMode> {
         context.o_ch_lock().write().await.finish(
             context.k().f_cont().read().await.current_pos(),

@@ -203,6 +203,7 @@ impl Supervisor {
                     self.zo_mon.send(obj).await.unwrap();
                 }
                 for beac_obj in send_beac_objs {
+                    id_list.insert(beac_obj.id());
                     self.bo_mon.send(beac_obj).await.unwrap();
                 }
                 last_objective_check = Utc::now();

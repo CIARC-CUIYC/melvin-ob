@@ -1,7 +1,6 @@
 use crate::flight_control::flight_computer::FlightComputer;
 use crate::flight_control::objective::beacon_objective::{BeaconMeas, BeaconObjective};
 use crate::flight_control::objective::beacon_objective_done::BeaconObjectiveDone;
-use crate::flight_control::task::TaskController;
 use crate::http_handler::http_client::HTTPClient;
 use crate::mode_control::mode_context::ModeContext;
 use crate::{event, obj, warn};
@@ -35,8 +34,9 @@ static BO_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 impl BeaconController {
-    const TIME_TO_NEXT_PASSIVE_CHECK: Duration = Duration::from_secs(15);
-    const BEACON_OBJ_RETURN_MIN_DELAY: TimeDelta = TimeDelta::minutes(3);
+    const TIME_TO_NEXT_PASSIVE_CHECK: Duration = Duration::from_secs(30);
+    const BEACON_OBJ_RETURN_WARNING: TimeDelta = TimeDelta::minutes(10);
+    const THRESHOLD_GUESSES_TO_DONE: usize = 15;
     const BO_MSG_COMM_PROLONG: TimeDelta = TimeDelta::seconds(60);
 
     pub fn new(
@@ -89,18 +89,13 @@ impl BeaconController {
     pub async fn handle_poss_bo_ping(
         &self,
         msg: (DateTime<Utc>, String),
-        due_t: Option<DateTime<Utc>>,
         f_cont: Arc<RwLock<FlightComputer>>,
-    ) -> bool {
+    ) {
         let (t, val) = msg;
         if let Some((id, d_noisy)) = Self::extract_id_and_d(val.as_str()) {
-            let (pos, res_batt) = {
-                let f_cont_lock = f_cont.read().await;
-                (
-                    f_cont_lock.current_pos(),
-                    f_cont_lock.batt_in_dt(Self::BO_MSG_COMM_PROLONG),
-                )
-            };
+            let f_cont_lock = f_cont.read().await;
+            let pos = f_cont_lock.current_pos();
+
             let msg_delay = Utc::now() - t;
             let meas = BeaconMeas::new(id, pos, d_noisy, msg_delay);
             obj!("Received BO measurement at {pos} for ID {id} with distance {d_noisy}.");
@@ -108,26 +103,22 @@ impl BeaconController {
             if let Some(obj) = active_lock.get_mut(&id) {
                 obj!("Updating BO {id} and prolonging!");
                 obj.append_measurement(meas);
-                let new_end = Utc::now() + Self::BO_MSG_COMM_PROLONG;
-                if let Some(t) = due_t {
-                    let is_last = active_lock.len() == 1;
-                    let prolong_cond = new_end > t || is_last;
-                    if prolong_cond && res_batt > TaskController::MIN_BATTERY_THRESHOLD {
-                        return true;
-                    }
-                }
-                false
             } else {
                 warn!("Unknown BO ID {id}. Ignoring!");
-                false
             }
         } else {
             event!("Message has unknown format {val:#?}. Ignoring.");
-            false
         }
     }
 
     async fn add_beacon(&self, obj: BeaconObjective) {
+        obj!(
+            "Received new Beacon Objective: {}, ID: {}, Available Timeframe {} - {}",
+            obj.name(),
+            obj.id(),
+            obj.start(),
+            obj.end()
+        );
         let empty = self.active_bo.read().await.is_empty();
         self.active_bo.write().await.insert(obj.id(), obj);
         if empty {
@@ -143,13 +134,9 @@ impl BeaconController {
         let mut done_bo = self.done_bo.write().await;
         for (id, beacon) in finished {
             let done_beacon = BeaconObjectiveDone::from(beacon);
-            if done_beacon.guesses().is_empty() {
-                //done_beacon.gen_random_guesses()
-                obj!("Ending Beacon objective: ID {id} without guesses :(");
-            } else {
-                let guesses = done_beacon.guesses().len();
-                obj!("Finished Beacon objective: ID {id} with {guesses} guesses.");
-            }
+            let guesses = done_beacon.guesses().len();
+            obj!("Finished Beacon objective: ID {id} with {guesses} guesses.");
+
             done_bo.insert(done_beacon.id(), done_beacon.clone());
         }
     }
@@ -159,17 +146,17 @@ impl BeaconController {
         let no_more_beacons = {
             let mut active_beacon_tasks = self.active_bo.write().await;
             active_beacon_tasks.retain(|id, beacon: &mut BeaconObjective| {
-            if  beacon.end() < Utc::now() + Self::BEACON_OBJ_RETURN_MIN_DELAY {
-                obj!(
-                    "Active Beacon objective end is less than {} min away: ID {id}. Submitting this now!",
-                    Self::BEACON_OBJ_RETURN_MIN_DELAY
+            if  beacon.end() < Utc::now() + Self::TIME_TO_NEXT_PASSIVE_CHECK {
+                    obj!(
+                    "Active Beacon objective end is less than {} s away: ID {id}. Submitting this now!",
+                    Self::TIME_TO_NEXT_PASSIVE_CHECK.as_secs(),
                 );
-                finished.insert(*id, beacon.clone());
-                false
-            } else {
-                true
-            }
-        });
+                    finished.insert(*id, beacon.clone());
+                    false
+                } else {
+                    true
+                }
+            });
             active_beacon_tasks.is_empty()
         };
         self.move_to_done(finished).await;
@@ -185,8 +172,11 @@ impl BeaconController {
         let mut done_beacons = self.done_bo.write().await.clone();
         for (id, beacon) in &mut done_beacons {
             if !beacon.submitted() {
-                obj!("Submitting Beacon Objective: {id}");
-                beacon.guess_max(Arc::clone(handler)).await;
+                if beacon.guesses().is_empty() {
+                    beacon.randomize_no_meas_guesses(Arc::clone(handler)).await;
+                } else {
+                    beacon.guess_max(Arc::clone(handler)).await;
+                }
             }
         }
     }
