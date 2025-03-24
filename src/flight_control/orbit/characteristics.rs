@@ -44,7 +44,7 @@ impl OrbitCharacteristics {
         let orbit_full_period = c_orbit.period().0.to_num::<usize>();
         let i_entry =
             IndexedOrbitPosition::new(0, orbit_full_period, f_cont.read().await.current_pos());
-        Self { img_dt, orbit_s_end, orbit_full_period, i_entry, mode_switches: 0 }
+        Self { img_dt, orbit_s_end, orbit_full_period, i_entry, mode_switches: 0}
     }
 
     /// Retrieves the maximum image capture time interval.
@@ -72,5 +72,14 @@ impl OrbitCharacteristics {
         );
         self.i_entry = now;
         self.mode_switches += 1;
+    }
+    
+    pub fn finish_entry(&mut self, now_pos: Vec2D<I32F32>, index: usize) {
+        let now = IndexedOrbitPosition::new(index, self.orbit_full_period, now_pos);
+        info!(
+            "Finished Phase after: {}s, due to: Orbit Reentry",
+            (now.t() - self.i_entry.t()).num_seconds()
+        );
+        self.i_entry = now;
     }
 }

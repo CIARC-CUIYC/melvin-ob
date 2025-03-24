@@ -10,6 +10,7 @@ use std::{
     fmt::Display,
     ops::{Add, Deref, Div, Mul, Rem, Sub},
 };
+use strum_macros::Display;
 
 /// A 2D vector generic over any numeric type.
 ///
@@ -26,7 +27,7 @@ pub struct Vec2D<T> {
     y: T,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Display)]
 pub enum VecAxis {
     X,
     Y,

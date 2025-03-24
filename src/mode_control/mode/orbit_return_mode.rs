@@ -24,9 +24,25 @@ impl GlobalMode for OrbitReturnMode {
     fn type_name(&self) -> &'static str { Self::MODE_NAME }
 
     async fn init_mode(&self, context: Arc<ModeContext>) -> OpExitSignal {
-        FlightComputer::get_to_static_orbit_vel(context.k().f_cont()).await;
-        todo!()
-        //TaskController::schedule_orbit_return();
+        let safe_mon = context.super_v().safe_mon();
+        let f_cont_clone = context.k().f_cont().clone();
+        let fut = async {
+            FlightComputer::get_to_static_orbit_vel(&f_cont_clone).await;
+            let max_maneuver_batt = FlightComputer::max_or_maneuver_charge();
+            let batt = f_cont_clone.read().await.current_battery();
+            if batt < max_maneuver_batt {
+                FlightComputer::charge_to_wait(&f_cont_clone, max_maneuver_batt).await;
+            }
+            FlightComputer::or_maneuver(context.k().f_cont(), context.k().c_orbit()).await
+        };
+        tokio::select! {
+        new_i = fut => {
+                let pos = context.k().f_cont().read().await.current_pos();
+                context.o_ch_lock().write().await.finish_entry(pos, new_i);
+                OpExitSignal::ReInit(self.exit_mode(context).await)
+            },
+        _ = safe_mon.notified() => self.safe_handler(context).await
+        }
     }
 
     async fn exec_task_wait(
@@ -34,10 +50,12 @@ impl GlobalMode for OrbitReturnMode {
         context: Arc<ModeContext>,
         due: DateTime<Utc>,
     ) -> WaitExitSignal {
-        todo!()
+        unimplemented!()
     }
 
-    async fn exec_task(&self, context: Arc<ModeContext>, task: Task) -> ExecExitSignal { todo!() }
+    async fn exec_task(&self, context: Arc<ModeContext>, task: Task) -> ExecExitSignal {
+        unimplemented!()
+    }
 
     async fn safe_handler(&self, context: Arc<ModeContext>) -> OpExitSignal { todo!() }
 

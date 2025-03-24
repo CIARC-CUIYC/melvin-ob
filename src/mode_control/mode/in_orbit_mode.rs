@@ -116,5 +116,11 @@ impl GlobalMode for InOrbitMode {
         Some(OpExitSignal::ReInit(Box::new(self.clone())))
     }
 
-    async fn exit_mode(&self, _: Arc<ModeContext>) -> Box<dyn GlobalMode> { Box::new(self.clone()) }
+    async fn exit_mode(&self, context: Arc<ModeContext>) -> Box<dyn GlobalMode> {
+        context.o_ch_lock().write().await.finish(
+            context.k().f_cont().read().await.current_pos(),
+            self.tasks_done_rationale(),
+        );
+        Box::new(self.clone()) 
+    }
 }

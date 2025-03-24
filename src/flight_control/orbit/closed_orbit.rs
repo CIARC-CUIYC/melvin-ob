@@ -24,15 +24,11 @@ impl OrbitSegment {
     pub(crate) fn start(&self) -> &Vec2D<I32F32> { &self.start }
     pub(crate) fn end(&self) -> &Vec2D<I32F32> { &self.end }
 
-    fn get_proj_dist(&self, pos: &Vec2D<I32F32>) -> (VecAxis, I32F32, Vec2D<I32F32>) {
+    fn get_proj_dist(&self, pos: &Vec2D<I32F32>) -> (VecAxis, I32F32) {
         let (t_x, t_y) = self.tx_tys(pos);
 
         if t_x.is_negative() || t_x > I32F32::ONE || t_y.is_negative() || t_y > I32F32::ONE {
-            return (
-                VecAxis::X,
-                I32F32::MAX,
-                Vec2D::new(I32F32::MAX, I32F32::MAX),
-            );
+            return (VecAxis::X, I32F32::MAX);
         }
 
         let proj_x = self.start.x() + self.delta.x() * t_y;
@@ -42,11 +38,9 @@ impl OrbitSegment {
         let deviation_y = proj_y - pos.y();
 
         if deviation_x.abs() < deviation_y.abs() {
-            let proj_pos = Vec2D::new(proj_x, pos.y());
-            (VecAxis::X, deviation_x, proj_pos)
+            (VecAxis::X, deviation_x)
         } else {
-            let proj_pos = Vec2D::new(pos.x(), proj_y);
-            (VecAxis::Y, deviation_y, proj_pos)
+            (VecAxis::Y, deviation_y)
         }
     }
 
@@ -196,7 +190,7 @@ impl ClosedOrbit {
             .for_each(|mut b| *b = true);
     }
 
-    pub fn get_closest_deviation(&self, pos: Vec2D<I32F32>) -> (VecAxis, I32F32, Vec2D<I32F32>) {
+    pub fn get_closest_deviation(&self, pos: Vec2D<I32F32>) -> (VecAxis, I32F32) {
         self.segments
             .iter()
             .map(|seg| seg.get_proj_dist(&pos))
@@ -235,23 +229,27 @@ impl ClosedOrbit {
             .iter()
             .map(|seg| seg.get_abs_dist(&pos))
             .min_by(|a, b| a.abs().cmp(&b.abs()))
-            .unwrap().abs() < I32F32::lit("1.0")
+            .unwrap()
+            .abs()
+            < I32F32::lit("1.0")
     }
-    
+
     pub fn get_i(&self, pos: Vec2D<I32F32>) -> Option<usize> {
         if self.will_visit(pos) {
             let step = *self.base_orbit.vel();
             let step_abs = step.abs();
             let mut i_pos = *self.base_orbit.fp();
-            let mut closest_pos = *self.base_orbit.fp();
-            let mut closest_dist = I32F32::MAX;
-            for i in 0..self.period.0.to_num::<usize>()  {
-                if i_pos.to(&pos).abs() < step_abs {
-                    return Some(i);
-                }
-                if i_pos.to(&pos).abs() < closest_dist {
-                    closest_dist = i_pos.to(&pos).abs();
-                    closest_pos = i_pos;
+            for i in 0..self.period.0.to_num::<usize>() {
+                let mut dx_abs = i_pos.to(&pos).abs();
+                if dx_abs < step_abs * 2 {
+                    let mut next = (i_pos + step).wrap_around_map();
+                    let mut add_i = 0;
+                    while next.wrap_around_map().to(&pos).abs() < dx_abs {
+                        add_i += 1;
+                        next = (next + step).wrap_around_map();
+                        dx_abs = next.to(&pos).abs();
+                    }
+                    return Some(i + add_i);
                 }
                 i_pos = (i_pos + step).wrap_around_map();
             }

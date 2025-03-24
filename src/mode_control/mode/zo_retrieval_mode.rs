@@ -130,6 +130,10 @@ impl GlobalMode for ZORetrievalMode {
             }
         }
         warn!("Objective not reachable after safe event, exiting ZORetrievalMode");
+        context.o_ch_lock().write().await.finish(
+            context.k().f_cont().read().await.current_pos(),
+            self.out_of_orbit_rationale(),
+        );
         OpExitSignal::ReInit(Box::new(OrbitReturnMode::new()))
     }
 
@@ -146,8 +150,11 @@ impl GlobalMode for ZORetrievalMode {
 
     fn resched_event_handler(&self) -> Option<OpExitSignal> { unimplemented!() }
 
-    async fn exit_mode(&self, _: Arc<ModeContext>) -> Box<dyn GlobalMode> {
-        info!("Exiting ZORetrievalMode");
+    async fn exit_mode(&self, context: Arc<ModeContext>) -> Box<dyn GlobalMode> {
+        context.o_ch_lock().write().await.finish(
+            context.k().f_cont().read().await.current_pos(),
+            self.tasks_done_rationale(),
+        );
         Box::new(OrbitReturnMode::new())
     }
 }

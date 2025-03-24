@@ -143,9 +143,7 @@ impl GlobalMode for ZOPrepMode {
             () = safe_mon.notified() => {
                 cancel_task.cancel();
                 sched_handle.await.ok();
-
-                // Return to mapping mode
-                return OpExitSignal::ReInit(Box::new(self.clone()))
+                return self.safe_handler(context).await;
             }
         );
         OpExitSignal::Continue
@@ -199,16 +197,16 @@ impl GlobalMode for ZOPrepMode {
         context: Arc<ModeContext>,
         obj: KnownImgObjective,
     ) -> Option<OpExitSignal> {
-        context.o_ch_lock().write().await.finish(
-            context.k().f_cont().read().await.current_pos(),
-            self.new_zo_rationale(),
-        );
         let burn_dt_cond =
             self.exit_burn.sequence().start_i().t() - Utc::now() > Self::MIN_REPLANNING_DT;
         if obj.end() < self.target.end() && burn_dt_cond {
             let context_clone = Arc::clone(&context);
             let new_obj_mode = Self::from_obj(context_clone, obj.clone(), self.base.clone()).await;
             if let Some(prep_mode) = new_obj_mode {
+                context.o_ch_lock().write().await.finish(
+                    context.k().f_cont().read().await.current_pos(),
+                    self.new_zo_rationale(),
+                );
                 return Some(OpExitSignal::ReInit(Box::new(prep_mode)));
             }
         }

@@ -26,6 +26,7 @@ pub trait GlobalMode: Sync {
     fn tasks_done_exit_rationale(&self) -> &'static str {
         "tasks list done and exited orbit for ZO Retrieval!"
     }
+    fn out_of_orbit_rationale(&self) -> &'static str { "out of orbit without purpose!" }
     fn bo_done_rationale(&self) -> &'static str { "BO done or expired!" }
     fn bo_left_rationale(&self) -> &'static str { "necessary rescheduling for remaining BOs!" }
     fn type_name(&self) -> &'static str;
