@@ -159,10 +159,10 @@ pub trait OrbitalMode: GlobalMode {
                     return;
                 }
             }
-            
+
         }
     }
-    
+
     async fn log_bo_event(&self, context: &Arc<ModeContext>, base: BaseMode) {
         match base {
             BaseMode::BeaconObjectiveScanningMode => context.o_ch_lock().write().await.finish(

@@ -172,9 +172,8 @@ impl BeaconController {
         let mut done_beacons = self.done_bo.write().await.clone();
         for (id, beacon) in &mut done_beacons {
             if !beacon.submitted() {
-                obj!("Submitting Beacon Objective: {id}");
                 if beacon.guesses().is_empty() {
-                    beacon.randomize_no_meas_guesses(*id, Arc::clone(handler)).await;
+                    beacon.randomize_no_meas_guesses(Arc::clone(handler)).await;
                 } else {
                     beacon.guess_max(Arc::clone(handler)).await;
                 }

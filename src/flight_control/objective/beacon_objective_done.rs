@@ -52,19 +52,19 @@ impl BeaconObjectiveDone {
         }
     }
 
-    pub async fn randomize_no_meas_guesses(&mut self, id: usize, client: Arc<HTTPClient>) {
+    pub async fn randomize_no_meas_guesses(&mut self, client: Arc<HTTPClient>) {
         if !self.guesses.is_empty() {
             obj!("Guesses are provided already, skipping randomization.");
+            self.guess_max(client).await;
             return;
         }
-
-        obj!("No guesses found, randomizing 3 guesses for ID {}", id);
+        obj!("No guesses for {}, randomizing 3 guesses.", self.id);
 
         let random_guesses = self.generate_random_guesses();
 
         for (i, guess) in random_guesses.iter().enumerate() {
             let guess_req = BeaconPositionRequest {
-                beacon_id: id as u16,
+                beacon_id: self.id as u16,
                 width: guess.x().abs().to_num::<u32>(),
                 height: guess.y().abs().to_num::<u32>(),
             };
