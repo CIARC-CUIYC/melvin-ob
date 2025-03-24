@@ -63,8 +63,8 @@ async fn test_single_target_burn_calculator() {
         let acc_dt = I32F32::from_num(exit_burn.acc_dt());
         let est = (exit_pos + exit_vel * detumble_dt).wrap_around_map();
         // Check if the estimated Y position is close to the target Y
-        let hit_target =
-            est.to(res.target_pos()).abs() < detumble_dt * (I32F32::lit("0.002") * detumble_dt);
+        let hit_target = est.euclid_distance(res.target_pos())
+            < detumble_dt * (I32F32::lit("0.002") * detumble_dt);
         if hit_target {
             info!("Test successfull. Acc for {acc_dt}s, detumble for {detumble_dt}s!");
         } else {

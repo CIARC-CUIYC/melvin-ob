@@ -129,12 +129,12 @@ impl ClosedOrbit {
         loop {
             let min = visited_points
                 .iter()
-                .map(|p| (p, current_point.to(p).abs()))
+                .map(|p| (p, current_point.euclid_distance(p)))
                 .min_by(|&(_, dist1), &(_, dist2)| dist1.cmp(&dist2))
                 .map(|(p, _)| p);
 
             if let Some(min_point) = min {
-                if current_point.to(min_point).abs() < 2 * vel.abs() {
+                if current_point.euclid_distance(min_point) < 2 * vel.abs() {
                     break;
                 }
             } else {
@@ -242,14 +242,14 @@ impl ClosedOrbit {
             let step_abs = step.abs();
             let mut i_pos = *self.base_orbit.fp();
             for i in 0..self.period.0.to_num::<usize>() {
-                let mut dx_abs = i_pos.to(&pos).abs();
+                let mut dx_abs = i_pos.euclid_distance(&pos);
                 if dx_abs < step_abs * 2 {
                     let mut next = (i_pos + step).wrap_around_map();
                     let mut add_i = 0;
-                    while next.wrap_around_map().to(&pos).abs() < dx_abs {
+                    while next.wrap_around_map().euclid_distance(&pos) < dx_abs {
                         add_i += 1;
                         next = (next + step).wrap_around_map();
-                        dx_abs = next.to(&pos).abs();
+                        dx_abs = next.euclid_distance(&pos);
                     }
                     return Some(i + add_i);
                 }

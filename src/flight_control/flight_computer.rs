@@ -500,7 +500,7 @@ impl FlightComputer {
             (f_cont.current_battery(), f_cont.current_vel())
         };
         let vel_change_dt =
-            Duration::from_secs_f32((orbit_vel.to(&vel).abs() / Self::ACC_CONST).to_num::<f32>());
+            Duration::from_secs_f32((orbit_vel.euclid_distance(&vel) / Self::ACC_CONST).to_num::<f32>());
         let charge_needed = {
             let acq_acc_db = FlightState::Acquisition.get_charge_rate() + FlightState::ACQ_ACC_ADDITION;
             let or_vel_corr_db = I32F32::from_num(vel_change_dt.as_secs()) * acq_acc_db;
@@ -595,7 +595,7 @@ impl FlightComputer {
             fatal!("Velocity cant be changed in state {current_state}");
         }
         let vel_change_dt = Duration::from_secs_f32(
-            (new_vel.to(&current_vel).abs() / Self::ACC_CONST).to_num::<f32>(),
+            (new_vel.euclid_distance(&current_vel) / Self::ACC_CONST).to_num::<f32>(),
         );
         self_lock.read().await.set_vel(new_vel, mute).await;
         if vel_change_dt.as_secs() > 0 {
