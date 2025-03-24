@@ -7,6 +7,7 @@ use crate::flight_control::{
     objective::known_img_objective::KnownImgObjective, task::base_task::Task,
 };
 use crate::mode_control::mode::orbit_return_mode::OrbitReturnMode;
+use crate::mode_control::signal::OptOpExitSignal;
 use crate::mode_control::{
     mode::global_mode::GlobalMode,
     mode_context::ModeContext,
@@ -137,18 +138,16 @@ impl GlobalMode for ZORetrievalMode {
         OpExitSignal::ReInit(Box::new(OrbitReturnMode::new()))
     }
 
-    async fn zo_handler(
-        &self,
-        context: Arc<ModeContext>,
-        task: KnownImgObjective,
-    ) -> Option<OpExitSignal> {
-        context.k_buffer().lock().await.push(task);
+    async fn zo_handler(&self, c: &Arc<ModeContext>, task: KnownImgObjective) -> OptOpExitSignal {
+        c.k_buffer().lock().await.push(task);
         None
     }
 
-    fn bo_event_handler(&self) -> Option<OpExitSignal> { unimplemented!() }
+    async fn bo_event_handler(&self, _: &Arc<ModeContext>) -> OptOpExitSignal {
+        unimplemented!()
+    }
 
-    fn resched_event_handler(&self) -> Option<OpExitSignal> { unimplemented!() }
+    fn resched_event_handler(&self) -> OptOpExitSignal { unimplemented!() }
 
     async fn exit_mode(&self, context: Arc<ModeContext>) -> Box<dyn GlobalMode> {
         context.o_ch_lock().write().await.finish(

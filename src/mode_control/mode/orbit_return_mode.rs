@@ -3,6 +3,7 @@ use crate::flight_control::{
     beacon_controller::BeaconControllerState, flight_computer::FlightComputer,
     objective::known_img_objective::KnownImgObjective, task::base_task::Task,
 };
+use crate::mode_control::signal::OptOpExitSignal;
 use crate::mode_control::{
     base_mode::BaseMode,
     mode::{global_mode::GlobalMode, in_orbit_mode::InOrbitMode, zo_prep_mode::ZOPrepMode},
@@ -83,18 +84,14 @@ impl GlobalMode for OrbitReturnMode {
         OpExitSignal::ReInit(Box::new(OrbitReturnMode::new()))
     }
 
-    async fn zo_handler(
-        &self,
-        context: Arc<ModeContext>,
-        obj: KnownImgObjective,
-    ) -> Option<OpExitSignal> {
-        context.k_buffer().lock().await.push(obj);
+    async fn zo_handler(&self, c: &Arc<ModeContext>, obj: KnownImgObjective) -> OptOpExitSignal {
+        c.k_buffer().lock().await.push(obj);
         None
     }
 
-    fn bo_event_handler(&self) -> Option<OpExitSignal> { unimplemented!() }
+    async fn bo_event_handler(&self, _: &Arc<ModeContext>) -> OptOpExitSignal { unimplemented!() }
 
-    fn resched_event_handler(&self) -> Option<OpExitSignal> { unimplemented!() }
+    fn resched_event_handler(&self) -> OptOpExitSignal { unimplemented!() }
 
     async fn exit_mode(&self, c: Arc<ModeContext>) -> Box<dyn GlobalMode> {
         if c.k().f_cont().read().await.current_battery() < TaskController::MIN_BATTERY_THRESHOLD {

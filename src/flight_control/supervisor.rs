@@ -98,18 +98,7 @@ impl Supervisor {
     /// and monitor position & state deviations.
     #[allow(clippy::cast_precision_loss, clippy::too_many_lines)]
     pub async fn run_obs_obj_mon(&self) {
-        // ******** DEBUG INITS
-        let start = Utc::now();
-        let mut next_safe = start + TimeDelta::seconds(500);
-        let debug_objective = KnownImgObjective::new(
-            0,
-            "Test Objective".to_string(),
-            Utc::now(),
-            Utc::now() + TimeDelta::hours(7),
-            [4750, 5300, 5350, 5900],
-            "narrow".into(),
-            100.0,
-        );
+        // let mut next_safe = start + TimeDelta::seconds(500);
         let mut pos_csv = if env::var("TRACK_MELVIN_POS").is_ok() {
             log!("Activated position tracking!");
             Some(Writer::from_writer(
@@ -177,11 +166,8 @@ impl Supervisor {
                         ])
                         .expect("[FATAL] Could not write to csv file!");
                 }
-                /*
-                info!("Position tracking: Current: {current_pos}, \
-                    Expected: {expected_pos_wrapped}, Diff: {diff}");
-                    */
-                // Check flight state and handle safe mode (placeholder for now)
+                
+                // check safe mode transition
                 if is_safe_trans {
                     warn!("Unplanned Safe Mode Transition Detected! Notifying!");
                     self.safe_mon.notify_one();

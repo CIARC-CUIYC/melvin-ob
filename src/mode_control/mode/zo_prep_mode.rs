@@ -1,4 +1,5 @@
-use crate::flight_control::orbit::ExitBurnResult;
+use crate::flight_control::flight_state::{FlightState, TRANS_DEL};
+use crate::flight_control::orbit::{BurnSequence, ExitBurnResult};
 use crate::flight_control::{
     flight_computer::FlightComputer,
     objective::known_img_objective::KnownImgObjective,
@@ -10,6 +11,7 @@ use crate::flight_control::{
     },
 };
 use crate::mode_control::mode::zo_retrieval_mode::ZORetrievalMode;
+use crate::mode_control::signal::OptOpExitSignal;
 use crate::mode_control::{
     base_mode::BaseMode,
     mode::{
@@ -19,9 +21,10 @@ use crate::mode_control::{
     mode_context::ModeContext,
     signal::{ExecExitSignal, OpExitSignal, WaitExitSignal},
 };
-use crate::{error, fatal, info, log};
+use crate::{DT_0, error, fatal, info, log};
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
+use std::mem::discriminant;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio_util::sync::CancellationToken;
@@ -52,7 +55,7 @@ impl ZOPrepMode {
     pub async fn from_obj(
         context: &Arc<ModeContext>,
         zo: KnownImgObjective,
-        mut base: BaseMode,
+        curr_base: BaseMode,
     ) -> Option<Self> {
         let targets = zo.get_imaging_points();
         let exit_burn = if zo.min_images() == 1 {
@@ -74,33 +77,29 @@ impl ZOPrepMode {
             // TODO: multiple imaging points?
             fatal!("Zoned Objective with multiple images not yet supported");
         }?;
+        Self::log_burn(&exit_burn, &zo);
+        let base = Self::overthink_base(context, curr_base, exit_burn.sequence()).await;
+        Some(ZOPrepMode { base, exit_burn, target: zo, left_orbit: AtomicBool::new(false) })
+    }
+
+    fn log_burn(exit_burn: &ExitBurnResult, target: &KnownImgObjective) {
         let exit_burn_seq = exit_burn.sequence();
         let entry_pos = exit_burn_seq.sequence_pos().first().unwrap();
         let exit_pos = exit_burn_seq.sequence_pos().last().unwrap();
         let entry_t = exit_burn_seq.start_i().t().format("%H:%M:%S").to_string();
         let vel = exit_burn_seq.sequence_vel().last().unwrap();
-        let tar = zo.get_imaging_points()[0];
+        let tar = target.get_imaging_points()[0];
         let det_dt = exit_burn_seq.detumble_dt();
         let acq_dt = exit_burn_seq.acc_dt();
         let tar_unwrap = exit_burn.unwrapped_target();
-        info!("Calculated Burn Sequence for Zoned Objective: {}", zo.id());
+        info!(
+            "Calculated Burn Sequence for Zoned Objective: {}",
+            target.id()
+        );
         log!("Entry at {entry_t}, Position will be {entry_pos}");
         log!("Exit after {acq_dt}s, Position will be {exit_pos}. Detumble time is {det_dt}s.");
         log!("Exit Velocity will be {vel} aiming for target at {tar} unwrapped to {tar_unwrap}.");
         log!("Whole BS: {:?}", exit_burn);
-        if let BaseMode::BeaconObjectiveScanningMode = base {
-            let burn_start = exit_burn_seq.start_i().t();
-            let worst_case_first_comms_end = {
-                let to_comms = FlightComputer::get_to_comms_dt_est(context.k().f_cont()).await;
-                Utc::now()
-                    + to_comms.1
-                    + TimeDelta::seconds(TaskController::IN_COMMS_SCHED_SECS as i64)
-            };
-            if worst_case_first_comms_end + TimeDelta::seconds(10) > burn_start {
-                base = BaseMode::MappingMode;
-            }
-        }
-        Some(ZOPrepMode { base, exit_burn, target: zo, left_orbit: AtomicBool::new(false) })
     }
 
     fn new_base(&self, base: BaseMode) -> Self {
@@ -109,6 +108,25 @@ impl ZOPrepMode {
             exit_burn: self.exit_burn.clone(),
             target: self.target.clone(),
             left_orbit: AtomicBool::new(self.left_orbit.load(Ordering::Acquire)),
+        }
+    }
+
+    #[allow(clippy::cast_possible_wrap)]
+    async fn overthink_base(c: &Arc<ModeContext>, base: BaseMode, burn: &BurnSequence) -> BaseMode {
+        if matches!(base, BaseMode::MappingMode) {
+            return BaseMode::MappingMode;
+        }
+        let burn_start = burn.start_i().t();
+        let worst_case_first_comms_end = {
+            let to_dt = FlightComputer::get_to_comms_dt_est(c.k().f_cont()).await;
+            let state_change = (FlightState::Comms, FlightState::Acquisition);
+            let from_dt = TimeDelta::from_std(TRANS_DEL[&state_change]).unwrap_or(DT_0);
+            to_dt + TimeDelta::seconds(TaskController::IN_COMMS_SCHED_SECS as i64) + from_dt
+        };
+        if worst_case_first_comms_end + TimeDelta::seconds(5) > burn_start {
+            BaseMode::MappingMode
+        } else {
+            BaseMode::BeaconObjectiveScanningMode
         }
     }
 }
@@ -123,7 +141,10 @@ impl GlobalMode for ZOPrepMode {
 
     async fn init_mode(&self, context: Arc<ModeContext>) -> OpExitSignal {
         let cancel_task = CancellationToken::new();
-        // TODO: check here if even one transition to comms is possible
+        let new_base = Self::overthink_base(&context, self.base, self.exit_burn.sequence()).await;
+        if discriminant(&self.base) != discriminant(&new_base) {
+            return OpExitSignal::ReInit(Box::new(self.new_base(new_base)));
+        }
         let comms_end = self.base.handle_sched_preconditions(Arc::clone(&context)).await;
         let end = EndCondition::from_burn(self.exit_burn.sequence());
         let sched_handle = {
@@ -149,12 +170,8 @@ impl GlobalMode for ZOPrepMode {
         OpExitSignal::Continue
     }
 
-    async fn exec_task_wait(
-        &self,
-        context: Arc<ModeContext>,
-        due: DateTime<Utc>,
-    ) -> WaitExitSignal {
-        <Self as OrbitalMode>::exec_task_wait(self, context, due).await
+    async fn exec_task_wait(&self, c: Arc<ModeContext>, due: DateTime<Utc>) -> WaitExitSignal {
+        <Self as OrbitalMode>::exec_task_wait(self, c, due).await
     }
 
     async fn exec_task(&self, context: Arc<ModeContext>, task: Task) -> ExecExitSignal {
@@ -185,40 +202,36 @@ impl GlobalMode for ZOPrepMode {
             self.safe_mode_rationale(),
         );
         let new = Self::from_obj(&context, self.target.clone(), self.base).await;
-        OpExitSignal::ReInit(
-            new.map_or(Box::new(InOrbitMode::new(self.base)), |b| {
-                Box::new(b)
-            }),
-        )
+        OpExitSignal::ReInit(new.map_or(Box::new(InOrbitMode::new(self.base)), |b| Box::new(b)))
     }
 
-    async fn zo_handler(
-        &self,
-        context: Arc<ModeContext>,
-        obj: KnownImgObjective,
-    ) -> Option<OpExitSignal> {
+    async fn zo_handler(&self, c: &Arc<ModeContext>, obj: KnownImgObjective) -> OptOpExitSignal {
         let burn_dt_cond =
             self.exit_burn.sequence().start_i().t() - Utc::now() > Self::MIN_REPLANNING_DT;
         if obj.end() < self.target.end() && burn_dt_cond {
-            let new_obj_mode = Self::from_obj(&context, obj.clone(), self.base).await;
+            let new_obj_mode = Self::from_obj(c, obj.clone(), self.base).await;
             if let Some(prep_mode) = new_obj_mode {
-                context.o_ch_lock().write().await.finish(
-                    context.k().f_cont().read().await.current_pos(),
+                c.o_ch_lock().write().await.finish(
+                    c.k().f_cont().read().await.current_pos(),
                     self.new_zo_rationale(),
                 );
                 return Some(OpExitSignal::ReInit(Box::new(prep_mode)));
             }
         }
-        context.k_buffer().lock().await.push(obj);
+        c.k_buffer().lock().await.push(obj);
         None
     }
 
-    fn bo_event_handler(&self) -> Option<OpExitSignal> {
-        let new_base = self.base.bo_event();
-        todo!()
+    async fn bo_event_handler(&self, context: &Arc<ModeContext>) -> OptOpExitSignal {
+        let new_base = Self::overthink_base(context, self.base, self.exit_burn.sequence()).await;
+        if discriminant(&self.base) == discriminant(&new_base) {
+            None
+        } else {
+            Some(OpExitSignal::ReInit(Box::new(self.new_base(new_base))))
+        }
     }
 
-    fn resched_event_handler(&self) -> Option<OpExitSignal> {
+    fn resched_event_handler(&self) -> OptOpExitSignal {
         Some(OpExitSignal::ReInit(Box::new(self.clone())))
     }
 

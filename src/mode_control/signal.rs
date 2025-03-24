@@ -24,3 +24,5 @@ pub enum BaseWaitExitSignal {
     Continue,
     ReSchedule,
 }
+
+pub type OptOpExitSignal = Option<OpExitSignal>;

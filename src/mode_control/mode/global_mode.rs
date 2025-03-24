@@ -15,7 +15,7 @@ use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
 use crate::flight_control::beacon_controller::BeaconControllerState;
 use crate::flight_control::objective::known_img_objective::KnownImgObjective;
-use crate::mode_control::signal::BaseWaitExitSignal;
+use crate::mode_control::signal::{BaseWaitExitSignal, OptOpExitSignal};
 
 #[async_trait]
 pub trait GlobalMode: Sync {
@@ -54,13 +54,12 @@ pub trait GlobalMode: Sync {
                         return self.safe_handler(context_local).await;
                     }
                     WaitExitSignal::NewZOEvent(obj) => {
-                        let context_clone = Arc::clone(&context);
-                        if let Some(opt) = self.zo_handler(context_clone, obj).await {
+                        if let Some(opt) = self.zo_handler(&context, obj).await {
                             return opt;
                         };
                     }
                     WaitExitSignal::BOEvent => {
-                        if let Some(opt) = self.bo_event_handler() {
+                        if let Some(opt) = self.bo_event_handler(&context).await {
                             return opt;
                         };
                     }
@@ -93,9 +92,9 @@ pub trait GlobalMode: Sync {
     -> WaitExitSignal;
     async fn exec_task(&self, context: Arc<ModeContext>, task: Task) -> ExecExitSignal;
     async fn safe_handler(&self, context: Arc<ModeContext>) -> OpExitSignal;
-    async fn zo_handler(&self, context: Arc<ModeContext>, obj: KnownImgObjective) -> Option<OpExitSignal>;
-    fn bo_event_handler(&self) -> Option<OpExitSignal>;
-    fn resched_event_handler(&self) -> Option<OpExitSignal>;
+    async fn zo_handler(&self, context: &Arc<ModeContext>, obj: KnownImgObjective) -> OptOpExitSignal;
+    async fn bo_event_handler(&self, context: &Arc<ModeContext>) -> OptOpExitSignal;
+    fn resched_event_handler(&self) -> OptOpExitSignal;
     async fn exit_mode(&self, context: Arc<ModeContext>) -> Box<dyn GlobalMode>;
 }
 

@@ -476,20 +476,20 @@ impl FlightComputer {
     }
 
     #[allow(clippy::cast_possible_wrap)]
-    pub async fn get_to_comms_dt_est(self_lock: Arc<RwLock<Self>>) -> (u64, TimeDelta) {
+    pub async fn get_to_comms_dt_est(self_lock: Arc<RwLock<Self>>) -> DateTime<Utc> {       
         let t_time = FlightState::Charge.td_dt_to(FlightState::Comms);
         if self_lock.read().await.state() == FlightState::Comms {
             let batt_diff =
-                self_lock.read().await.current_battery() - TaskController::MIN_COMMS_START_CHARGE;
-            let rem_t = (batt_diff / FlightState::Comms.get_charge_rate()).abs().ceil();
-            return (0, TimeDelta::seconds(rem_t.to_num::<i64>()));
+                self_lock.read().await.current_battery() - TaskController::MIN_BATTERY_THRESHOLD;
+            let rem_t = (batt_diff / FlightState::Comms.get_charge_rate().abs()).abs().ceil();
+            return Utc::now() + TimeDelta::seconds(rem_t.to_num::<i64>());
         }
         let charge_dt = Self::get_charge_dt_comms(&self_lock).await;
 
         if charge_dt > 0 {
-            (charge_dt, TimeDelta::seconds(charge_dt as i64) + t_time * 2)
+            Utc::now() + TimeDelta::seconds(charge_dt as i64) + t_time * 2
         } else {
-            (0, t_time)
+            Utc::now() + t_time
         }
     }
 
