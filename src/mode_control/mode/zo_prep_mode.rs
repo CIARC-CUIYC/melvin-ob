@@ -36,7 +36,7 @@ pub struct ZOPrepMode {
 impl Clone for ZOPrepMode {
     fn clone(&self) -> Self {
         Self {
-            base: self.base.clone(),
+            base: self.base,
             exit_burn: self.exit_burn.clone(),
             target: self.target.clone(),
             left_orbit: AtomicBool::new(self.left_orbit.load(Ordering::Acquire)),
@@ -50,7 +50,7 @@ impl ZOPrepMode {
 
     #[allow(clippy::cast_possible_wrap)]
     pub async fn from_obj(
-        context: Arc<ModeContext>,
+        context: &Arc<ModeContext>,
         zo: KnownImgObjective,
         mut base: BaseMode,
     ) -> Option<Self> {
@@ -184,9 +184,9 @@ impl GlobalMode for ZOPrepMode {
             context.k().f_cont().read().await.current_pos(),
             self.safe_mode_rationale(),
         );
-        let new = Self::from_obj(context, self.target.clone(), self.base.clone()).await;
+        let new = Self::from_obj(&context, self.target.clone(), self.base).await;
         OpExitSignal::ReInit(
-            new.map_or(Box::new(InOrbitMode::new(self.base.clone())), |b| {
+            new.map_or(Box::new(InOrbitMode::new(self.base)), |b| {
                 Box::new(b)
             }),
         )
@@ -200,8 +200,7 @@ impl GlobalMode for ZOPrepMode {
         let burn_dt_cond =
             self.exit_burn.sequence().start_i().t() - Utc::now() > Self::MIN_REPLANNING_DT;
         if obj.end() < self.target.end() && burn_dt_cond {
-            let context_clone = Arc::clone(&context);
-            let new_obj_mode = Self::from_obj(context_clone, obj.clone(), self.base.clone()).await;
+            let new_obj_mode = Self::from_obj(&context, obj.clone(), self.base).await;
             if let Some(prep_mode) = new_obj_mode {
                 context.o_ch_lock().write().await.finish(
                     context.k().f_cont().read().await.current_pos(),
@@ -235,7 +234,7 @@ impl GlobalMode for ZOPrepMode {
             ))
         } else {
             error!("ZOPrepMode::exit_mode called without left_orbit flag set!");
-            Box::new(InOrbitMode::new(self.base.clone()))
+            Box::new(InOrbitMode::new(self.base))
         }
     }
 }

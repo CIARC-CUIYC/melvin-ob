@@ -1,7 +1,7 @@
 use crate::flight_control::{
     camera_state::CameraAngle,
     common::{
-        math::{MAX_DEC, fmod_fixed64, gcd_fixed64, lcm_fixed64},
+        math::{MAX_DEC, gcd_fixed64, lcm_fixed64},
         vec2d::{MapSize, Vec2D},
     },
     flight_computer::FlightComputer,

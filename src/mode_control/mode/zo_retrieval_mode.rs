@@ -12,7 +12,7 @@ use crate::mode_control::{
     mode_context::ModeContext,
     signal::{ExecExitSignal, OpExitSignal, WaitExitSignal},
 };
-use crate::{DT_0_STD, error, info, log, warn};
+use crate::{DT_0_STD, error, log, warn};
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;

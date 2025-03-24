@@ -60,7 +60,7 @@ fn get_rand_orbit_pos(orbit: &ClosedOrbit) -> (Vec2D<I32F32>, usize) {
     let rand_sub_step = step * I32F32::from_num(rng.random_range(0.0..1.0));
     let rand_deviation = I32F32::from_num(rng.random_range(0.0..1.0));
     let x_dev = rng.random_bool(0.5);
-    let rand_dev = if x_dev == true {
+    let rand_dev = if x_dev {
         Vec2D::new(rand_deviation, I32F32::zero())
     } else {
         Vec2D::new(I32F32::zero(), rand_deviation)

@@ -102,7 +102,7 @@ impl GlobalMode for InOrbitMode {
             c.k().f_cont().read().await.current_pos(),
             self.new_zo_rationale(),
         );
-        ZOPrepMode::from_obj(c, obj, self.base.clone())
+        ZOPrepMode::from_obj(&c, obj, self.base)
             .await
             .map(|mode| OpExitSignal::ReInit(Box::new(mode)))
     }

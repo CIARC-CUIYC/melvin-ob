@@ -1,17 +1,18 @@
 use crate::flight_control::{
+    beacon_controller::BeaconControllerState,
     camera_state::CameraAngle,
     flight_computer::FlightComputer,
     flight_state::FlightState,
     orbit::IndexedOrbitPosition,
+    task::end_condition::EndCondition,
     task::{TaskController, switch_state_task::SwitchStateTask},
 };
+use crate::mode_control::{
+    base_mode::TaskEndSignal::{Join, Timestamp},
+    mode_context::ModeContext,
+    signal::BaseWaitExitSignal,
+};
 use crate::{error, fatal, info, log};
-
-use crate::flight_control::beacon_controller::BeaconControllerState;
-use crate::flight_control::task::end_condition::EndCondition;
-use crate::mode_control::base_mode::TaskEndSignal::{Join, Timestamp};
-use crate::mode_control::mode_context::ModeContext;
-use crate::mode_control::signal::BaseWaitExitSignal;
 use chrono::{DateTime, TimeDelta, Utc};
 use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 use strum_macros::Display;
@@ -29,7 +30,7 @@ pub enum PeriodicImagingEndSignal {
     KillLastImage,
 }
 
-#[derive(Display, Clone)]
+#[derive(Display, Clone, Copy)]
 pub enum BaseMode {
     MappingMode,
     BeaconObjectiveScanningMode,
@@ -304,14 +305,14 @@ impl BaseMode {
         }
     }
 
-    pub fn get_rel_bo_event(&self) -> BeaconControllerState {
+    pub fn get_rel_bo_event(self) -> BeaconControllerState {
         match self {
             BaseMode::MappingMode => BeaconControllerState::ActiveBeacons,
             BaseMode::BeaconObjectiveScanningMode => BeaconControllerState::NoActiveBeacons,
         }
     }
 
-    pub fn bo_event(&self) -> Self {
+    pub fn bo_event(self) -> Self {
         match self {
             BaseMode::MappingMode => Self::BeaconObjectiveScanningMode,
             BaseMode::BeaconObjectiveScanningMode => Self::MappingMode,

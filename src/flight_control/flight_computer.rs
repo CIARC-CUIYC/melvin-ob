@@ -509,13 +509,13 @@ impl FlightComputer {
         };
         log!("Getting back to orbit velocity {orbit_vel}. Minimum charge needed: {charge_needed}");
         if batt < charge_needed {
-            FlightComputer::charge_full_wait(&self_lock).await;
+            FlightComputer::charge_full_wait(self_lock).await;
         }
         let state = self_lock.read().await.state();
         if !matches!(state, FlightState::Acquisition) {
-            FlightComputer::set_state_wait(Arc::clone(&self_lock), FlightState::Acquisition).await;
+            FlightComputer::set_state_wait(Arc::clone(self_lock), FlightState::Acquisition).await;
         }
-        FlightComputer::set_vel_wait(Arc::clone(&self_lock), orbit_vel, true).await;
+        FlightComputer::set_vel_wait(Arc::clone(self_lock), orbit_vel, true).await;
     }
 
     async fn get_charge_dt_comms(self_lock: &Arc<RwLock<Self>>) -> u64 {

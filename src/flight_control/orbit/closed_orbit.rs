@@ -1,12 +1,14 @@
 use super::orbit_base::OrbitBase;
-use crate::flight_control::camera_state::CameraAngle;
-use crate::flight_control::common::vec2d::{Vec2D, VecAxis};
+use crate::flight_control::{
+    camera_state::CameraAngle,
+    common::vec2d::{Vec2D, VecAxis},
+};
 use bitvec::{
     bitbox,
     order::Lsb0,
     prelude::{BitBox, BitRef},
 };
-use fixed::types::{I32F32, I96F32};
+use fixed::types::I32F32;
 use strum_macros::Display;
 
 #[derive(Debug)]

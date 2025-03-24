@@ -1,8 +1,11 @@
-use crate::flight_control::flight_computer::FlightComputer;
-use crate::flight_control::objective::known_img_objective::KnownImgObjective;
-use crate::flight_control::task::base_task::Task;
+use crate::flight_control::task::TaskController;
+use crate::flight_control::{
+    beacon_controller::BeaconControllerState, flight_computer::FlightComputer,
+    objective::known_img_objective::KnownImgObjective, task::base_task::Task,
+};
 use crate::mode_control::{
-    mode::global_mode::GlobalMode,
+    base_mode::BaseMode,
+    mode::{global_mode::GlobalMode, in_orbit_mode::InOrbitMode, zo_prep_mode::ZOPrepMode},
     mode_context::ModeContext,
     signal::{ExecExitSignal, OpExitSignal, WaitExitSignal},
 };
@@ -17,6 +20,30 @@ impl OrbitReturnMode {
     const MODE_NAME: &'static str = "OrbitReturnMode";
 
     pub fn new() -> Self { Self {} }
+
+    async fn get_next_mode(context: &Arc<ModeContext>) -> Box<dyn GlobalMode> {
+        let next_base_mode = Self::get_next_base_mode(context).await;
+        let mut k_buffer = context.k_buffer().lock().await;
+        k_buffer.retain(|obj| Utc::now() < obj.end());
+        while let Some(obj) = k_buffer.pop() {
+            let res = ZOPrepMode::from_obj(context, obj, next_base_mode).await;
+            if let Some(prep_mode) = res {
+                return Box::new(prep_mode);
+            }
+        }
+        Box::new(InOrbitMode::new(next_base_mode))
+    }
+
+    async fn get_next_base_mode(context: &Arc<ModeContext>) -> BaseMode {
+        let beacon_cont_state = {
+            let mut bo_mon = context.bo_mon().write().await;
+            *bo_mon.borrow_and_update()
+        };
+        match beacon_cont_state {
+            BeaconControllerState::ActiveBeacons => BaseMode::BeaconObjectiveScanningMode,
+            BeaconControllerState::NoActiveBeacons => BaseMode::MappingMode,
+        }
+    }
 }
 
 #[async_trait]
@@ -41,23 +68,20 @@ impl GlobalMode for OrbitReturnMode {
                 context.o_ch_lock().write().await.finish_entry(pos, new_i);
                 OpExitSignal::ReInit(self.exit_mode(context).await)
             },
-        _ = safe_mon.notified() => self.safe_handler(context).await
+        () = safe_mon.notified() => self.safe_handler(context).await
         }
     }
 
-    async fn exec_task_wait(
-        &self,
-        context: Arc<ModeContext>,
-        due: DateTime<Utc>,
-    ) -> WaitExitSignal {
+    async fn exec_task_wait(&self, _: Arc<ModeContext>, _: DateTime<Utc>) -> WaitExitSignal {
         unimplemented!()
     }
 
-    async fn exec_task(&self, context: Arc<ModeContext>, task: Task) -> ExecExitSignal {
-        unimplemented!()
-    }
+    async fn exec_task(&self, _: Arc<ModeContext>, _: Task) -> ExecExitSignal { unimplemented!() }
 
-    async fn safe_handler(&self, context: Arc<ModeContext>) -> OpExitSignal { todo!() }
+    async fn safe_handler(&self, context: Arc<ModeContext>) -> OpExitSignal {
+        FlightComputer::escape_safe(context.k().f_cont(), false).await;
+        OpExitSignal::ReInit(Box::new(OrbitReturnMode::new()))
+    }
 
     async fn zo_handler(
         &self,
@@ -72,5 +96,11 @@ impl GlobalMode for OrbitReturnMode {
 
     fn resched_event_handler(&self) -> Option<OpExitSignal> { unimplemented!() }
 
-    async fn exit_mode(&self, c: Arc<ModeContext>) -> Box<dyn GlobalMode> { todo!() }
+    async fn exit_mode(&self, c: Arc<ModeContext>) -> Box<dyn GlobalMode> {
+        if c.k().f_cont().read().await.current_battery() < TaskController::MIN_BATTERY_THRESHOLD {
+            FlightComputer::charge_to_wait(&c.k().f_cont(), TaskController::MIN_BATTERY_THRESHOLD)
+                .await;
+        }
+        Self::get_next_mode(&c).await
+    }
 }
