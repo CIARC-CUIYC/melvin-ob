@@ -18,7 +18,7 @@ use crate::flight_control::objective::known_img_objective::KnownImgObjective;
 use crate::mode_control::signal::{BaseWaitExitSignal, OptOpExitSignal};
 
 #[async_trait]
-pub trait GlobalMode: Sync {
+pub trait GlobalMode: Sync + Send {
     fn safe_mode_rationale(&self) -> &'static str { "SAFE mode Event!" }
     fn new_zo_rationale(&self) -> &'static str { "newly discovered ZO!" }
     fn new_bo_rationale(&self) -> &'static str { "newly discovered BO!" }
@@ -165,6 +165,19 @@ pub trait OrbitalMode: GlobalMode {
                 }
             }
             
+        }
+    }
+    
+    async fn log_bo_event(&self, context: &Arc<ModeContext>, base: BaseMode) {
+        match base {
+            BaseMode::BeaconObjectiveScanningMode => context.o_ch_lock().write().await.finish(
+                context.k().f_cont().read().await.current_pos(),
+                self.new_bo_rationale(),
+            ),
+            BaseMode::MappingMode => context.o_ch_lock().write().await.finish(
+                context.k().f_cont().read().await.current_pos(),
+                self.bo_done_rationale(),
+            ),
         }
     }
 }

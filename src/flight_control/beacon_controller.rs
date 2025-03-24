@@ -17,13 +17,6 @@ use tokio::sync::{Mutex, RwLock, watch};
 use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
 
-pub struct ScanBeaconParams {
-    pub due_t: Option<DateTime<Utc>>,
-    pub context: Arc<ModeContext>,
-    pub c_tok: CancellationToken,
-    pub fut: Pin<Box<dyn Future<Output = ()> + Send>>,
-}
-
 pub struct BeaconController {
     active_bo: RwLock<HashMap<usize, BeaconObjective>>,
     done_bo: RwLock<HashMap<usize, BeaconObjectiveDone>>,
@@ -44,8 +37,6 @@ static BO_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 impl BeaconController {
     const TIME_TO_NEXT_PASSIVE_CHECK: Duration = Duration::from_secs(15);
     const BEACON_OBJ_RETURN_MIN_DELAY: TimeDelta = TimeDelta::minutes(3);
-    const BEACON_OBJ_RETURN_WARNING: TimeDelta = TimeDelta::minutes(10);
-    const THRESHOLD_GUESSES_TO_DONE: usize = 15;
     const BO_MSG_COMM_PROLONG: TimeDelta = TimeDelta::seconds(60);
 
     pub fn new(

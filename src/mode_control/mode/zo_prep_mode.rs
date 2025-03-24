@@ -124,6 +124,7 @@ impl ZOPrepMode {
             to_dt + TimeDelta::seconds(TaskController::IN_COMMS_SCHED_SECS as i64) + from_dt
         };
         if worst_case_first_comms_end + TimeDelta::seconds(5) > burn_start {
+            log!("BeaconObjectiveScanningMode no longer feasible, switching to MappingMode");
             BaseMode::MappingMode
         } else {
             BaseMode::BeaconObjectiveScanningMode
@@ -227,6 +228,7 @@ impl GlobalMode for ZOPrepMode {
         if discriminant(&self.base) == discriminant(&new_base) {
             None
         } else {
+            self.log_bo_event(context, new_base).await;
             Some(OpExitSignal::ReInit(Box::new(self.new_base(new_base))))
         }
     }

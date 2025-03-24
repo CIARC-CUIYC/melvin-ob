@@ -13,6 +13,7 @@ use crate::mode_control::{
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use std::sync::Arc;
+use crate::obj;
 
 #[derive(Clone)]
 pub struct OrbitReturnMode {}
@@ -24,7 +25,11 @@ impl OrbitReturnMode {
 
     async fn get_next_mode(context: &Arc<ModeContext>) -> Box<dyn GlobalMode> {
         let next_base_mode = Self::get_next_base_mode(context).await;
+        let mut obj_mon = context.zo_mon().write().await;
         let mut k_buffer = context.k_buffer().lock().await;
+        while let Ok(next_obj) = obj_mon.try_recv() {
+            k_buffer.push(next_obj);
+        };        
         k_buffer.retain(|obj| Utc::now() < obj.end());
         while let Some(obj) = k_buffer.pop() {
             let res = ZOPrepMode::from_obj(context, obj, next_base_mode).await;
@@ -85,6 +90,7 @@ impl GlobalMode for OrbitReturnMode {
     }
 
     async fn zo_handler(&self, c: &Arc<ModeContext>, obj: KnownImgObjective) -> OptOpExitSignal {
+        obj!("Found new Zoned Objective with ID: {} in mode {}.Stashing!", obj.id(), Self::MODE_NAME);
         c.k_buffer().lock().await.push(obj);
         None
     }

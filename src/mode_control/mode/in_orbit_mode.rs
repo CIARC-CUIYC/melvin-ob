@@ -90,7 +90,6 @@ impl GlobalMode for InOrbitMode {
 
     async fn zo_handler(&self, c: &Arc<ModeContext>, obj: KnownImgObjective) -> OptOpExitSignal {
         obj!("Found new Zoned Objective {}!", obj.id());
-
         c.o_ch_lock().write().await.finish(
             c.k().f_cont().read().await.current_pos(),
             self.new_zo_rationale(),
@@ -100,8 +99,9 @@ impl GlobalMode for InOrbitMode {
             .map(|mode| OpExitSignal::ReInit(Box::new(mode)))
     }
 
-    async fn bo_event_handler(&self, _: &Arc<ModeContext>) -> OptOpExitSignal {
+    async fn bo_event_handler(&self, context: &Arc<ModeContext>) -> OptOpExitSignal {
         let base = self.base.bo_event();
+        self.log_bo_event(context, base).await;
         Some(OpExitSignal::ReInit(Box::new(Self { base })))
     }
 

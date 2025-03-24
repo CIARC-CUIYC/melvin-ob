@@ -4,7 +4,6 @@ use fixed::types::I32F32;
 pub struct CycleState {
     last_mark: (isize, DateTime<Utc>),
     last_pic: Option<DateTime<Utc>>,
-    last_image_flag: bool,
     done_ranges: Vec<(isize, isize)>,
     overlap: TimeDelta,
 }
@@ -22,7 +21,6 @@ impl CycleState {
                 Utc::now() - overlap,
             ),
             last_pic: None,
-            last_image_flag: false,
             done_ranges: Vec::new(),
             overlap,
         }

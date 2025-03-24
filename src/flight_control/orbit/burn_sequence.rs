@@ -157,9 +157,6 @@ pub struct BurnSequenceEvaluator {
     dynamic_fuel_w: I32F32,
 }
 
-static MAX_DIST: LazyLock<I96F32> =
-    LazyLock::new(|| (Vec2D::<I96F32>::map_size() * I96F32::from_num(2)).abs());
-
 impl BurnSequenceEvaluator {
     /// A constant representing a 90-degree angle, in fixed-point format.
     const NINETY_DEG: I32F32 = I32F32::lit("90.0");

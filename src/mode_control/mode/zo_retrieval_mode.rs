@@ -62,7 +62,6 @@ impl GlobalMode for ZORetrievalMode {
         due: DateTime<Utc>,
     ) -> WaitExitSignal {
         let safe_mon = context.super_v().safe_mon();
-        let mut obj_mon = context.zo_mon().write().await;
         let dt = (due - Utc::now()).to_std().unwrap_or(DT_0_STD);
         tokio::select! {
             () = tokio::time::sleep(dt) => {
@@ -70,10 +69,6 @@ impl GlobalMode for ZORetrievalMode {
             },
             () = safe_mon.notified() => {
                 WaitExitSignal::SafeEvent
-            },
-            msg =  obj_mon.recv() => {
-                let obj = msg.expect("[FATAL] Objective monitor hung up!");
-                WaitExitSignal::NewZOEvent(obj)
             }
         }
     }
@@ -138,9 +133,8 @@ impl GlobalMode for ZORetrievalMode {
         OpExitSignal::ReInit(Box::new(OrbitReturnMode::new()))
     }
 
-    async fn zo_handler(&self, c: &Arc<ModeContext>, task: KnownImgObjective) -> OptOpExitSignal {
-        c.k_buffer().lock().await.push(task);
-        None
+    async fn zo_handler(&self, _: &Arc<ModeContext>, _: KnownImgObjective) -> OptOpExitSignal {
+        unimplemented!()
     }
 
     async fn bo_event_handler(&self, _: &Arc<ModeContext>) -> OptOpExitSignal {

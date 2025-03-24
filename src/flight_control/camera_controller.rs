@@ -72,15 +72,7 @@ impl CameraController {
             base_path,
         }
     }
-
-    /// Clones the coverage bitmap of the full-size map image.
-    ///
-    /// # Returns
-    ///
-    /// A copy of the coverage bitmap as a `BitBox`.
-    pub async fn clone_coverage_bitmap(&self) -> BitBox {
-        self.fullsize_map_image.read().await.coverage.data.clone()
-    }
+    
 
     /// Scores the offset by comparing the decoded image against the map base image.
     ///
