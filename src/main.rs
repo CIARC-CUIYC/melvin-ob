@@ -34,6 +34,7 @@ const DETUMBLE_TOL: TimeDelta = DT_MIN;
 const STATIC_ORBIT_VEL: (I32F32, I32F32) = (I32F32::lit("6.40"), I32F32::lit("7.40"));
 const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 
+// DEBUG RUN
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
     let base_url_var = env::var("DRS_BASE_URL");
