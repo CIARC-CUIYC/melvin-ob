@@ -98,15 +98,15 @@ impl FlightComputer {
     /// Constant transition to SAFE sleep time for all states
     const TO_SAFE_SLEEP: Duration = Duration::from_secs(60);
     /// Maximum absolute vel change for orbit return
-    const MAX_OR_VEL_CHANGE_ABS: I32F32 = I32F32::lit("1.0");
+    const MAX_OR_VEL_CHANGE_ABS: I32F32 = I32F32::lit("1.5");
     /// Deviation at which `MAX_VEL_CHANGE_ABS` should occur
     const MAX_OR_VEL_CHANGE_DEV: I32F32 = I32F32::lit("160");
     /// Maximum acceleration time needed for orbit return maneuvers (this is 2*50s, as we
     /// only change velocity by 1.0, and 10s for minor maneuvers)
-    const MAX_OR_ACQ_ACC_TIME: I32F32 = I32F32::lit("110.0");
+    const MAX_OR_ACQ_ACC_TIME: I32F32 = I32F32::lit("160");
     /// Maximum time spend in acquisition between burns for orbit returns (this is the distance
     /// travelled during acceleration/brake (2*25) which leaves a maximum of 110 at max speed according to `MAX_OR_VEL_CHANGE_DEV`)
-    const MAX_OR_ACQ_TIME: I32F32 = I32F32::lit("110.0");
+    const MAX_OR_ACQ_TIME: I32F32 = I32F32::lit("156");
     /// Minimum battery used in decision-making for after safe transition
     const AFTER_SAFE_MIN_BATT: I32F32 = I32F32::lit("50");
     const EXIT_SAFE_MIN_BATT: I32F32 = I32F32::lit("10.0");
@@ -476,7 +476,7 @@ impl FlightComputer {
     }
 
     #[allow(clippy::cast_possible_wrap)]
-    pub async fn get_to_comms_dt_est(self_lock: Arc<RwLock<Self>>) -> DateTime<Utc> {       
+    pub async fn get_to_comms_dt_est(self_lock: Arc<RwLock<Self>>) -> DateTime<Utc> {
         let t_time = FlightState::Charge.td_dt_to(FlightState::Comms);
         if self_lock.read().await.state() == FlightState::Comms {
             let batt_diff =
@@ -529,7 +529,7 @@ impl FlightComputer {
         let max_batt = self_lock.read().await.max_battery;
         Self::charge_to_wait(self_lock, max_batt).await;
     }
-    
+
     pub async fn charge_to_wait(self_lock: &Arc<RwLock<Self>>, target_batt: I32F32) {
         let state = self_lock.read().await.state();
         if state == FlightState::Safe {
@@ -698,7 +698,7 @@ impl FlightComputer {
         }
         o_unlocked.get_i(pos).unwrap()
     }
-    
+
     pub fn max_or_maneuver_charge() -> I32F32 {
         let acq_db = FlightState::Acquisition.get_charge_rate();
         let acq_acc_db = acq_db + FlightState::ACQ_ACC_ADDITION;

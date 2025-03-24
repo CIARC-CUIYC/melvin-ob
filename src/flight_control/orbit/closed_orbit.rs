@@ -11,7 +11,7 @@ use bitvec::{
 use fixed::types::I32F32;
 use strum_macros::Display;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(super) struct OrbitSegment {
     start: Vec2D<I32F32>,
     end: Vec2D<I32F32>,

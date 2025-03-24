@@ -1,11 +1,11 @@
+use crate::STATIC_ORBIT_VEL;
+use crate::flight_control::camera_state::CameraAngle;
+use crate::flight_control::common::vec2d::{MapSize, Vec2D};
+use crate::flight_control::orbit::{ClosedOrbit, OrbitBase};
 use fixed::types::I32F32;
+use itertools::Itertools;
 use num::Zero;
 use rand::Rng;
-use crate::flight_control::camera_state::CameraAngle;
-use crate::flight_control::common::vec2d::Vec2D;
-use crate::flight_control::orbit::{ClosedOrbit, OrbitBase};
-use crate::STATIC_ORBIT_VEL;
-use itertools::Itertools;
 
 #[test]
 fn test_orbit_segments_and_closest() {
@@ -14,22 +14,30 @@ fn test_orbit_segments_and_closest() {
     println!("Orbit segments: {segments:?}");
     let min_hor_dist = I32F32::MAX;
     let min_vert_dist = I32F32::MAX;
-    let min_x = segments.iter().combinations(2).map(|pair| {
-        let mut dist = (pair[0].start().y() - pair[1].start().y()).abs();
-        if dist < I32F32::from_num(50) {
-            dist = I32F32::MAX;
-        }
-        // explicitly return dist and both segments
-        (dist, pair[0], pair[1])
-
-    }).min_by_key(|pair| pair.0).unwrap();
-    println!("min_x_dist: {}, with p1: {} and p2: {}", min_x.0, min_x.1.start(), min_x.2.start());
-    println!("ends aswell: p1 {}, p2 {}", min_x.1.end(), min_x.2.end());
+    let mut segments_clone = (*segments).clone();
+    segments_clone.retain(|seg| {
+        seg.start().x() >= I32F32::zero() && seg.start().x() <= Vec2D::<I32F32>::map_size().x()
+    });
+    let min_x_vec = segments_clone
+        .iter()
+        .combinations(2)
+        .map(|pair| {
+            let dist = (pair[0].start().x() - pair[1].start().x()).abs().round();
+            // explicitly return dist and both segments
+            (dist, pair[0], pair[1])
+        })
+        .sorted_by_key(|pair| pair.0)
+        .collect::<Vec<_>>();
+    let only_dists = min_x_vec.iter().map(|pair| pair.0).collect::<Vec<_>>();
+    println!("min_x_dists: {only_dists:?}");
     let rand_pos = get_rand_pos();
     let closest_dist = closed_orbit.get_closest_deviation(rand_pos);
-    let prop_on_orbit_pos = (rand_pos + Vec2D::from_axis_and_val(closest_dist.0, closest_dist.1)).wrap_around_map();
+    let prop_on_orbit_pos =
+        (rand_pos + Vec2D::from_axis_and_val(closest_dist.0, closest_dist.1)).wrap_around_map();
     assert!(closed_orbit.will_visit(prop_on_orbit_pos));
-    println!("Randomized Position: {rand_pos}, Closest Deviation: {closest_dist:?}, Prop on orbit: {prop_on_orbit_pos}");
+    println!(
+        "Randomized Position: {rand_pos}, Closest Deviation: {closest_dist:?}, Prop on orbit: {prop_on_orbit_pos}"
+    );
 }
 
 #[test]
@@ -50,7 +58,6 @@ fn init_orbit() -> ClosedOrbit {
     ClosedOrbit::new(o_b, CameraAngle::Narrow).unwrap()
 }
 
-
 fn get_rand_orbit_pos(orbit: &ClosedOrbit) -> (Vec2D<I32F32>, usize) {
     let mut rng = rand::rng();
     let rand_step_count = rng.random_range(0..orbit.period().0.to_num::<usize>());
@@ -65,7 +72,10 @@ fn get_rand_orbit_pos(orbit: &ClosedOrbit) -> (Vec2D<I32F32>, usize) {
     } else {
         Vec2D::new(I32F32::zero(), rand_deviation)
     };
-    ((rand_step_pos + rand_sub_step + rand_dev).wrap_around_map(), rand_step_count)
+    (
+        (rand_step_pos + rand_sub_step + rand_dev).wrap_around_map(),
+        rand_step_count,
+    )
 }
 
 fn get_rand_pos() -> Vec2D<I32F32> {
@@ -74,5 +84,5 @@ fn get_rand_pos() -> Vec2D<I32F32> {
         I32F32::from_num(rng.random_range(0..21600)),
         I32F32::from_num(rng.random_range(0..10800)),
     )
-        .round()
+    .round()
 }
