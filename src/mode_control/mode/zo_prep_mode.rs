@@ -57,6 +57,7 @@ impl ZOPrepMode {
         zo: KnownImgObjective,
         curr_base: BaseMode,
     ) -> Option<Self> {
+        log!("Trying ZOPrepMode for Zoned Objective: {}", zo.id());
         let due = zo.end();
         let (current_vel, fuel_left) = {
             let f_cont_lock = context.k().f_cont();

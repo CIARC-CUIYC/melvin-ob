@@ -614,7 +614,7 @@ impl FlightComputer {
         let comp_new_vel = Self::round_vel_expand(new_vel);
         let cond = (
             |cont: &FlightComputer| Self::round_vel_expand(cont.current_vel()) == comp_new_vel,
-            format!("Scaled Vel equals {new_vel}"),
+            format!("Vel (Scaled) equals {new_vel}"),
         );
         Self::wait_for_condition(&self_lock, cond, Self::DEF_COND_TO, Self::DEF_COND_PI, mute)
             .await;
