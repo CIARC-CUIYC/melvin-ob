@@ -103,6 +103,7 @@ impl ConsoleMessenger {
                                         submit_objective.offset_y,
                                     ),
                                     Vec2D::new(submit_objective.width, submit_objective.height),
+                                    None
                                 )
                                 .await;
                             info!("Submitted objective '{objective_id}' with result: {result:?}");
@@ -122,7 +123,7 @@ impl ConsoleMessenger {
                         let endpoint_local_clone = endpoint_local.clone();
                         tokio::spawn(async move {
                             let mut success =
-                                c_cont_lock_local_clone.create_full_snapshot().await.is_ok();
+                                c_cont_lock_local_clone.export_full_snapshot().await.is_ok();
                             if success {
                                 success =
                                     c_cont_lock_local_clone.upload_daily_map_png().await.is_ok();

@@ -1,6 +1,8 @@
-use super::imaging::cycle_state::CycleState;
-use super::imaging::map_image::{
-    EncodedImageExtract, FullsizeMapImage, MapImage, OffsetZOImage, ThumbnailMapImage,
+use super::imaging::{
+    cycle_state::CycleState,
+    map_image::{
+        EncodedImageExtract, FullsizeMapImage, MapImage, ThumbnailMapImage,
+    },
 };
 use crate::console_communication::ConsoleMessenger;
 use crate::flight_control::{
@@ -17,16 +19,15 @@ use crate::http_handler::{
 };
 use crate::mode_control::base_mode::PeriodicImagingEndSignal;
 use crate::mode_control::base_mode::PeriodicImagingEndSignal::{KillLastImage, KillNow};
-use crate::{DT_0_STD, error, info, log, obj};
-use bitvec::boxed::BitBox;
+use crate::{DT_0_STD, error, info, log, obj, fatal};
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use futures::StreamExt;
 use image::{GenericImageView, ImageReader, Pixel, RgbImage, imageops::Lanczos3};
-use std::{
-    path::Path,
-    {io::Cursor, sync::Arc},
-};
+use std::{fs, path::Path, {io::Cursor, sync::Arc}};
+use std::path::PathBuf;
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::{Mutex, RwLock, oneshot};
 
 /// A struct for managing camera-related operations and map snapshots.
@@ -50,6 +51,8 @@ const SNAPSHOT_THUMBNAIL_PATH: &str = "snapshot_thumb.png";
 
 impl CameraController {
     const LAST_IMG_END_DELAY: TimeDelta = TimeDelta::milliseconds(500);
+    const ZO_IMG_FOLDER: &'static str = "zo_img/";
+
     /// Initializes the `CameraController` with the given base path and HTTP client.
     ///
     /// # Arguments
@@ -65,6 +68,9 @@ impl CameraController {
             FullsizeMapImage::open(Path::new(&base_path).join(MAP_BUFFER_PATH));
         let thumbnail_map_image =
             ThumbnailMapImage::from_snapshot(Path::new(&base_path).join(SNAPSHOT_THUMBNAIL_PATH));
+        if let Err(e) = fs::create_dir_all(Self::ZO_IMG_FOLDER) {
+            fatal!("Failed to create objective image directory: {e}!");
+        }
         Self {
             fullsize_map_image: RwLock::new(fullsize_map_image),
             thumbnail_map_image: RwLock::new(thumbnail_map_image),
@@ -72,7 +78,6 @@ impl CameraController {
             base_path,
         }
     }
-    
 
     /// Scores the offset by comparing the decoded image against the map base image.
     ///
@@ -186,23 +191,6 @@ impl CameraController {
         Ok((pos, tot_offset_u32))
     }
 
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
-    pub async fn shoot_image_to_zo_buffer(
-        &self,
-        f_cont_locked: Arc<RwLock<FlightComputer>>,
-        angle: CameraAngle,
-        buffer: &mut OffsetZOImage,
-    ) -> Result<Vec2D<I32F32>, Box<dyn std::error::Error + Send + Sync>> {
-        let (pos, _, decoded_image) = self.get_image(f_cont_locked, angle).await?;
-        let angle_const = I32F32::from_num(angle.get_square_side_length() / 2);
-        let bottom_left = (pos - Vec2D::new(angle_const, angle_const)).wrap_around_map();
-        if let Some((img, abs_offset)) = buffer.cut_image(decoded_image, bottom_left) {
-            buffer.update_area(abs_offset, img);
-            return Ok(pos);
-        };
-        Ok(pos)
-    }
-
     /// Updates the thumbnail area of the map based on the full-size map data.
     ///
     /// # Arguments
@@ -296,14 +284,29 @@ impl CameraController {
         objective_id: usize,
         offset: Vec2D<u32>,
         size: Vec2D<u32>,
+        export_path: Option<PathBuf>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let map_image = self.fullsize_map_image.read().await;
         let encoded_image = map_image.export_area_as_png(offset, size)?;
-
+        if let Some(img_path) = export_path {
+            let mut img_file = File::create(img_path).await?;
+            img_file.write_all(encoded_image.data.as_slice()).await?;
+        }
         ObjectiveImageRequest::new(objective_id, encoded_image.data)
             .send_request(&self.request_client)
             .await?;
         Ok(())
+    }
+
+    pub(crate) fn generate_zo_img_path(id: usize) -> PathBuf {
+        let dir = Path::new(Self::ZO_IMG_FOLDER);
+        let mut path = dir.join(format!("zo_{id}.png"));
+        let mut counter = 0;
+        while path.exists() {
+            path = dir.join(format!("zo_{id}_{counter}.png",));
+            counter += 1;
+        }
+        path
     }
 
     /// Uploads the daily map snapshot as a PNG to the server.
@@ -334,7 +337,7 @@ impl CameraController {
     /// # Returns
     ///
     /// A result indicating the success or failure of the operation.
-    pub(crate) async fn create_full_snapshot(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub(crate) async fn export_full_snapshot(&self) -> Result<(), Box<dyn std::error::Error>> {
         let start_time = Utc::now();
         self.fullsize_map_image
             .read()
@@ -471,18 +474,16 @@ impl CameraController {
     pub async fn execute_zo_single_target_cycle(
         self: Arc<Self>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
-        buffer: &mut OffsetZOImage,
         deadline: DateTime<Utc>,
     ) {
         obj!("Starting acquisition cycle for objective!");
         let lens = f_cont_lock.read().await.current_angle();
         let mut pics = 0;
-
         loop {
             let next_img_due = Utc::now() + TimeDelta::seconds(1);
             let img_init_timestamp = Utc::now();
-            match self.shoot_image_to_zo_buffer(Arc::clone(&f_cont_lock), lens, buffer).await {
-                Ok(pos) => {
+            match self.shoot_image_to_buffer(Arc::clone(&f_cont_lock), lens).await {
+                Ok((pos, _)) => {
                     pics += 1;
                     let s = (Utc::now() - img_init_timestamp).num_seconds();
                     obj!("Took {pics:02}. picture. Processed for {s}s. Position was {pos}");

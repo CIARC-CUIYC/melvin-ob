@@ -2,19 +2,15 @@ use crate::flight_control::flight_computer::FlightComputer;
 use crate::flight_control::objective::beacon_objective::{BeaconMeas, BeaconObjective};
 use crate::flight_control::objective::beacon_objective_done::BeaconObjectiveDone;
 use crate::http_handler::http_client::HTTPClient;
-use crate::mode_control::mode_context::ModeContext;
 use crate::{event, obj, warn};
 use chrono::{DateTime, TimeDelta, Utc};
 use regex::Regex;
 use std::collections::HashMap;
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::{Mutex, RwLock, watch};
 use tokio::time::interval;
-use tokio_util::sync::CancellationToken;
 
 pub struct BeaconController {
     active_bo: RwLock<HashMap<usize, BeaconObjective>>,
@@ -113,11 +109,11 @@ impl BeaconController {
 
     async fn add_beacon(&self, obj: BeaconObjective) {
         obj!(
-            "Received new Beacon Objective: {}, ID: {}, Available Timeframe {} - {}",
-            obj.name(),
+            "The Beacon {}-'{}' is lit! Gondor calls for Aid! Available Timeframe {} - {}.",
             obj.id(),
-            obj.start(),
-            obj.end()
+            obj.name(),
+            obj.start().format("%d %H:%M:%S").to_string(),
+            obj.end().format("%d %H:%M:%S").to_string()
         );
         let empty = self.active_bo.read().await.is_empty();
         self.active_bo.write().await.insert(obj.id(), obj);
@@ -170,7 +166,7 @@ impl BeaconController {
 
     async fn handle_beacon_submission(&self, handler: &Arc<HTTPClient>) {
         let mut done_beacons = self.done_bo.write().await.clone();
-        for (id, beacon) in &mut done_beacons {
+        for beacon in done_beacons.values_mut() {
             if !beacon.submitted() {
                 if beacon.guesses().is_empty() {
                     beacon.randomize_no_meas_guesses(Arc::clone(handler)).await;

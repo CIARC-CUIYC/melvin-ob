@@ -39,13 +39,25 @@ impl KnownImgObjective {
     pub fn width(&self) -> i32 { self.zone[2] - self.zone[0] }
     pub fn height(&self) -> i32 { self.zone[3] - self.zone[1] }
 
-    pub fn get_imaging_points(&self) -> Vec<Vec2D<I32F32>> {
-        // TODO: this has to be adapted for multiple imaging points later
+    pub fn get_single_image_point(&self) -> Vec2D<I32F32> {
         let x_size = self.zone[2] - self.zone[0];
         let y_size = self.zone[3] - self.zone[1];
         let pos = Vec2D::new(self.zone[0] + x_size / 2, self.zone[1] + y_size / 2);
-        let pos_fixed = Vec2D::new(I32F32::from(pos.x()), I32F32::from(pos.y())).wrap_around_map();
-        vec![pos_fixed]
+        Vec2D::new(I32F32::from(pos.x()), I32F32::from(pos.y())).wrap_around_map()
+        
+    }
+    
+    pub fn get_corners(&self) -> [(Vec2D<I32F32>, Vec2D<I32F32>); 4] {
+        let first = Vec2D::new(I32F32::from(self.zone[0]), I32F32::from(self.zone[1]));
+        let second = Vec2D::new(I32F32::from(self.zone[0]), I32F32::from(self.zone[3]));
+        let third = Vec2D::new(I32F32::from(self.zone[2]), I32F32::from(self.zone[1]));
+        let fourth = Vec2D::new(I32F32::from(self.zone[2]), I32F32::from(self.zone[3]));
+        [
+            (first, first.unwrapped_to(&fourth)),
+            (second, second.unwrapped_to(&third)),
+            (third, third.unwrapped_to(&second)),
+            (fourth, fourth.unwrapped_to(&first)),
+        ]
     }
 
     #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]

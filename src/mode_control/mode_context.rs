@@ -25,12 +25,12 @@ impl ModeContext {
         bo_mon_un: watch::Receiver<BeaconControllerState>,
         super_v: Arc<Supervisor>,
         beac_cont: Arc<BeaconController>,
-    ) -> Self {
+    ) -> Arc<Self> {
         let k = Arc::new(key);
         let o_ch = Arc::new(RwLock::new(o_char));
         let zo_mon = RwLock::new(zo_mon_un);
         let bo_mon = RwLock::new(bo_mon_un);
-        Self {
+        Arc::new(Self {
             k,
             o_ch,
             super_v,
@@ -38,7 +38,7 @@ impl ModeContext {
             bo_mon,
             k_buffer: Mutex::new(BinaryHeap::new()),
             beac_cont,
-        }
+        })
     }
 
     pub fn k(&self) -> &Arc<KeychainWithOrbit> { &self.k }

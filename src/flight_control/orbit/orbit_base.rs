@@ -10,6 +10,7 @@ use chrono::{DateTime, Utc};
 use fixed::types::I32F32;
 
 /// Struct representing the base properties of an orbit.
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct OrbitBase {
     /// The timestamp of the orbit initialization.
     init_timestamp: DateTime<Utc>,

@@ -2,6 +2,9 @@ use fixed::types::I32F32;
 use std::{collections::HashMap, sync::LazyLock};
 use strum_macros::{Display, EnumIter};
 
+#[cfg(test)]
+use rand::prelude::Rng;
+
 /// Represents different camera angles supported by the system.
 ///
 /// # Variants
@@ -27,6 +30,12 @@ impl CameraAngle {
     pub fn get_square_side_length(self) -> u16 { CAMERA_SCALE_LOOKUP[&self] }
 
     pub fn get_max_speed(self) -> I32F32 { CAMERA_MAX_SPEED_LOOKUP[&self] }
+    
+    #[cfg(test)]
+    pub fn random<R: Rng + ?Sized>(rng: &mut R) -> Self {
+        let variants = [CameraAngle::Narrow, CameraAngle::Normal, CameraAngle::Wide];
+        variants[rng.random_range(0..variants.len())]
+    }
 }
 
 impl From<&str> for CameraAngle {

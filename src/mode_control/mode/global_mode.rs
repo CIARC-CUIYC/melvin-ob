@@ -10,7 +10,6 @@ use crate::{DT_0_STD, fatal, info, log, warn};
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use std::mem::discriminant;
-use std::ops::Deref;
 use std::{future::Future, pin::Pin, sync::Arc};
 use tokio::sync::watch::Receiver;
 use tokio::sync::RwLock;
