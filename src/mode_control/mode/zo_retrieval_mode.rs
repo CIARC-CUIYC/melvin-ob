@@ -2,7 +2,6 @@ use crate::flight_control::{
     common::vec2d::Vec2D,
     flight_computer::FlightComputer,
     flight_state::{FlightState, TRANS_DEL},
-    imaging::map_image::OffsetZOImage,
     objective::known_img_objective::KnownImgObjective,
     task::base_task::{BaseTask, Task},
 };
@@ -11,12 +10,13 @@ use crate::mode_control::{
     mode_context::ModeContext,
     signal::{ExecExitSignal, OpExitSignal, OptOpExitSignal, WaitExitSignal},
 };
-use crate::{DT_0_STD, error, log, warn, fatal};
+use crate::{DT_0_STD, error, fatal, log, warn};
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use std::{pin::Pin, sync::Arc};
 use tokio::sync::Mutex;
+use crate::flight_control::camera_controller::CameraController;
 
 #[derive(Clone)]
 pub struct ZORetrievalMode {
@@ -42,7 +42,7 @@ impl ZORetrievalMode {
         context: &Arc<ModeContext>,
     ) -> (
         DateTime<Utc>,
-        Pin<Box<dyn Future<Output=()> + Send + Sync>>,
+        Pin<Box<dyn Future<Output = ()> + Send + Sync>>,
     ) {
         if let Some(add_target) = &self.add_target {
             let current_vel = context.k().f_cont().read().await.current_vel();
@@ -61,17 +61,13 @@ impl ZORetrievalMode {
     }
 
     async fn exec_img_task(&self, context: Arc<ModeContext>) {
-        let bottom_left = Vec2D::new(
-            I32F32::from_num(self.target.zone()[0]),
-            I32F32::from_num(self.target.zone()[1]),
-        );
-        let dimensions = Vec2D::new(self.target.width(), self.target.height()).to_unsigned();
-        let mut buffer = OffsetZOImage::new(bottom_left, dimensions);
+        let offset = Vec2D::new(self.target.zone()[0], self.target.zone()[1]).to_unsigned();
+        let dim = Vec2D::new(self.target.width(), self.target.height()).to_unsigned();
 
         let c_cont = context.k().c_cont();
         let (deadline, add_fut) = self.get_img_fut(&context).await;
         let f_cont = context.k().f_cont();
-        let img_fut = c_cont.execute_zo_single_target_cycle(f_cont, &mut buffer, deadline);
+        let img_fut = c_cont.execute_zo_single_target_cycle(f_cont, deadline);
         let add_fut_join = tokio::spawn(async move {
             add_fut.await;
         });
@@ -83,6 +79,14 @@ impl ZORetrievalMode {
             },
             _ = &mut add_fut_join => {}
         }
+        let c_cont = context.k().c_cont();
+        let id = self.target.id();
+        let img_path = Some(CameraController::generate_zo_img_path(id));
+        c_cont.export_and_upload_objective_png(id, offset, dim, img_path).await.unwrap_or_else(
+            |e| {
+                error!("Error exporting and uploading objective image: {}", e);
+            },
+        );
     }
 }
 
@@ -147,13 +151,18 @@ impl GlobalMode for ZORetrievalMode {
             BaseTask::TakeImage(_) => self.exec_img_task(context).await,
             BaseTask::SwitchState(switch) => {
                 let f_cont = context.k().f_cont();
-                if matches!(switch.target_state(), FlightState::Acquisition | FlightState::Charge) {
+                if matches!(
+                    switch.target_state(),
+                    FlightState::Acquisition | FlightState::Charge
+                ) {
                     FlightComputer::set_state_wait(f_cont, switch.target_state()).await;
                 } else {
                     fatal!("Illegal target state!");
                 }
             }
-            BaseTask::ChangeVelocity(_) => error!("Change Velocity task is forbidden in ZORetrievalMode."),
+            BaseTask::ChangeVelocity(_) => {
+                error!("Change Velocity task is forbidden in ZORetrievalMode.")
+            }
         }
         ExecExitSignal::Continue
     }

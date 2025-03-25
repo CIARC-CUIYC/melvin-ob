@@ -103,6 +103,7 @@ impl ConsoleMessenger {
                                         submit_objective.offset_y,
                                     ),
                                     Vec2D::new(submit_objective.width, submit_objective.height),
+                                    None
                                 )
                                 .await;
                             info!("Submitted objective '{objective_id}' with result: {result:?}");
