@@ -109,7 +109,7 @@ impl BeaconController {
 
     async fn add_beacon(&self, obj: BeaconObjective) {
         obj!(
-            "The Beacon {}-{} is lit! Gondor calls for Aid!, Available Timeframe {} - {}",
+            "The Beacon {}-'{}' is lit! Gondor calls for Aid!, Available Timeframe {} - {}",
             obj.id(),
             obj.name(),
             obj.start(),

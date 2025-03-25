@@ -26,6 +26,8 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+use rand::prelude::ThreadRng;
+use rand::Rng;
 use tokio::sync::RwLock;
 
 pub type TurnsClockCClockTup = (
@@ -111,6 +113,7 @@ impl FlightComputer {
     const AFTER_SAFE_MIN_BATT: I32F32 = I32F32::lit("50");
     const EXIT_SAFE_MIN_BATT: I32F32 = I32F32::lit("10.0");
     const DEF_BRAKE_ABS: I32F32 = I32F32::lit("1.0");
+    const MAX_DETUMBLE_DT: TimeDelta = TimeDelta::seconds(20);
     /// Constant minimum delay between requests
     pub(crate) const STD_REQUEST_DELAY: Duration = Duration::from_millis(100);
     /// Legal Target States for State Change
@@ -776,7 +779,7 @@ impl FlightComputer {
             if ticker % 10 == 0 {
                 log!("Turning: DX: {dx}, direct DT: {dt:2}s");
             }
-            if dx.abs() < I32F32::lit("1.0") {
+            if dx.abs() < vel.abs() / 2 {
                 let turn_dt = (Utc::now() - start).num_seconds();
                 log!("Turning finished after {turn_dt}s with remaining DX: {dx} and dt {dt:2}s");
                 FlightComputer::set_vel_wait(Arc::clone(&self_lock), vel, true).await;
@@ -824,8 +827,8 @@ impl FlightComputer {
             dt = (to_target.abs() / vel.abs()).round();
             dx = (pos + vel * dt).to(&target).round_to_2();
             let per_dx = dx.abs() / dt;
-
-            let acc = dx.normalize() * Self::ACC_CONST.min(per_dx);
+            
+            let acc = dx.normalize() * Self::ACC_CONST.min(per_dx * Self::rand_weight());
             let mut new_vel = vel + FlightComputer::round_vel(acc).0;
             let overspeed = new_vel.abs() > max_speed;
             if overspeed {
@@ -833,22 +836,18 @@ impl FlightComputer {
                 let (trunc_vel, _) = FlightComputer::round_vel(target_vel);
                 new_vel = trunc_vel;
             }
-            //if ticker % 5 == 0 {
-            log!(
-                "Pos: {pos}, New Vel: {new_vel}, dt: {dt:2}, dx: {dx}, per_dx: {per_dx}, acc: {acc}, acc_abs = {:.2}",
-                acc.abs()
-            );
-            log!("Detumbling Step {ticker}: DX: {dx}, direct DT: {dt}s");
-            if overspeed {
-                let overspeed_amount = vel.abs() - max_speed;
-                warn!("Overspeeding by {overspeed_amount}");
+            if ticker % 5 == 0 {
+                log!("Detumbling Step {ticker}: DX: {dx}, direct DT: {dt}s");
+                if overspeed {
+                    let overspeed_amount = vel.abs() - max_speed;
+                    warn!("Overspeeding by {overspeed_amount}");
+                }
             }
-            //}
-            ticker += 1; 
-            if dx.abs() < I32F32::lit("1.0") || dt.to_num::<i64>() < 10 {
+            ticker += 1;
+            if dx.abs() < vel.abs() / 2 || Utc::now() - detumble_start > Self::MAX_DETUMBLE_DT {
                 let detumble_dt = (Utc::now() - detumble_start).num_seconds();
                 log!("Detumbling finished after {detumble_dt}s with rem. DX: {dx} and dt {dt:.2}s");
-                self_lock.write().await.set_vel(vel, true).await;
+                FlightComputer::stop_ongoing_burn(Arc::clone(&self_lock)).await;
                 FlightComputer::set_angle_wait(Arc::clone(&self_lock), lens).await;
                 return (Utc::now() + TimeDelta::seconds(dt.to_num::<i64>()), target);
             }
@@ -859,6 +858,11 @@ impl FlightComputer {
             }
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
+    }
+    
+    fn rand_weight() -> I32F32 {
+        let mut rng = rand::rng();
+        I32F32::from_num(rng.random_range(0.0..10.0))
     }
 
     /// Updates the satellite's internal fields with the latest observation data.

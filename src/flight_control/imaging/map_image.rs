@@ -1,13 +1,11 @@
 use super::{file_based_buffer::FileBackedBuffer, sub_buffer::SubBuffer};
-use crate::fatal;
 use crate::flight_control::common::{
     bitmap::Bitmap,
     vec2d::{MapSize, Vec2D},
 };
-use fixed::types::I32F32;
 use image::{
     DynamicImage, EncodableLayout, GenericImage, GenericImageView, ImageBuffer, Pixel,
-    PixelWithColorType, Rgb, RgbImage, Rgba, RgbaImage,
+    PixelWithColorType, Rgb, Rgba, RgbaImage,
     codecs::png::{CompressionType, FilterType, PngDecoder, PngEncoder},
     imageops,
 };

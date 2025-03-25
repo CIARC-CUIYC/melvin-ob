@@ -74,10 +74,10 @@ impl ZORetrievalMode {
         tokio::pin!(add_fut_join);
         tokio::select! {
             () = img_fut => {
-                FlightComputer::stop_ongoing_burn(context.k().f_cont()).await;
                 add_fut_join.abort();
+                FlightComputer::stop_ongoing_burn(context.k().f_cont()).await;
             },
-            _ = &mut add_fut_join => {}
+            _ = &mut add_fut_join => ()
         }
         let c_cont = context.k().c_cont();
         let id = self.target.id();
@@ -104,13 +104,15 @@ impl GlobalMode for ZORetrievalMode {
         let safe_mon = context.super_v().safe_mon();
         let target_t;
         let wrapped_target;
+        let mut handle = tokio::spawn(fut);
         tokio::select! {
-            join = tokio::spawn(fut) => {
+            join = &mut handle => {
                 let res = join.ok().unwrap();
                 wrapped_target =  res.1;
                 target_t = res.0;
             },
             () = safe_mon.notified() => {
+                handle.abort();
                 return self.safe_handler(context).await;
             }
         }
