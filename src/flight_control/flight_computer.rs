@@ -325,7 +325,7 @@ impl FlightComputer {
     /// - If the reset request fails, this method will panic with an error message.
     pub async fn reset(&self) {
         ResetRequest {}.send_request(&self.request_client).await.expect("ERROR: Failed to reset");
-        Self::wait_for_duration(Duration::from_secs(4)).await;
+        Self::wait_for_duration(Duration::from_secs(4), false).await;
         log!("Reset request complete.");
     }
 
@@ -336,12 +336,16 @@ impl FlightComputer {
     ///
     /// # Arguments
     /// - `sleep`: The duration for which the system should wait.
-    pub async fn wait_for_duration(sleep: Duration) {
+    pub async fn wait_for_duration(sleep: Duration, mute: bool) {
         if sleep.as_secs() == 0 {
-            log!("Wait call rejected! Duration was 0!");
+            if !mute {
+                log!("Wait call rejected! Duration was 0!")
+            };
             return;
         }
-        info!("Waiting for {} seconds!", sleep.as_secs());
+        if !mute {
+            info!("Waiting for {} seconds!", sleep.as_secs())
+        };
         tokio::time::sleep(sleep).await;
     }
 
@@ -400,7 +404,7 @@ impl FlightComputer {
             }
         };
         info!("Safe Mode Runtime initiated. Transitioning back to {target_state} asap.");
-        Self::wait_for_duration(Self::TO_SAFE_SLEEP).await;
+        Self::wait_for_duration(Self::TO_SAFE_SLEEP, false).await;
         let cond_not_trans = (
             // TODO: later this condition must be == FlightState::Safe
             |cont: &FlightComputer| cont.state() != FlightState::Transition,
@@ -449,7 +453,7 @@ impl FlightComputer {
 
         if charge_dt > 0 {
             FlightComputer::set_state_wait(Arc::clone(&self_lock), FlightState::Charge).await;
-            FlightComputer::wait_for_duration(Duration::from_secs(charge_dt)).await;
+            FlightComputer::wait_for_duration(Duration::from_secs(charge_dt), false).await;
             FlightComputer::set_state_wait(self_lock, FlightState::Comms).await;
         } else {
             FlightComputer::set_state_wait(self_lock, FlightState::Comms).await;
@@ -541,7 +545,6 @@ impl FlightComputer {
         if battery >= target_batt {
             return;
         }
-        let batt = self_lock.read().await.current_battery();
         if state == FlightState::Safe {
             FlightComputer::escape_safe(Arc::clone(self_lock), true).await;
             FlightComputer::set_state_wait(Arc::clone(self_lock), FlightState::Charge).await;
@@ -550,7 +553,7 @@ impl FlightComputer {
         }
         let batt = self_lock.read().await.current_battery();
         let dt = (target_batt - batt) / FlightState::Charge.get_charge_rate();
-        Self::wait_for_duration(Duration::from_secs(dt.to_num::<u64>())).await;
+        Self::wait_for_duration(Duration::from_secs(dt.to_num::<u64>()), false).await;
     }
 
     /// Transitions the satellite to a new operational state and waits for transition completion.
@@ -575,7 +578,7 @@ impl FlightComputer {
             fatal!("({init_state}, {new_state}) not in TRANSITION_DELAY_LOOKUP")
         });
 
-        Self::wait_for_duration(*transition_t).await;
+        Self::wait_for_duration(*transition_t, false).await;
         let cond = (
             |cont: &FlightComputer| cont.state() == new_state,
             format!("State equals {new_state}"),
@@ -609,7 +612,7 @@ impl FlightComputer {
         );
         self_lock.read().await.set_vel(new_vel, mute).await;
         if vel_change_dt.as_secs() > 0 {
-            Self::wait_for_duration(vel_change_dt).await;
+            Self::wait_for_duration(vel_change_dt, mute).await;
         }
         let comp_new_vel = Self::round_vel_expand(new_vel);
         let cond = (
@@ -701,7 +704,7 @@ impl FlightComputer {
             log!("Correction velocity is {corr_v}, ramping by {dv:.2}. Hold time will be {h_dt}s.");
             FlightComputer::set_vel_wait(Arc::clone(&self_lock), corr_v, false).await;
             if h_dt > 0 {
-                FlightComputer::wait_for_duration(Duration::from_secs(h_dt)).await;
+                FlightComputer::wait_for_duration(Duration::from_secs(h_dt), false).await;
             }
             FlightComputer::set_vel_wait(Arc::clone(&self_lock), vel, false).await;
             pos = self_lock.read().await.current_pos();
@@ -757,8 +760,8 @@ impl FlightComputer {
 
             if !last_to_target.is_eq_signum(&to_target) {
                 log!("Overshot target! Holding velocity change and waiting for 5s!");
-                FlightComputer::set_vel_wait(Arc::clone(&self_lock), vel, false).await;
-                FlightComputer::wait_for_duration(Duration::from_secs(5)).await;
+                FlightComputer::set_vel_wait(Arc::clone(&self_lock), vel, true).await;
+                FlightComputer::wait_for_duration(Duration::from_secs(5), false).await;
                 return;
             }
             last_to_target = to_target;
@@ -772,7 +775,7 @@ impl FlightComputer {
             if dx.abs() < I32F32::lit("1.0") {
                 let turn_dt = (Utc::now() - start).num_seconds();
                 log!("Turning finished after {turn_dt}s with remaining DX: {dx} and dt {dt:2}s");
-                FlightComputer::set_vel_wait(Arc::clone(&self_lock), vel, false).await;
+                FlightComputer::set_vel_wait(Arc::clone(&self_lock), vel, true).await;
                 let sleep_dt = Duration::from_secs(dt.to_num::<u64>()) + Duration::from_secs(5);
                 tokio::time::sleep(sleep_dt).await;
                 return;
@@ -787,7 +790,7 @@ impl FlightComputer {
         mut target: Vec2D<I32F32>,
         lens: CameraAngle,
     ) -> (DateTime<Utc>, Vec2D<I32F32>) {
-        let ticker: i32 = 0;
+        let mut ticker: i32 = 0;
         let max_speed = lens.get_max_speed();
         let detumble_start = Utc::now();
 
@@ -814,8 +817,8 @@ impl FlightComputer {
                 to_target = pos.to(&target);
             }
             last_to_target = to_target;
-            dt = to_target.abs() / vel.abs();
-            dx = (pos + vel * dt).to(&target);
+            dt = (to_target.abs() / vel.abs()).round();
+            dx = (pos + vel * dt).to(&target).round_to_2();
 
             let acc = dx.normalize() * Self::ACC_CONST;
             let (mut new_vel, _) = FlightComputer::trunc_vel(vel + acc);
@@ -825,13 +828,18 @@ impl FlightComputer {
                 let (trunc_vel, _) = FlightComputer::trunc_vel(target_vel);
                 new_vel = trunc_vel;
             }
-            if ticker % 10 == 0 {
-                log!("Detumbling: DX: {dx}, direct DT: {dt:2}s");
-                if overspeed {
-                    let overspeed_amount = vel.abs() - max_speed;
-                    warn!("Overspeeding by {overspeed_amount}");
-                }
+            //if ticker % 5 == 0 {
+            log!(
+                "New Vel: {new_vel}, dt: {dt:2}, dx: {dx}, acc: {acc}, acc_abs = {:.2}",
+                acc.abs()
+            );
+            log!("Detumbling Step {ticker}: DX: {dx}, direct DT: {dt}s");
+            if overspeed {
+                let overspeed_amount = vel.abs() - max_speed;
+                warn!("Overspeeding by {overspeed_amount}");
             }
+            //}
+            ticker += 1; 
             if dx.abs() < I32F32::lit("1.0") || dt.to_num::<i64>() < 10 {
                 let detumble_dt = (Utc::now() - detumble_start).num_seconds();
                 log!("Detumbling finished after {detumble_dt}s with rem. DX: {dx} and dt {dt:2}s");
