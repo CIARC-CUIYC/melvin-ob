@@ -289,11 +289,7 @@ where T: FixedSigned + NumAssignOps
     /// A `Vec2D` representing the shortest unwrapped direction from `self` to `other`.
     pub fn unwrapped_to(&self, other: &Self) -> Self {
         let options = self.get_projected_in_range(other, (&[1, 0, -1], &[1, 0, -1]));
-        options
-            .into_iter()
-            .min_by(|a, b| a.1.cmp(&b.1))
-            .unwrap()
-            .0
+        options.into_iter().min_by(|a, b| a.1.cmp(&b.1)).unwrap().0
     }
 
     pub fn unwrap_all(&self) -> [Self; 9] {
@@ -303,20 +299,12 @@ where T: FixedSigned + NumAssignOps
 
     pub fn unwrapped_to_top_right(&self, other: &Self) -> Self {
         let options = self.get_projected_in_range(other, (&[1, 0], &[1, 0]));
-        options
-            .into_iter()
-            .min_by(|a, b| a.1.cmp(&b.1))
-            .unwrap()
-            .0
+        options.into_iter().min_by(|a, b| a.1.cmp(&b.1)).unwrap().0
     }
 
     pub fn unwrapped_to_bottom_right(&self, other: &Self) -> Self {
         let options = self.get_projected_in_range(other, (&[1, 0], &[-1, 0]));
-        options
-            .into_iter()
-            .min_by(|a, b| a.1.cmp(&b.1))
-            .unwrap()
-            .0
+        options.into_iter().min_by(|a, b| a.1.cmp(&b.1)).unwrap().0
     }
 
     fn get_projected_in_range(&self, to: &Self, range: (&[i8], &[i8])) -> Vec<(Self, I64F64)> {
@@ -448,6 +436,10 @@ where T: FixedSigned + NumAssignOps
         self.y = self.x * sin + self.y * cos;
         self.x = new_x;
     }
+    
+    pub fn is_eq_signum(&self, other: &Self) -> bool {
+        self.x().signum() != other.x().signum() || self.y().signum() != other.y().signum()
+    }
 
     /// Computes the Euclidean distance between the current vector and another vector.
     ///
@@ -471,8 +463,8 @@ where T: FixedSigned + NumAssignOps
 
     pub fn from_axis_and_val(axis: VecAxis, val: T) -> Self {
         match axis {
-            VecAxis::X => Self{x: val, y: T::zero()},
-            VecAxis::Y => Self{x: T::zero(), y: val},
+            VecAxis::X => Self { x: val, y: T::zero() },
+            VecAxis::Y => Self { x: T::zero(), y: val },
         }
     }
 }
@@ -550,6 +542,8 @@ impl<T: Fixed + Copy> Vec2D<T> {
     /// # Returns
     /// A zero-initialized `Vec2D` with member type `T`.
     pub fn zero() -> Self { Self::new(T::zero(), T::zero()) }
+
+    pub fn is_zero(&self) -> bool { self.x.is_zero() && self.y.is_zero() }
 }
 
 impl Vec2D<i32> {

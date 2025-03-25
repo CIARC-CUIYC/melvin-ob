@@ -720,12 +720,63 @@ impl FlightComputer {
             (dev.signum() * Self::MAX_OR_VEL_CHANGE_ABS, t_hold)
         }
     }
+    
+    pub async fn stop_ongoing_burn(self_lock: Arc<RwLock<Self>>) {
+        let (vel, state) = {
+            let f_cont = self_lock.read().await;
+            (f_cont.current_vel(), f_cont.state())
+        };
+        if state == FlightState::Acquisition {
+            FlightComputer::set_vel_wait(Arc::clone(&self_lock), vel, true).await;
+        }
+    }
+    
+    pub async fn turn_for_2nd_target(self_lock: Arc<RwLock<Self>>, target: Vec2D<I32F32>) {
+        log!("Starting turn for second target");
+        let start = Utc::now();
+        let pos = self_lock.read().await.current_pos();
+        let mut last_to_target = pos.unwrapped_to(&target);
+        let ticker = 0;
+        loop {
+            let (pos, vel) = {
+                let f_cont = self_lock.read().await;
+                (f_cont.current_pos(), f_cont.current_vel())
+            };
+            
+            let to_target = pos.unwrapped_to(&target);
+
+            if !last_to_target.is_eq_signum(&to_target) {
+                log!("Overshot target! Holding velocity change and waiting for 5s!");
+                FlightComputer::set_vel_wait(Arc::clone(&self_lock), vel, false).await;
+                FlightComputer::wait_for_duration(Duration::from_secs(5)).await;
+                return;
+            }
+            last_to_target = to_target;
+            let dt = to_target.abs() / vel.abs();
+            let dx = (vel * dt).unwrapped_to(&target);
+            let new_vel = to_target.normalize() * vel.abs();
+            
+            if ticker % 10 == 0 {
+                log!("Turning: DX: {dx}, direct DT: {dt:2}s");
+            }
+            if dx.abs() < I32F32::lit("1.0") {
+                let turn_dt = (Utc::now() - start).num_seconds();
+                log!("Turning finished after {turn_dt}s with remaining DX: {dx} and dt {dt:2}s");
+                FlightComputer::set_vel_wait(Arc::clone(&self_lock), vel, false).await;
+                let sleep_dt = Duration::from_secs(dt.to_num::<u64>()) + Duration::from_secs(5);
+                tokio::time::sleep(sleep_dt).await;
+                return;
+            }
+            self_lock.write().await.set_vel(new_vel, true).await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    }
 
     pub async fn detumble_to(
         self_lock: Arc<RwLock<Self>>,
         mut target: Vec2D<I32F32>,
         lens: CameraAngle,
-    ) -> DateTime<Utc> {
+    ) -> (DateTime<Utc>, Vec2D<I32F32>) {
         let ticker: i32 = 0;
         let max_speed = lens.get_max_speed();
         let detumble_start = Utc::now();
@@ -754,7 +805,7 @@ impl FlightComputer {
             }
             last_to_target = to_target;
             dt = to_target.abs() / vel.abs();
-            dx = to_target - (vel.normalize() * dt);
+            dx = (vel * dt).to(&target);
 
             let acc = dx.normalize() * Self::ACC_CONST;
             let overspeed = vel.abs() > max_speed;
@@ -782,7 +833,7 @@ impl FlightComputer {
                     self_lock.write().await.set_vel(vel, true).await;
                 }
                 FlightComputer::set_angle_wait(Arc::clone(&self_lock), lens).await;
-                return Utc::now() + TimeDelta::seconds(dt.to_num::<i64>());
+                return (Utc::now() + TimeDelta::seconds(dt.to_num::<i64>()), target);
             }
             let (new_vel, _) = FlightComputer::trunc_vel(vel + acc);
             self_lock.write().await.set_vel(new_vel, true).await;

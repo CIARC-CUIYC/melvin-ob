@@ -36,6 +36,7 @@ pub struct BurnSequence {
 impl BurnSequence {
     /// Additional approximate detumble + return fuel need per exit maneuver
     const ADD_FUEL_CONST: I32F32 = I32F32::lit("10.0");
+    const ADD_SECOND_MANEUVER_FUEL_CONST: I32F32 = I32F32::lit("5.0");
 
     /// Creates a new `BurnSequence` with the provided parameters.
     ///
@@ -54,6 +55,7 @@ impl BurnSequence {
         acc_dt: usize,
         detumble_dt: usize,
         rem_angle_dev: I32F32,
+        add_second_target_fuel: bool 
     ) -> Self {
         let travel_time = detumble_dt + acc_dt;
         let detumble_time = travel_time - acc_dt;
@@ -79,8 +81,11 @@ impl BurnSequence {
             + I32F32::from_num(acc_dt) * FlightState::ACQ_ACC_ADDITION)
             * I32F32::lit("-1.0")
             + TaskController::MIN_BATTERY_THRESHOLD;
-        let min_fuel =
+        let mut min_fuel =
             I32F32::from_num(maneuver_acq_time) * FlightComputer::ACC_CONST + Self::ADD_FUEL_CONST;
+        if add_second_target_fuel {
+            min_fuel += Self::ADD_SECOND_MANEUVER_FUEL_CONST;
+        }
         Self {
             start_i,
             sequence_pos,
@@ -123,7 +128,7 @@ pub struct ExitBurnResult {
     sequence: BurnSequence,
     cost: I32F32,
     target_pos: Vec2D<I32F32>,
-    to_add_target: Option<Vec2D<I32F32>>,
+    add_target: Option<Vec2D<I32F32>>,
     unwrapped_target: Vec2D<I32F32>,
 }
 
@@ -135,18 +140,18 @@ impl ExitBurnResult {
         cost: I32F32,
     ) -> Self {
         let target_pos = target.0;
-        let to_add_target = if target.1 == Vec2D::zero() {
+        let add_target = if target.1 == Vec2D::zero() {
             None
         } else {
-            Some(target.1)
+            Some((target.0 + target.1).wrap_around_map())
         };
-        Self { sequence, cost, target_pos, to_add_target, unwrapped_target }
+        Self { sequence, cost, target_pos, add_target, unwrapped_target }
     }
 
     pub fn cost(&self) -> I32F32 { self.cost }
     pub fn sequence(&self) -> &BurnSequence { &self.sequence }
     pub fn target_pos(&self) -> &Vec2D<I32F32> { &self.target_pos }
-    pub fn to_add_target(&self) -> Option<Vec2D<I32F32>> { self.to_add_target }
+    pub fn add_target(&self) -> Option<Vec2D<I32F32>> { self.add_target }
     pub fn unwrapped_target(&self) -> &Vec2D<I32F32> { &self.unwrapped_target }
 }
 
@@ -167,13 +172,13 @@ impl<'a> BurnSequenceEvaluator<'a> {
     /// A constant representing a 90-degree angle, in fixed-point format.
     const NINETY_DEG: I32F32 = I32F32::lit("90.0");
     /// Weight assigned to off-orbit delta time in optimization calculations.
-    const OFF_ORBIT_W: I32F32 = I32F32::lit("3.0");
+    const OFF_ORBIT_W: I32F32 = I32F32::lit("2.0");
     /// Maximum Weight assigned to fuel consumption in optimization calculations.
     const MAX_FUEL_W: I32F32 = I32F32::lit("3.0");
     /// Minimum Weight assigned to fuel consumption in optimization calculations.
     const MIN_FUEL_W: I32F32 = I32F32::lit("1.0");
     /// Weight assigned to angle deviation in optimization calculations.
-    const ANGLE_DEV_W: I32F32 = I32F32::lit("2.0");
+    const ANGLE_DEV_W: I32F32 = I32F32::lit("1.5");
     /// Weight assigned to additional target angle deviation.
     const ADD_ANGLE_DEV_W: I32F32 = I32F32::lit("3.0");
 
@@ -234,7 +239,7 @@ impl<'a> BurnSequenceEvaluator<'a> {
             let cost = self.get_bs_cost(&b);
             let add_cost = Self::get_add_target_cost(&b, &n_target);
             let curr_cost = self.best_burn.as_ref().map_or(I32F32::MAX, ExitBurnResult::cost);
-            if curr_cost + add_cost > cost
+            if curr_cost.saturating_add(add_cost) > cost
                 && b.min_charge() <= max_needed_batt
                 && b.min_fuel() <= self.fuel_left
             {
@@ -322,6 +327,7 @@ impl<'a> BurnSequenceEvaluator<'a> {
                     add_dt,
                     fin_dt - dt - add_dt,
                     fin_angle_dev,
+                    best_target.1.is_zero()
                 ));
             }
             fin_sequence_pos.push(next_seq_pos);

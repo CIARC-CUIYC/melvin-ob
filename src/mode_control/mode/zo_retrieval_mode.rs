@@ -1,3 +1,4 @@
+use std::pin::Pin;
 use crate::flight_control::common::vec2d::Vec2D;
 use crate::flight_control::flight_computer::FlightComputer;
 use crate::flight_control::flight_state::{FlightState, TRANS_DEL};
@@ -18,12 +19,13 @@ use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 #[derive(Clone)]
 pub struct ZORetrievalMode {
     target: KnownImgObjective,
     add_target: Option<Vec2D<I32F32>>,
-    unwrapped_pos: Vec2D<I32F32>,
+    unwrapped_pos: Arc<Mutex<Vec2D<I32F32>>>,
 }
 
 impl ZORetrievalMode {
@@ -34,7 +36,48 @@ impl ZORetrievalMode {
         add_target: Option<Vec2D<I32F32>>,
         unwrapped_pos: Vec2D<I32F32>,
     ) -> Self {
-        Self { target, add_target, unwrapped_pos }
+        let unwrapped_lock = Arc::new(Mutex::new(unwrapped_pos));
+        Self { target, add_target, unwrapped_pos: unwrapped_lock }
+    }
+
+    async fn get_img_fut(&self, context: &Arc<ModeContext>) -> (DateTime<Utc>, Pin<Box<dyn Future<Output = ()> + Send + Sync>>) {
+        if let Some(add_target) = &self.add_target {
+            let current_vel = context.k().f_cont().read().await.current_vel();
+            let target_traversal_dt = TimeDelta::seconds((add_target.abs() / current_vel.abs()).to_num::<i64>());
+            let t_end = Utc::now() + Self::SINGLE_TARGET_ACQ_DT + target_traversal_dt;
+            let fut = FlightComputer::turn_for_2nd_target(
+                context.k().f_cont(),
+                *add_target,
+            );
+            (t_end, Box::pin(fut))
+        } else {
+            let sleep_dur_std = Self::SINGLE_TARGET_ACQ_DT.to_std().unwrap_or(DT_0_STD);
+            (Utc::now() + Self::SINGLE_TARGET_ACQ_DT, Box::pin(tokio::time::sleep(sleep_dur_std)))
+        }
+    }
+
+    async fn exec_img_task(&self, context: Arc<ModeContext>) {
+        let bottom_left = Vec2D::new(
+            I32F32::from_num(self.target.zone()[0]),
+            I32F32::from_num(self.target.zone()[1]),
+        );
+        let dimensions =
+            Vec2D::new(self.target.width(), self.target.height()).to_unsigned();
+        let mut buffer = OffsetZOImage::new(bottom_left, dimensions);
+
+        let c_cont = context.k().c_cont();
+        let (deadline, add_fut) = self.get_img_fut(&context).await;
+        let f_cont = context.k().f_cont();
+        let img_fut = c_cont.execute_zo_single_target_cycle(f_cont, &mut buffer, deadline);
+        let add_fut_join = tokio::spawn(async move {add_fut.await;});
+        tokio::pin!(add_fut_join);
+        tokio::select! {
+            _ = img_fut => {
+                FlightComputer::stop_ongoing_burn(context.k().f_cont()).await;
+                add_fut_join.abort();
+            },
+            _ = &mut add_fut_join => {}
+        }
     }
 }
 
@@ -43,18 +86,21 @@ impl GlobalMode for ZORetrievalMode {
     fn type_name(&self) -> &'static str { Self::MODE_NAME }
 
     async fn init_mode(&self, context: Arc<ModeContext>) -> OpExitSignal {
-        let target_t = FlightComputer::detumble_to(
+        let mut unwrapped_pos = self.unwrapped_pos.lock().await;
+        let (target_t, wrapped_target) = FlightComputer::detumble_to(
             context.k().f_cont(),
-            self.unwrapped_pos,
+            *unwrapped_pos,
             self.target.optic_required(),
         )
-        .await;
+            .await;
+        *unwrapped_pos = wrapped_target;
+        drop(unwrapped_pos);
         let t_cont = context.k().t_cont();
         t_cont.clear_schedule().await; // Just to be sure
         t_cont
             .schedule_retrieval_phase(
                 target_t,
-                self.unwrapped_pos.wrap_around_map(),
+                wrapped_target.wrap_around_map(),
                 self.target.optic_required(),
             )
             .await;
@@ -80,20 +126,7 @@ impl GlobalMode for ZORetrievalMode {
 
     async fn exec_task(&self, context: Arc<ModeContext>, task: Task) -> ExecExitSignal {
         match task.task_type() {
-            BaseTask::TakeImage(_) => {
-                let bottom_left = Vec2D::new(
-                    I32F32::from_num(self.target.zone()[0]),
-                    I32F32::from_num(self.target.zone()[1]),
-                );
-                let dimensions =
-                    Vec2D::new(self.target.width(), self.target.height()).to_unsigned();
-                let mut buffer = OffsetZOImage::new(bottom_left, dimensions);
-                let deadline = Utc::now() + Self::SINGLE_TARGET_ACQ_DT;
-                let c_cont = context.k().c_cont();
-                c_cont
-                    .execute_zo_single_target_cycle(context.k().f_cont(), &mut buffer, deadline)
-                    .await;
-            }
+            BaseTask::TakeImage(_) => self.exec_img_task(context).await,
             _ => error!(
                 "Invalid task type in ZORetrievalMode: {:?}",
                 task.task_type()
@@ -109,7 +142,7 @@ impl GlobalMode for ZORetrievalMode {
             let f_cont = f_cont_locked.read().await;
             (f_cont.current_vel(), f_cont.current_pos())
         };
-        let to_target = pos.to(&self.unwrapped_pos);
+        let to_target = pos.to(&*self.unwrapped_pos.lock().await);
         let angle = vel.angle_to(&to_target).abs();
         if angle < I32F32::lit("10.0") {
             let time_cond = {

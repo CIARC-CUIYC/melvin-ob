@@ -97,7 +97,7 @@ impl ZOPrepMode {
         let entry_t = exit_burn_seq.start_i().t().format("%H:%M:%S").to_string();
         let vel = exit_burn_seq.sequence_vel().last().unwrap();
         let tar = exit_burn.target_pos();
-        let add_tar = exit_burn.to_add_target();
+        let add_tar = exit_burn.add_target();
         let det_dt = exit_burn_seq.detumble_dt();
         let acq_dt = exit_burn_seq.acc_dt();
         let tar_unwrap = exit_burn.unwrapped_target();
@@ -253,7 +253,7 @@ impl GlobalMode for ZOPrepMode {
         if self.left_orbit.load(Ordering::Acquire) {
             Box::new(ZORetrievalMode::new(
                 self.target.clone(),
-                self.exit_burn.to_add_target(),
+                self.exit_burn.add_target(),
                 *self.exit_burn.unwrapped_target(),
             ))
         } else {
