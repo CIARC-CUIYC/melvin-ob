@@ -823,8 +823,9 @@ impl FlightComputer {
             last_to_target = to_target;
             dt = (to_target.abs() / vel.abs()).round();
             dx = (pos + vel * dt).to(&target).round_to_2();
+            let per_dx = dx.abs() / dt;
 
-            let acc = dx.normalize() * Self::ACC_CONST;
+            let acc = dx.normalize() * Self::ACC_CONST.min(per_dx);
             let (mut new_vel, _) = FlightComputer::trunc_vel(vel + acc);
             let overspeed = new_vel.abs() > max_speed;
             if overspeed {
@@ -834,7 +835,7 @@ impl FlightComputer {
             }
             //if ticker % 5 == 0 {
             log!(
-                "Pos: {pos}, New Vel: {new_vel}, dt: {dt:2}, dx: {dx}, acc: {acc}, acc_abs = {:.2}",
+                "Pos: {pos}, New Vel: {new_vel}, dt: {dt:2}, dx: {dx}, per_dx: {per_dx}, acc: {acc}, acc_abs = {:.2}",
                 acc.abs()
             );
             log!("Detumbling Step {ticker}: DX: {dx}, direct DT: {dt}s");
