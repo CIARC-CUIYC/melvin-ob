@@ -37,6 +37,7 @@ impl BurnSequence {
     /// Additional approximate detumble + return fuel need per exit maneuver
     const ADD_FUEL_CONST: I32F32 = I32F32::lit("10.0");
     const ADD_SECOND_MANEUVER_FUEL_CONST: I32F32 = I32F32::lit("5.0");
+    const DEF_ADD_MULTITARGET_ACC: usize = 375;
 
     /// Creates a new `BurnSequence` with the provided parameters.
     ///
@@ -55,37 +56,49 @@ impl BurnSequence {
         acc_dt: usize,
         detumble_dt: usize,
         rem_angle_dev: I32F32,
-        add_second_target_fuel: bool 
+        second_target_add_dt: usize,
     ) -> Self {
-        let travel_time = detumble_dt + acc_dt;
-        let detumble_time = travel_time - acc_dt;
-        let maneuver_acq_time = {
-            let trunc_detumble_time = detumble_time - TaskController::MANEUVER_MIN_DETUMBLE_DT;
-            let acq_charge_dt =
-                i32::try_from(FlightState::Acquisition.dt_to(FlightState::Charge).as_secs())
-                    .unwrap_or(i32::MAX);
-            let charge_acq_dt =
-                i32::try_from(FlightState::Acquisition.dt_to(FlightState::Charge).as_secs())
-                    .unwrap_or(i32::MAX);
-            let poss_charge_dt = i32::try_from(trunc_detumble_time).unwrap_or(i32::MIN)
-                - acq_charge_dt
-                - charge_acq_dt;
+        let acc_db = FlightState::Acquisition.get_charge_rate();
+        let acc_acq_db = acc_db + FlightState::ACQ_ACC_ADDITION;
+        let trunc_detumble_time = detumble_dt - TaskController::MANEUVER_MIN_DETUMBLE_DT;
+        let acq_charge_dt =
+            i32::try_from(FlightState::Acquisition.dt_to(FlightState::Charge).as_secs())
+                .unwrap_or(i32::MAX);
+        let charge_acq_dt =
+            i32::try_from(FlightState::Acquisition.dt_to(FlightState::Charge).as_secs())
+                .unwrap_or(i32::MAX);
+        let poss_charge_dt =
+            i32::try_from(trunc_detumble_time).unwrap_or(i32::MAX) - acq_charge_dt - charge_acq_dt;
+        let acq_time = {
             if poss_charge_dt < 0 {
-                travel_time
+                detumble_dt
             } else {
-                acc_dt + TaskController::MANEUVER_MIN_DETUMBLE_DT
+                trunc_detumble_time
+                    - usize::try_from(acq_charge_dt).unwrap_or(0)
+                    - usize::try_from(charge_acq_dt).unwrap_or(0)
             }
         };
-        let min_charge = (I32F32::from_num(maneuver_acq_time)
-            * FlightState::Acquisition.get_charge_rate()
-            + I32F32::from_num(acc_dt) * FlightState::ACQ_ACC_ADDITION)
-            * I32F32::lit("-1.0")
-            + TaskController::MIN_BATTERY_THRESHOLD;
-        let mut min_fuel =
-            I32F32::from_num(maneuver_acq_time) * FlightComputer::ACC_CONST + Self::ADD_FUEL_CONST;
-        if add_second_target_fuel {
+
+        let poss_charge = (I32F32::from_num(poss_charge_dt)
+            * FlightState::Charge.get_charge_rate())
+        .clamp(I32F32::zero(), FlightComputer::MAX_100);
+        let acq_acc_time = I32F32::from_num(acc_dt + TaskController::MANEUVER_MIN_DETUMBLE_DT);
+
+        let mut min_fuel = acq_acc_time * FlightComputer::ACC_CONST + Self::ADD_FUEL_CONST;
+
+        let min_acc_acq_batt = -1 * I32F32::from_num(acq_acc_time) * acc_acq_db;
+        let min_acq_batt = -1 * I32F32::from_num(acq_time) * acc_db;
+        let mut add_acq_secs =
+            2 * usize::try_from(TaskController::ZO_IMAGE_FIRST_DEL.num_seconds()).unwrap_or(0);
+        if second_target_add_dt > 0 {
+            add_acq_secs += Self::DEF_ADD_MULTITARGET_ACC;
             min_fuel += Self::ADD_SECOND_MANEUVER_FUEL_CONST;
         }
+        let second_need =
+            -1 * I32F32::from_num(add_acq_secs) * FlightState::Acquisition.get_charge_rate();
+        let add_charge = (second_need - poss_charge).min(I32F32::zero());
+        let min_charge = min_acc_acq_batt + min_acq_batt + add_charge;
+
         Self {
             start_i,
             sequence_pos,
@@ -221,8 +234,7 @@ impl<'a> BurnSequenceEvaluator<'a> {
         let pos = (self.i.pos() + self.vel * I32F32::from_num(dt)).wrap_around_map().round();
         let bs_i = self.i.new_from_future_pos(pos, self.i.t() + TimeDelta::seconds(dt as i64));
 
-        let n_target =
-            *self.targets.iter().min_by_key(|t| pos.unwrapped_to(&t.0).abs()).unwrap();
+        let n_target = *self.targets.iter().min_by_key(|t| pos.unwrapped_to(&t.0).abs()).unwrap();
         let shortest_dir = pos.unwrapped_to(&n_target.0);
 
         if self.vel.angle_to(&shortest_dir).abs() > Self::NINETY_DEG {
@@ -244,12 +256,7 @@ impl<'a> BurnSequenceEvaluator<'a> {
                 && b.min_fuel() <= self.fuel_left
             {
                 let unwrapped_target = Self::get_unwrapped_target(&b, &n_target.0);
-                self.best_burn = Some(ExitBurnResult::new(
-                    b,
-                    n_target,
-                    unwrapped_target,
-                    cost,
-                ));
+                self.best_burn = Some(ExitBurnResult::new(b, n_target, unwrapped_target, cost));
             }
         }
     }
@@ -283,7 +290,8 @@ impl<'a> BurnSequenceEvaluator<'a> {
 
             let next_to_target = next_seq_pos.unwrapped_to(&best_target.0);
             let min_dt = (next_to_target.abs() / next_vel.abs()).round().to_num::<usize>();
-            let min_add_target_dt = (best_target.1.abs() / next_vel.abs()).abs().round().to_num::<usize>();
+            let min_add_target_dt =
+                (best_target.1.abs() / next_vel.abs()).abs().round().to_num::<usize>();
             let dt = (burn_i.t() - Utc::now()).num_seconds() as usize;
             // Check if the maneuver exceeds the maximum allowed time
             add_dt += 1;
@@ -320,6 +328,9 @@ impl<'a> BurnSequenceEvaluator<'a> {
                     add_dt += 1;
                     (min_dt + dt + add_dt, corr_angle_dev)
                 };
+                let last_vel = fin_sequence_vel.last().unwrap();
+                let add_target_traversal_time =
+                    (best_target.1.abs() / last_vel.abs()).to_num::<usize>();
                 return Some(BurnSequence::new(
                     burn_i,
                     Box::from(fin_sequence_pos),
@@ -327,7 +338,7 @@ impl<'a> BurnSequenceEvaluator<'a> {
                     add_dt,
                     fin_dt - dt - add_dt,
                     fin_angle_dev,
-                    best_target.1.is_zero()
+                    add_target_traversal_time,
                 ));
             }
             fin_sequence_pos.push(next_seq_pos);
@@ -335,19 +346,16 @@ impl<'a> BurnSequenceEvaluator<'a> {
         }
         None
     }
-    
+
     fn get_add_target_cost(bs: &BurnSequence, target: &(Vec2D<I32F32>, Vec2D<I32F32>)) -> I32F32 {
         let last_pos = bs.sequence_pos().last().unwrap();
         let last_to_target = last_pos.unwrapped_to(&target.0);
-        
+
         let angle_deviation = target.1.angle_to(&last_to_target);
 
-        let add_angle_dev = math::normalize_fixed32(
-            angle_deviation,
-            I32F32::zero(),
-            Self::NINETY_DEG,
-        )
-            .unwrap_or(I32F32::zero());
+        let add_angle_dev =
+            math::normalize_fixed32(angle_deviation, I32F32::zero(), Self::NINETY_DEG)
+                .unwrap_or(I32F32::zero());
         add_angle_dev * Self::ADD_ANGLE_DEV_W
     }
 

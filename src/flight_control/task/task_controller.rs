@@ -70,7 +70,7 @@ impl TaskController {
     /// Default maximum time duration for burn sequences, in seconds.
     const DEF_MAX_BURN_SEQUENCE_TIME: i64 = 1_000_000_000;
 
-    const ZO_IMAGE_FIRST_DEL: TimeDelta = TimeDelta::seconds(5);
+    pub const ZO_IMAGE_FIRST_DEL: TimeDelta = TimeDelta::seconds(5);
 
     /// Maximum allowable absolute deviation after a correction burn.
     const MAX_AFTER_CB_DEV: I32F32 = I32F32::lit("5.0");
