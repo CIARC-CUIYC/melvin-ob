@@ -830,7 +830,7 @@ impl FlightComputer {
             }
             //if ticker % 5 == 0 {
             log!(
-                "New Vel: {new_vel}, dt: {dt:2}, dx: {dx}, acc: {acc}, acc_abs = {:.2}",
+                "Pos: {pos}, New Vel: {new_vel}, dt: {dt:2}, dx: {dx}, acc: {acc}, acc_abs = {:.2}",
                 acc.abs()
             );
             log!("Detumbling Step {ticker}: DX: {dx}, direct DT: {dt}s");
