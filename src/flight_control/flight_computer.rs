@@ -534,7 +534,14 @@ impl FlightComputer {
     }
 
     pub async fn charge_to_wait(self_lock: &Arc<RwLock<Self>>, target_batt: I32F32) {
-        let state = self_lock.read().await.state();
+        let (state, battery) = {
+            let f_cont = self_lock.read().await;
+            (f_cont.state(), f_cont.current_battery())
+        };
+        if battery >= target_batt {
+            return;
+        }
+        let batt = self_lock.read().await.current_battery();
         if state == FlightState::Safe {
             FlightComputer::escape_safe(Arc::clone(self_lock), true).await;
             FlightComputer::set_state_wait(Arc::clone(self_lock), FlightState::Charge).await;

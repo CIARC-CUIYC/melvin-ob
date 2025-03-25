@@ -17,8 +17,7 @@ use crate::flight_control::{
 };
 use crate::keychain::{Keychain, KeychainWithOrbit};
 use crate::mode_control::{
-    base_mode::BaseMode,
-    mode::{global_mode::GlobalMode, in_orbit_mode::InOrbitMode},
+    mode::{global_mode::GlobalMode},
     mode_context::ModeContext,
     signal::OpExitSignal,
 };
@@ -69,18 +68,18 @@ async fn main() {
 #[allow(clippy::cast_precision_loss)]
 async fn init(url: &str) -> (Arc<ModeContext>, Box<dyn GlobalMode>) {
     let init_k = Keychain::new(url).await;
-    let mut reset = false;
-    if env::var("SKIP_RESET").is_ok() {
-        reset = true;
-        init_k.f_cont().write().await.reset().await; 
-    } else {
-        FlightComputer::charge_full_wait(&init_k.f_cont()).await;
-    }
     let init_k_f_cont_clone = init_k.f_cont();
     let (supervisor, obj_rx, beac_rx) = {
         let (sv, rx_obj, rx_beac) = Supervisor::new(init_k_f_cont_clone);
         (Arc::new(sv), rx_obj, rx_beac)
     };
+    
+    if env::var("SKIP_RESET").is_ok() {
+        FlightComputer::charge_full_wait(&init_k.f_cont()).await;
+    } else {
+        init_k.f_cont().write().await.reset().await; 
+    }
+    
     let (beac_cont, beac_state_rx) = {
         let res = BeaconController::new(beac_rx);
         (Arc::new(res.0), res.1)
