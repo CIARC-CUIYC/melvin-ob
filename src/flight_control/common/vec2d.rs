@@ -19,7 +19,7 @@ use strum_macros::Display;
 ///
 /// # Type Parameters
 /// * `T` - The functionality for the vector depends on traits implemented by `T`.
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, serde::Serialize, serde::Deserialize)]
 pub struct Vec2D<T> {
     /// The x-component of the vector.
     x: T,

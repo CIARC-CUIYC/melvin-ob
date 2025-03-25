@@ -1,17 +1,22 @@
 use super::orbit_base::OrbitBase;
+use crate::flight_control::orbit::OrbitUsabilityError::{OrbitNotClosed, OrbitNotEnoughOverlap};
 use crate::flight_control::{
     camera_state::CameraAngle,
     common::vec2d::{Vec2D, VecAxis},
 };
+use crate::{fatal, log, warn};
+use bincode::config::{Configuration, Fixint, LittleEndian};
+use bincode::error::EncodeError;
 use bitvec::{
     bitbox,
     order::Lsb0,
     prelude::{BitBox, BitRef},
 };
 use fixed::types::I32F32;
+use std::env;
 use strum_macros::Display;
 
-#[derive(Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub(super) struct OrbitSegment {
     start: Vec2D<I32F32>,
     end: Vec2D<I32F32>,
@@ -71,6 +76,7 @@ impl OrbitSegment {
 }
 
 /// Represents a closed orbit with a fixed period, image time information, and completion status.
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct ClosedOrbit {
     /// The base configuration and parameters of the orbit.
     base_orbit: OrbitBase,
@@ -96,6 +102,9 @@ pub enum OrbitUsabilityError {
 }
 
 impl ClosedOrbit {
+    const EXPORT_ORBIT_ENV: &'static str = "EXPORT_ORBIT";
+    const TRY_IMPORT_ENV: &'static str = "TRY_IMPORT_ORBIT";
+    const DEF_FILEPATH: &'static str = "orbit.bin";
     /// Creates a new `ClosedOrbit` instance using a given `OrbitBase` and `CameraAngle`.
     ///
     /// # Arguments
@@ -118,6 +127,44 @@ impl ClosedOrbit {
                 }
             },
         }
+    }
+
+    pub fn try_from_env() -> Option<Self> {
+        if env::var(Self::TRY_IMPORT_ENV).is_ok() {
+            Self::import_from(Self::DEF_FILEPATH).ok()
+        } else {
+            None
+        }        
+    }
+
+    pub fn try_export_default(&self) {
+        if env::var(Self::EXPORT_ORBIT_ENV).is_ok() {
+            self.export_to(Self::DEF_FILEPATH).unwrap_or_else(|e| {
+                warn!("Failed to export orbit: {}", e);
+            })
+        }
+    }
+    
+    fn import_from(filename: &'static str) -> Result<Self, std::io::Error> {
+        let mut file = std::fs::OpenOptions::new().read(true).open(filename)?;
+        bincode::serde::decode_from_std_read(&mut file, Self::get_serde_config()).or_else(|e| {
+            fatal!("Failed to import orbit from {}: {}", filename, e);
+        })
+    }
+    
+    fn export_to(&self, filename: &'static str) -> Result<(), EncodeError> {
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(filename)
+            .unwrap();
+        bincode::serde::encode_into_std_write(self, &mut file, Self::get_serde_config())?;
+        Ok(())
+    }
+
+    fn get_serde_config() -> Configuration<LittleEndian, Fixint> {
+        bincode::config::standard().with_little_endian().with_fixed_int_encoding()
     }
 
     fn compute_segments(base_point: &Vec2D<I32F32>, vel: &Vec2D<I32F32>) -> Vec<OrbitSegment> {

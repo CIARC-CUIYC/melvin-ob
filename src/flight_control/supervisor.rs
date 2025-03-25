@@ -24,7 +24,6 @@ use tokio::{
 pub struct Supervisor {
     f_cont_lock: Arc<RwLock<FlightComputer>>,
     safe_mon: Arc<Notify>,
-    reset_pos_mon: Arc<Notify>,
     zo_mon: mpsc::Sender<KnownImgObjective>,
     bo_mon: mpsc::Sender<BeaconObjective>,
     event_hub: broadcast::Sender<(DateTime<Utc>, String)>,
@@ -37,6 +36,8 @@ impl Supervisor {
     const OBJ_UPDATE_INTERVAL: TimeDelta = TimeDelta::seconds(15);
     /// Constant minimum time delta to the objective start for sending the objective to `main`
     const B_O_MIN_DT: TimeDelta = TimeDelta::minutes(20);
+    const TRACK_POS_ENV: &'static str = "TRACK_MELVIN_POS";
+    
     /// Creates a new instance of `Supervisor`
     pub fn new(
         f_cont_lock: Arc<RwLock<FlightComputer>>,
@@ -52,7 +53,6 @@ impl Supervisor {
             Self {
                 f_cont_lock,
                 safe_mon: Arc::new(Notify::new()),
-                reset_pos_mon: Arc::new(Notify::new()),
                 zo_mon: tx_obj,
                 bo_mon: tx_beac,
                 event_hub: event_send,
@@ -63,8 +63,6 @@ impl Supervisor {
     }
 
     pub fn safe_mon(&self) -> Arc<Notify> { Arc::clone(&self.safe_mon) }
-
-    pub fn reset_pos_mon(&self) -> Arc<Notify> { Arc::clone(&self.reset_pos_mon) }
 
     pub fn subscribe_event_hub(&self) -> broadcast::Receiver<(DateTime<Utc>, String)> {
         self.event_hub.subscribe()
@@ -99,13 +97,12 @@ impl Supervisor {
     #[allow(clippy::cast_precision_loss, clippy::too_many_lines)]
     pub async fn run_obs_obj_mon(&self) {
         // let mut next_safe = start + TimeDelta::seconds(500);
-        let mut pos_csv = if env::var("TRACK_MELVIN_POS").is_ok() {
+        let mut pos_csv = if env::var(Self::TRACK_POS_ENV).is_ok() {
             log!("Activated position tracking!");
             Some(Writer::from_writer(
                 std::fs::OpenOptions::new()
                     .create(true)
                     .write(true)
-                    .read(true)
                     .truncate(true)
                     .open("pos.csv")
                     .ok()

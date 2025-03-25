@@ -23,7 +23,7 @@ impl OrbitReturnMode {
 
     pub fn new() -> Self { Self {} }
 
-    async fn get_next_mode(context: &Arc<ModeContext>) -> Box<dyn GlobalMode> {
+    pub async fn get_next_mode(context: &Arc<ModeContext>) -> Box<dyn GlobalMode> {
         let next_base_mode = Self::get_next_base_mode(context).await;
         let mut obj_mon = context.zo_mon().write().await;
         let mut k_buffer = context.k_buffer().lock().await;

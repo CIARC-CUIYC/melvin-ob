@@ -25,6 +25,7 @@ use crate::mode_control::{
 use chrono::TimeDelta;
 use fixed::types::I32F32;
 use std::{env, sync::Arc, time::Duration};
+use crate::mode_control::mode::orbit_return_mode::OrbitReturnMode;
 
 const DT_MIN: TimeDelta = TimeDelta::seconds(5);
 const DT_0: TimeDelta = TimeDelta::seconds(0);
@@ -38,9 +39,9 @@ const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
 async fn main() {
     let base_url_var = env::var("DRS_BASE_URL");
     let base_url = base_url_var.as_ref().map_or("http://localhost:33000", |v| v.as_str());
-    let context = Arc::new(init(base_url).await);
+    let (context, start_mode) = init(base_url).await;
 
-    let mut global_mode: Box<dyn GlobalMode> = Box::new(InOrbitMode::new(BaseMode::MappingMode));
+    let mut global_mode = start_mode;
     loop {
         let phase = context.o_ch_clone().await.mode_switches();
         info!("Starting phase {phase} in {}!", global_mode.type_name());
@@ -66,9 +67,15 @@ async fn main() {
 }
 
 #[allow(clippy::cast_precision_loss)]
-async fn init(url: &str) -> ModeContext {
+async fn init(url: &str) -> (Arc<ModeContext>, Box<dyn GlobalMode>) {
     let init_k = Keychain::new(url).await;
-    init_k.f_cont().write().await.reset().await;
+    let mut reset = false;
+    if env::var("SKIP_RESET").is_ok() {
+        reset = true;
+        init_k.f_cont().write().await.reset().await; 
+    } else {
+        FlightComputer::charge_full_wait(&init_k.f_cont()).await;
+    }
     let init_k_f_cont_clone = init_k.f_cont();
     let (supervisor, obj_rx, beac_rx) = {
         let (sv, rx_obj, rx_beac) = Supervisor::new(init_k_f_cont_clone);
@@ -93,7 +100,20 @@ async fn init(url: &str) -> ModeContext {
     });
 
     tokio::time::sleep(DT_MIN.to_std().unwrap()).await;
-
+    
+    if let Some(c_orbit) = ClosedOrbit::try_from_env() {
+        let orbit_char = OrbitCharacteristics::new(&c_orbit, &init_k.f_cont()).await;
+        let mode_context = ModeContext::new(
+            KeychainWithOrbit::new(init_k, c_orbit),
+            orbit_char,
+            obj_rx,
+            beac_state_rx,
+            supervisor,
+            beac_cont,
+        );
+        return (mode_context, Box::new(OrbitReturnMode::new()));
+    }
+    
     let c_orbit: ClosedOrbit = {
         let f_cont_lock = init_k.f_cont();
         FlightComputer::set_state_wait(init_k.f_cont(), FlightState::Acquisition).await;
@@ -108,15 +128,16 @@ async fn init(url: &str) -> ModeContext {
         })
     };
 
-    supervisor.reset_pos_mon().notify_one();
-
     let orbit_char = OrbitCharacteristics::new(&c_orbit, &init_k.f_cont()).await;
-    ModeContext::new(
+    let mode_context = ModeContext::new(
         KeychainWithOrbit::new(init_k, c_orbit),
         orbit_char,
         obj_rx,
         beac_state_rx,
         supervisor,
         beac_cont,
-    )
+    );
+    let mode = OrbitReturnMode::get_next_mode(&mode_context).await;
+    (mode_context, mode)
 }
+
