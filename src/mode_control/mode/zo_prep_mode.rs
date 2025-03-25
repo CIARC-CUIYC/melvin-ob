@@ -28,7 +28,6 @@ use std::mem::discriminant;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio_util::sync::CancellationToken;
-use crate::mode_control::base_mode::BaseMode::BeaconObjectiveScanningMode;
 
 pub struct ZOPrepMode {
     base: BaseMode,
@@ -136,7 +135,8 @@ impl ZOPrepMode {
             to_dt + TimeDelta::seconds(TaskController::IN_COMMS_SCHED_SECS as i64) + from_dt
         };
         if worst_case_first_comms_end + TimeDelta::seconds(5) > burn_start {
-            log!("BeaconObjectiveScanningMode no longer feasible, switching to MappingMode");
+            let t = worst_case_first_comms_end.format("%d %H:%M:%S").to_string();
+            log!("Requested BOScanningMode not feasible, first comms end is {t}.");
             BaseMode::MappingMode
         } else {
             BaseMode::BeaconObjectiveScanningMode
