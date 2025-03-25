@@ -28,6 +28,7 @@ use std::mem::discriminant;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio_util::sync::CancellationToken;
+use crate::mode_control::base_mode::BaseMode::BeaconObjectiveScanningMode;
 
 pub struct ZOPrepMode {
     base: BaseMode,
@@ -82,9 +83,7 @@ impl ZOPrepMode {
                 entries,
                 due,
                 fuel_left
-            ).await;
-            // TODO: multiple imaging points?
-            fatal!("Zoned Objective with multiple images not yet supported");
+            ).await
         }?;
         Self::log_burn(&exit_burn, &zo);
         let base = Self::overthink_base(context, curr_base, exit_burn.sequence()).await;
@@ -237,11 +236,13 @@ impl GlobalMode for ZOPrepMode {
     }
 
     async fn bo_event_handler(&self, context: &Arc<ModeContext>) -> OptOpExitSignal {
-        let new_base = Self::overthink_base(context, self.base, self.exit_burn.sequence()).await;
+        let prop_new_base = self.base.bo_event();
+        let new_base = Self::overthink_base(context, prop_new_base, self.exit_burn.sequence()).await;
         if discriminant(&self.base) == discriminant(&new_base) {
             None
         } else {
             self.log_bo_event(context, new_base).await;
+            log!("Trying to change base mode from {} to {} due to BO Event!", self.base, new_base);
             Some(OpExitSignal::ReInit(Box::new(self.new_base(new_base))))
         }
     }
