@@ -19,15 +19,12 @@ use crate::http_handler::{
 };
 use crate::mode_control::base_mode::PeriodicImagingEndSignal;
 use crate::mode_control::base_mode::PeriodicImagingEndSignal::{KillLastImage, KillNow};
-use crate::{DT_0_STD, error, info, log, obj};
+use crate::{DT_0_STD, error, info, log, obj, fatal};
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use futures::StreamExt;
 use image::{GenericImageView, ImageReader, Pixel, RgbImage, imageops::Lanczos3};
-use std::{
-    path::Path,
-    {io::Cursor, sync::Arc},
-};
+use std::{fs, path::Path, {io::Cursor, sync::Arc}};
 use std::path::PathBuf;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
@@ -70,6 +67,9 @@ impl CameraController {
             FullsizeMapImage::open(Path::new(&base_path).join(MAP_BUFFER_PATH));
         let thumbnail_map_image =
             ThumbnailMapImage::from_snapshot(Path::new(&base_path).join(SNAPSHOT_THUMBNAIL_PATH));
+        if let Err(e) = fs::create_dir_all(Self::ZO_IMG_FOLDER) {
+            fatal!("Failed to create objective image directory!");
+        }
         Self {
             fullsize_map_image: RwLock::new(fullsize_map_image),
             thumbnail_map_image: RwLock::new(thumbnail_map_image),

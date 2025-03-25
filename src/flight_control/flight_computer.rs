@@ -26,7 +26,6 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use rand::prelude::ThreadRng;
 use rand::Rng;
 use tokio::sync::RwLock;
 
@@ -409,7 +408,6 @@ impl FlightComputer {
         info!("Safe Mode Runtime initiated. Transitioning back to {target_state} asap.");
         Self::wait_for_duration(Self::TO_SAFE_SLEEP, false).await;
         let cond_not_trans = (
-            // TODO: later this condition must be == FlightState::Safe
             |cont: &FlightComputer| cont.state() != FlightState::Transition,
             format!("State is not {}", FlightState::Transition),
         );
