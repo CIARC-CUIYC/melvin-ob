@@ -1,10 +1,9 @@
 use super::orbit_base::OrbitBase;
-use crate::flight_control::orbit::OrbitUsabilityError::{OrbitNotClosed, OrbitNotEnoughOverlap};
 use crate::flight_control::{
     camera_state::CameraAngle,
     common::vec2d::{Vec2D, VecAxis},
 };
-use crate::{fatal, log, warn};
+use crate::{fatal, warn};
 use bincode::config::{Configuration, Fixint, LittleEndian};
 use bincode::error::EncodeError;
 use bitvec::{
@@ -141,13 +140,13 @@ impl ClosedOrbit {
         if env::var(Self::EXPORT_ORBIT_ENV).is_ok() {
             self.export_to(Self::DEF_FILEPATH).unwrap_or_else(|e| {
                 warn!("Failed to export orbit: {}", e);
-            })
+            });
         }
     }
     
     fn import_from(filename: &'static str) -> Result<Self, std::io::Error> {
         let mut file = std::fs::OpenOptions::new().read(true).open(filename)?;
-        bincode::serde::decode_from_std_read(&mut file, Self::get_serde_config()).or_else(|e| {
+        bincode::serde::decode_from_std_read(&mut file, Self::get_serde_config()).map_err(|e| {
             fatal!("Failed to import orbit from {}: {}", filename, e);
         })
     }

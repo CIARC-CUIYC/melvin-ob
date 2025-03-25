@@ -121,6 +121,7 @@ impl BaseMode {
                     c_orbit.mark_done(*start, *end);
                 }
             }
+            c_orbit.try_export_default();
         });
     }
 
