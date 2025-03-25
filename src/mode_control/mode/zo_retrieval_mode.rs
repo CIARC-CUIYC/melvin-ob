@@ -98,8 +98,8 @@ impl GlobalMode for ZORetrievalMode {
             self.target.optic_required(),
         );
         let safe_mon = context.super_v().safe_mon();
-        let mut target_t;
-        let mut wrapped_target;
+        let target_t;
+        let wrapped_target;
         tokio::select! {
             join = tokio::spawn(fut) => {
                 let res = join.ok().unwrap();
@@ -144,6 +144,9 @@ impl GlobalMode for ZORetrievalMode {
     async fn exec_task(&self, context: Arc<ModeContext>, task: Task) -> ExecExitSignal {
         match task.task_type() {
             BaseTask::TakeImage(_) => self.exec_img_task(context).await,
+            BaseTask::SwitchState(_) => {
+                todo!()
+            }
             _ => error!(
                 "Invalid task type in ZORetrievalMode: {:?}",
                 task.task_type()

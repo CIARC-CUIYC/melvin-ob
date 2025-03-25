@@ -842,10 +842,8 @@ impl FlightComputer {
             ticker += 1; 
             if dx.abs() < I32F32::lit("1.0") || dt.to_num::<i64>() < 10 {
                 let detumble_dt = (Utc::now() - detumble_start).num_seconds();
-                log!("Detumbling finished after {detumble_dt}s with rem. DX: {dx} and dt {dt:2}s");
-
+                log!("Detumbling finished after {detumble_dt}s with rem. DX: {dx} and dt {dt:.2}s");
                 self_lock.write().await.set_vel(vel, true).await;
-
                 FlightComputer::set_angle_wait(Arc::clone(&self_lock), lens).await;
                 return (Utc::now() + TimeDelta::seconds(dt.to_num::<i64>()), target);
             }

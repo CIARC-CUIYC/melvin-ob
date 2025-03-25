@@ -718,13 +718,13 @@ impl TaskController {
         lens: CameraAngle,
     ) {
         let t_first = t - Self::ZO_IMAGE_FIRST_DEL;
-        self.schedule_zo_image(t_first, pos, lens).await;
         let trans_time = TRANS_DEL.get(&(FlightState::Acquisition, FlightState::Charge)).unwrap();
         if Utc::now() + TimeDelta::from_std(*trans_time).unwrap() * 2 < t_first {
             self.schedule_switch(FlightState::Charge, Utc::now()).await;
             let last_charge_leave = t_first - TimeDelta::from_std(*trans_time).unwrap();
             self.schedule_switch(FlightState::Acquisition, last_charge_leave).await;
         }
+        self.schedule_zo_image(t_first, pos, lens).await;        
     }
 
     /// Schedules a velocity change task for a given burn sequence.
