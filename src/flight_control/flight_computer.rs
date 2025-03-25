@@ -110,6 +110,7 @@ impl FlightComputer {
     /// Minimum battery used in decision-making for after safe transition
     const AFTER_SAFE_MIN_BATT: I32F32 = I32F32::lit("50");
     const EXIT_SAFE_MIN_BATT: I32F32 = I32F32::lit("10.0");
+    const DEF_BRAKE_ABS: I32F32 = I32F32::lit("1.0");
     /// Constant minimum delay between requests
     pub(crate) const STD_REQUEST_DELAY: Duration = Duration::from_millis(100);
     /// Legal Target States for State Change
@@ -499,10 +500,12 @@ impl FlightComputer {
             let f_cont = self_lock.read().await;
             (f_cont.current_battery(), f_cont.current_vel())
         };
-        let vel_change_dt =
-            Duration::from_secs_f32((orbit_vel.euclid_distance(&vel) / Self::ACC_CONST).to_num::<f32>());
+        let vel_change_dt = Duration::from_secs_f32(
+            (orbit_vel.euclid_distance(&vel) / Self::ACC_CONST).to_num::<f32>(),
+        );
         let charge_needed = {
-            let acq_acc_db = FlightState::Acquisition.get_charge_rate() + FlightState::ACQ_ACC_ADDITION;
+            let acq_acc_db =
+                FlightState::Acquisition.get_charge_rate() + FlightState::ACQ_ACC_ADDITION;
             let or_vel_corr_db = I32F32::from_num(vel_change_dt.as_secs()) * acq_acc_db;
             let or_db = Self::max_or_maneuver_charge();
             TaskController::MIN_BATTERY_THRESHOLD - 1 * (or_vel_corr_db + or_db)
@@ -720,7 +723,7 @@ impl FlightComputer {
             (dev.signum() * Self::MAX_OR_VEL_CHANGE_ABS, t_hold)
         }
     }
-    
+
     pub async fn stop_ongoing_burn(self_lock: Arc<RwLock<Self>>) {
         let (vel, state) = {
             let f_cont = self_lock.read().await;
@@ -730,7 +733,7 @@ impl FlightComputer {
             FlightComputer::set_vel_wait(Arc::clone(&self_lock), vel, true).await;
         }
     }
-    
+
     pub async fn turn_for_2nd_target(self_lock: Arc<RwLock<Self>>, target: Vec2D<I32F32>) {
         log!("Starting turn for second target");
         let start = Utc::now();
@@ -742,7 +745,7 @@ impl FlightComputer {
                 let f_cont = self_lock.read().await;
                 (f_cont.current_pos(), f_cont.current_vel())
             };
-            
+
             let to_target = pos.unwrapped_to(&target);
 
             if !last_to_target.is_eq_signum(&to_target) {
@@ -755,7 +758,7 @@ impl FlightComputer {
             let dt = to_target.abs() / vel.abs();
             let dx = (vel * dt).unwrapped_to(&target);
             let new_vel = to_target.normalize() * vel.abs();
-            
+
             if ticker % 10 == 0 {
                 log!("Turning: DX: {dx}, direct DT: {dt:2}s");
             }
@@ -808,7 +811,13 @@ impl FlightComputer {
             dx = (vel * dt).to(&target);
 
             let acc = dx.normalize() * Self::ACC_CONST;
-            let overspeed = vel.abs() > max_speed;
+            let (mut new_vel, _) = FlightComputer::trunc_vel(vel + acc);
+            let overspeed = new_vel.abs() > max_speed;
+            if overspeed {
+                let target_vel = new_vel.normalize() * (new_vel.abs() - Self::DEF_BRAKE_ABS);
+                let (trunc_vel, _) = FlightComputer::trunc_vel(target_vel);
+                new_vel = trunc_vel;
+            }
             if ticker % 10 == 0 {
                 log!("Detumbling: DX: {dx}, direct DT: {dt:2}s");
                 if overspeed {
@@ -816,27 +825,20 @@ impl FlightComputer {
                     warn!("Overspeeding by {overspeed_amount}");
                 }
             }
-            let cond = if overspeed {
-                let min_brake_dt = ((vel.abs() - max_speed) / Self::ACC_CONST).to_num::<i64>();
-                overspeed && (dt.to_num::<i64>() < 10 + min_brake_dt)
-            } else {
-                dt.to_num::<i64>() < 10
-            };
-            if dx.abs() < I32F32::lit("1.0") || cond {
+            if dx.abs() < I32F32::lit("1.0") || dt.to_num::<i64>() < 10 {
                 let detumble_dt = (Utc::now() - detumble_start).num_seconds();
-                log!(
-                    "Detumbling finished after {detumble_dt}s with remaining DX: {dx} and dt {dt:2}s"
-                );
-                if overspeed {
-                    todo!();
-                } else {
-                    self_lock.write().await.set_vel(vel, true).await;
-                }
+                log!("Detumbling finished after {detumble_dt}s with rem. DX: {dx} and dt {dt:2}s");
+
+                self_lock.write().await.set_vel(vel, true).await;
+
                 FlightComputer::set_angle_wait(Arc::clone(&self_lock), lens).await;
                 return (Utc::now() + TimeDelta::seconds(dt.to_num::<i64>()), target);
             }
-            let (new_vel, _) = FlightComputer::trunc_vel(vel + acc);
-            self_lock.write().await.set_vel(new_vel, true).await;
+            if overspeed {
+                self_lock.write().await.set_vel(new_vel, true).await;
+            } else {
+                FlightComputer::set_vel_wait(Arc::clone(&self_lock), new_vel, true).await;
+            }
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
