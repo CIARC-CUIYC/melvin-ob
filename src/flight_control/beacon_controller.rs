@@ -109,9 +109,9 @@ impl BeaconController {
 
     async fn add_beacon(&self, obj: BeaconObjective) {
         obj!(
-            "Received new Beacon Objective: {}, ID: {}, Available Timeframe {} - {}",
-            obj.name(),
+            "The Beacon {}-{} is lit! Gondor calls for Aid!, Available Timeframe {} - {}",
             obj.id(),
+            obj.name(),
             obj.start(),
             obj.end()
         );

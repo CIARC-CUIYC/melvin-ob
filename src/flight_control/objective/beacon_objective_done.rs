@@ -83,11 +83,11 @@ impl BeaconObjectiveDone {
         loop {
             if let Ok(msg) = req.send_request(&client).await {
                 if msg.is_success() {
-                    obj!("Found beacon {} at {}!", req.beacon_id, guess);
+                    obj!("And Rohan will answer! Mustered Rohirrim {} at {}!", req.beacon_id, guess);
                     return;
                 } else if msg.is_last() {
                     obj!(
-                        "Could not find beacon {} after {} tries!",
+                        "Where was Gondor when the Westfold fell! Could not find beacon {} after {} tries!",
                         req.beacon_id,
                         guess_num
                     );
