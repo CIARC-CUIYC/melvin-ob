@@ -1,6 +1,8 @@
-use super::imaging::cycle_state::CycleState;
-use super::imaging::map_image::{
-    EncodedImageExtract, FullsizeMapImage, MapImage, OffsetZOImage, ThumbnailMapImage,
+use super::imaging::{
+    cycle_state::CycleState,
+    map_image::{
+        EncodedImageExtract, FullsizeMapImage, MapImage, OffsetZOImage, ThumbnailMapImage,
+    },
 };
 use crate::console_communication::ConsoleMessenger;
 use crate::flight_control::{
@@ -18,7 +20,6 @@ use crate::http_handler::{
 use crate::mode_control::base_mode::PeriodicImagingEndSignal;
 use crate::mode_control::base_mode::PeriodicImagingEndSignal::{KillLastImage, KillNow};
 use crate::{DT_0_STD, error, info, log, obj};
-use bitvec::boxed::BitBox;
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use futures::StreamExt;
@@ -72,7 +73,6 @@ impl CameraController {
             base_path,
         }
     }
-    
 
     /// Scores the offset by comparing the decoded image against the map base image.
     ///

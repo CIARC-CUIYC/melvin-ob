@@ -52,6 +52,7 @@ impl BeaconObjectiveDone {
         }
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     pub async fn randomize_no_meas_guesses(&mut self, client: Arc<HTTPClient>) {
         if !self.guesses.is_empty() {
             obj!("Guesses are provided already, skipping randomization.");
@@ -60,7 +61,7 @@ impl BeaconObjectiveDone {
         }
         obj!("No guesses for {}, randomizing 3 guesses.", self.id);
 
-        let random_guesses = self.generate_random_guesses();
+        let random_guesses = Self::generate_random_guesses();
 
         for (i, guess) in random_guesses.iter().enumerate() {
             let guess_req = BeaconPositionRequest {
@@ -105,7 +106,7 @@ impl BeaconObjectiveDone {
         }
     }
 
-    fn generate_random_guesses(&self) -> Vec<Vec2D<I32F32>> {
+    fn generate_random_guesses() -> Vec<Vec2D<I32F32>> {
         let mut rng = rand::rng();
         let mut random_guesses = Vec::new();
         while random_guesses.len() < 2 {

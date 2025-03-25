@@ -72,7 +72,7 @@ impl ZORetrievalMode {
         let add_fut_join = tokio::spawn(async move {add_fut.await;});
         tokio::pin!(add_fut_join);
         tokio::select! {
-            _ = img_fut => {
+            () = img_fut => {
                 FlightComputer::stop_ongoing_burn(context.k().f_cont()).await;
                 add_fut_join.abort();
             },
