@@ -17,7 +17,6 @@ use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use std::{pin::Pin, sync::Arc};
 use tokio::sync::Mutex;
-use crate::mode_control::base_mode::BaseMode;
 
 #[derive(Clone)]
 pub struct ZORetrievalMode {
@@ -154,10 +153,7 @@ impl GlobalMode for ZORetrievalMode {
                     fatal!("Illegal target state!");
                 }
             }
-            _ => error!(
-                "Invalid task type in ZORetrievalMode: {:?}",
-                task.task_type()
-            ),
+            BaseTask::ChangeVelocity(_) => error!("Change Velocity task is forbidden in ZORetrievalMode."),
         }
         ExecExitSignal::Continue
     }

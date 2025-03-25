@@ -339,12 +339,12 @@ impl FlightComputer {
     pub async fn wait_for_duration(sleep: Duration, mute: bool) {
         if sleep.as_secs() == 0 {
             if !mute {
-                log!("Wait call rejected! Duration was 0!")
+                log!("Wait call rejected! Duration was 0!");
             };
             return;
         }
         if !mute {
-            info!("Waiting for {} seconds!", sleep.as_secs())
+            info!("Waiting for {} seconds!", sleep.as_secs());
         };
         tokio::time::sleep(sleep).await;
     }
