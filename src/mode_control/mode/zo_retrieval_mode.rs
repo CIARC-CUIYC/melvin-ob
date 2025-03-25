@@ -1,24 +1,21 @@
-use std::pin::Pin;
-use crate::flight_control::common::vec2d::Vec2D;
-use crate::flight_control::flight_computer::FlightComputer;
-use crate::flight_control::flight_state::{FlightState, TRANS_DEL};
-use crate::flight_control::imaging::map_image::OffsetZOImage;
-use crate::flight_control::task::base_task::BaseTask;
 use crate::flight_control::{
-    objective::known_img_objective::KnownImgObjective, task::base_task::Task,
+    common::vec2d::Vec2D,
+    flight_computer::FlightComputer,
+    flight_state::{FlightState, TRANS_DEL},
+    imaging::map_image::OffsetZOImage,
+    objective::known_img_objective::KnownImgObjective,
+    task::base_task::{BaseTask, Task},
 };
-use crate::mode_control::mode::orbit_return_mode::OrbitReturnMode;
-use crate::mode_control::signal::OptOpExitSignal;
 use crate::mode_control::{
-    mode::global_mode::GlobalMode,
+    mode::{global_mode::GlobalMode, orbit_return_mode::OrbitReturnMode},
     mode_context::ModeContext,
-    signal::{ExecExitSignal, OpExitSignal, WaitExitSignal},
+    signal::{ExecExitSignal, OpExitSignal, OptOpExitSignal, WaitExitSignal},
 };
 use crate::{DT_0_STD, error, log, warn};
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
-use std::sync::Arc;
+use std::{pin::Pin, sync::Arc};
 use tokio::sync::Mutex;
 
 #[derive(Clone)]
@@ -40,19 +37,26 @@ impl ZORetrievalMode {
         Self { target, add_target, unwrapped_pos: unwrapped_lock }
     }
 
-    async fn get_img_fut(&self, context: &Arc<ModeContext>) -> (DateTime<Utc>, Pin<Box<dyn Future<Output = ()> + Send + Sync>>) {
+    async fn get_img_fut(
+        &self,
+        context: &Arc<ModeContext>,
+    ) -> (
+        DateTime<Utc>,
+        Pin<Box<dyn Future<Output = ()> + Send + Sync>>,
+    ) {
         if let Some(add_target) = &self.add_target {
             let current_vel = context.k().f_cont().read().await.current_vel();
-            let target_traversal_dt = TimeDelta::seconds((add_target.abs() / current_vel.abs()).to_num::<i64>());
+            let target_traversal_dt =
+                TimeDelta::seconds((add_target.abs() / current_vel.abs()).to_num::<i64>());
             let t_end = Utc::now() + Self::SINGLE_TARGET_ACQ_DT + target_traversal_dt;
-            let fut = FlightComputer::turn_for_2nd_target(
-                context.k().f_cont(),
-                *add_target,
-            );
+            let fut = FlightComputer::turn_for_2nd_target(context.k().f_cont(), *add_target);
             (t_end, Box::pin(fut))
         } else {
             let sleep_dur_std = Self::SINGLE_TARGET_ACQ_DT.to_std().unwrap_or(DT_0_STD);
-            (Utc::now() + Self::SINGLE_TARGET_ACQ_DT, Box::pin(tokio::time::sleep(sleep_dur_std)))
+            (
+                Utc::now() + Self::SINGLE_TARGET_ACQ_DT,
+                Box::pin(tokio::time::sleep(sleep_dur_std)),
+            )
         }
     }
 
@@ -61,15 +65,16 @@ impl ZORetrievalMode {
             I32F32::from_num(self.target.zone()[0]),
             I32F32::from_num(self.target.zone()[1]),
         );
-        let dimensions =
-            Vec2D::new(self.target.width(), self.target.height()).to_unsigned();
+        let dimensions = Vec2D::new(self.target.width(), self.target.height()).to_unsigned();
         let mut buffer = OffsetZOImage::new(bottom_left, dimensions);
 
         let c_cont = context.k().c_cont();
         let (deadline, add_fut) = self.get_img_fut(&context).await;
         let f_cont = context.k().f_cont();
         let img_fut = c_cont.execute_zo_single_target_cycle(f_cont, &mut buffer, deadline);
-        let add_fut_join = tokio::spawn(async move {add_fut.await;});
+        let add_fut_join = tokio::spawn(async move {
+            add_fut.await;
+        });
         tokio::pin!(add_fut_join);
         tokio::select! {
             () = img_fut => {
@@ -87,12 +92,24 @@ impl GlobalMode for ZORetrievalMode {
 
     async fn init_mode(&self, context: Arc<ModeContext>) -> OpExitSignal {
         let mut unwrapped_pos = self.unwrapped_pos.lock().await;
-        let (target_t, wrapped_target) = FlightComputer::detumble_to(
+        let fut = FlightComputer::detumble_to(
             context.k().f_cont(),
             *unwrapped_pos,
             self.target.optic_required(),
-        )
-            .await;
+        );
+        let safe_mon = context.super_v().safe_mon();
+        let mut target_t;
+        let mut wrapped_target;
+        tokio::select! {
+            join = tokio::spawn(fut) => {
+                let res = join.ok().unwrap();
+                wrapped_target =  res.1;
+                target_t = res.0;
+            },
+            () = safe_mon.notified() => {
+                return self.safe_handler(context).await;
+            }
+        }
         *unwrapped_pos = wrapped_target;
         drop(unwrapped_pos);
         let t_cont = context.k().t_cont();
