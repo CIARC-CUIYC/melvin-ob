@@ -789,7 +789,7 @@ impl FlightComputer {
         let mut dt;
         let mut dx;
         let mut last_to_target = to_target;
-
+        log!("Starting detumble to {target}");
         loop {
             let (pos, vel) = {
                 let f_locked = self_lock.read().await;
@@ -808,7 +808,7 @@ impl FlightComputer {
             }
             last_to_target = to_target;
             dt = to_target.abs() / vel.abs();
-            dx = (vel * dt).to(&target);
+            dx = (pos + vel * dt).to(&target);
 
             let acc = dx.normalize() * Self::ACC_CONST;
             let (mut new_vel, _) = FlightComputer::trunc_vel(vel + acc);
