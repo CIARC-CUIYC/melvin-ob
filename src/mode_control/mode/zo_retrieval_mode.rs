@@ -11,12 +11,13 @@ use crate::mode_control::{
     mode_context::ModeContext,
     signal::{ExecExitSignal, OpExitSignal, OptOpExitSignal, WaitExitSignal},
 };
-use crate::{DT_0_STD, error, log, warn};
+use crate::{DT_0_STD, error, log, warn, fatal};
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use std::{pin::Pin, sync::Arc};
 use tokio::sync::Mutex;
+use crate::mode_control::base_mode::BaseMode;
 
 #[derive(Clone)]
 pub struct ZORetrievalMode {
@@ -42,7 +43,7 @@ impl ZORetrievalMode {
         context: &Arc<ModeContext>,
     ) -> (
         DateTime<Utc>,
-        Pin<Box<dyn Future<Output = ()> + Send + Sync>>,
+        Pin<Box<dyn Future<Output=()> + Send + Sync>>,
     ) {
         if let Some(add_target) = &self.add_target {
             let current_vel = context.k().f_cont().read().await.current_vel();
@@ -131,6 +132,7 @@ impl GlobalMode for ZORetrievalMode {
     ) -> WaitExitSignal {
         let safe_mon = context.super_v().safe_mon();
         let dt = (due - Utc::now()).to_std().unwrap_or(DT_0_STD);
+        // TODO: here we should maybe also monitor battery
         tokio::select! {
             () = tokio::time::sleep(dt) => {
                 WaitExitSignal::Continue
@@ -144,8 +146,13 @@ impl GlobalMode for ZORetrievalMode {
     async fn exec_task(&self, context: Arc<ModeContext>, task: Task) -> ExecExitSignal {
         match task.task_type() {
             BaseTask::TakeImage(_) => self.exec_img_task(context).await,
-            BaseTask::SwitchState(_) => {
-                todo!()
+            BaseTask::SwitchState(switch) => {
+                let f_cont = context.k().f_cont();
+                if matches!(switch.target_state(), FlightState::Acquisition | FlightState::Charge) {
+                    FlightComputer::set_state_wait(f_cont, switch.target_state()).await;
+                } else {
+                    fatal!("Illegal target state!");
+                }
             }
             _ => error!(
                 "Invalid task type in ZORetrievalMode: {:?}",

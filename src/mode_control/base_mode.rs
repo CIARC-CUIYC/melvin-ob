@@ -255,14 +255,14 @@ impl BaseMode {
     }
 
     pub async fn get_task(&self, context: Arc<ModeContext>, task: SwitchStateTask) {
+        let f_cont = context.k().f_cont();
         match task.target_state() {
             FlightState::Acquisition => {
-                FlightComputer::set_state_wait(context.k().f_cont(), FlightState::Acquisition)
-                    .await;
+                FlightComputer::set_state_wait(f_cont, FlightState::Acquisition).await;
             }
             FlightState::Charge => {
                 let join_handle = async {
-                    FlightComputer::set_state_wait(context.k().f_cont(), FlightState::Charge).await;
+                    FlightComputer::set_state_wait(f_cont, FlightState::Charge).await;
                 };
                 let k_clone = Arc::clone(context.k());
                 tokio::spawn(async move {
@@ -275,7 +275,7 @@ impl BaseMode {
                     fatal!("Illegal target state!")
                 }
                 BaseMode::BeaconObjectiveScanningMode => {
-                    FlightComputer::set_state_wait(context.k().f_cont(), FlightState::Comms).await;
+                    FlightComputer::set_state_wait(f_cont, FlightState::Comms).await;
                 }
             },
             _ => fatal!("Illegal target state!"),
