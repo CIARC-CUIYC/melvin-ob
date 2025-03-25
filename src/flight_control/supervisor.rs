@@ -1,3 +1,4 @@
+use crate::flight_control::camera_controller::CameraController;
 use crate::flight_control::objective::beacon_objective::BeaconObjective;
 use crate::flight_control::{
     common::vec2d::Vec2D, flight_computer::FlightComputer, flight_state::FlightState,
@@ -9,11 +10,11 @@ use crate::http_handler::{
         objective_list_get::ObjectiveListRequest, request_common::NoBodyHTTPRequestType,
     },
 };
-use crate::{error, event, fatal, log, warn};
-use chrono::{DateTime, TimeDelta, Utc};
+use crate::{error, event, fatal, log, warn, DT_0_STD};
+use chrono::{DateTime, NaiveTime, TimeDelta, TimeZone, Utc};
 use csv::Writer;
 use fixed::types::I32F32;
-use futures::StreamExt;
+use futures::{StreamExt, TryFutureExt};
 use reqwest_eventsource::{Event, EventSource};
 use std::{collections::HashSet, env, sync::Arc, time::Duration};
 use tokio::{
@@ -37,7 +38,7 @@ impl Supervisor {
     /// Constant minimum time delta to the objective start for sending the objective to `main`
     const B_O_MIN_DT: TimeDelta = TimeDelta::minutes(20);
     const TRACK_POS_ENV: &'static str = "TRACK_MELVIN_POS";
-    
+
     /// Creates a new instance of `Supervisor`
     pub fn new(
         f_cont_lock: Arc<RwLock<FlightComputer>>,
@@ -90,6 +91,25 @@ impl Supervisor {
             }
         }
         fatal!("EventSource disconnected!");
+    }
+
+    pub async fn run_daily_map_uploader(&self, c_cont: Arc<CameraController>) {
+        let now = Utc::now();
+        let end_of_day = NaiveTime::from_hms_opt(23, 59, 55).unwrap();
+        let upload_t = now.date_naive().and_time(end_of_day);
+        let mut next_upload_t = Utc.from_utc_datetime(&upload_t);
+        loop {
+            let next_upload_dt =
+                (next_upload_t - Utc::now()).to_std().unwrap_or(DT_0_STD);
+            tokio::time::sleep(next_upload_dt).await;
+            c_cont.export_full_snapshot().await.unwrap_or_else(|e| {
+                error!("Error exporting full snapshot: {e}.");
+            });
+            c_cont.upload_daily_map_png().await.unwrap_or_else(|e| {
+                error!("Error uploading Daily Map: {e}.");
+            });
+            next_upload_t = next_upload_t.checked_add_signed(TimeDelta::days(1)).unwrap();
+        }
     }
 
     /// Starts the supervisor loop to periodically call `update_observation`
@@ -163,7 +183,7 @@ impl Supervisor {
                         ])
                         .expect("[FATAL] Could not write to csv file!");
                 }
-                
+
                 // check safe mode transition
                 if is_safe_trans {
                     warn!("Unplanned Safe Mode Transition Detected! Notifying!");

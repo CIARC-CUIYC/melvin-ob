@@ -266,7 +266,7 @@ impl BaseMode {
                 };
                 let k_clone = Arc::clone(context.k());
                 tokio::spawn(async move {
-                    k_clone.c_cont().create_full_snapshot().await.expect("Export failed!");
+                    k_clone.c_cont().export_full_snapshot().await.expect("Export failed!");
                 });
                 join_handle.await;
             }

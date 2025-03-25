@@ -73,7 +73,6 @@ async fn init(url: &str) -> (Arc<ModeContext>, Box<dyn GlobalMode>) {
         let (sv, rx_obj, rx_beac) = Supervisor::new(init_k_f_cont_clone);
         (Arc::new(sv), rx_obj, rx_beac)
     };
-    
     if env::var("SKIP_RESET").is_ok() {
         FlightComputer::charge_full_wait(&init_k.f_cont()).await;
     } else {
@@ -91,6 +90,11 @@ async fn init(url: &str) -> (Arc<ModeContext>, Box<dyn GlobalMode>) {
     let supervisor_clone_clone = Arc::clone(&supervisor);
     tokio::spawn(async move {
         supervisor_clone_clone.run_announcement_hub().await;
+    });
+    let supervisor_clone_clone_clone = Arc::clone(&supervisor);
+    let init_k_c_cont = init_k.c_cont();
+    tokio::spawn(async move {
+       supervisor_clone_clone_clone.run_daily_map_uploader(init_k_c_cont).await; 
     });
     let beac_cont_clone = Arc::clone(&beac_cont);
     let handler = Arc::clone(&init_k.client());

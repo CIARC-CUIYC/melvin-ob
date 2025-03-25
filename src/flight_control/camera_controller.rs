@@ -52,6 +52,7 @@ const SNAPSHOT_THUMBNAIL_PATH: &str = "snapshot_thumb.png";
 impl CameraController {
     const LAST_IMG_END_DELAY: TimeDelta = TimeDelta::milliseconds(500);
     const ZO_IMG_FOLDER: &'static str = "zo_img/";
+
     /// Initializes the `CameraController` with the given base path and HTTP client.
     ///
     /// # Arguments
@@ -68,7 +69,7 @@ impl CameraController {
         let thumbnail_map_image =
             ThumbnailMapImage::from_snapshot(Path::new(&base_path).join(SNAPSHOT_THUMBNAIL_PATH));
         if let Err(e) = fs::create_dir_all(Self::ZO_IMG_FOLDER) {
-            fatal!("Failed to create objective image directory!");
+            fatal!("Failed to create objective image directory: {e}!");
         }
         Self {
             fullsize_map_image: RwLock::new(fullsize_map_image),
@@ -336,7 +337,7 @@ impl CameraController {
     /// # Returns
     ///
     /// A result indicating the success or failure of the operation.
-    pub(crate) async fn create_full_snapshot(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub(crate) async fn export_full_snapshot(&self) -> Result<(), Box<dyn std::error::Error>> {
         let start_time = Utc::now();
         self.fullsize_map_image
             .read()
