@@ -696,7 +696,9 @@ impl FlightComputer {
             let f_cont = self_lock.read().await;
             (f_cont.current_pos(), f_cont.current_vel())
         };
-        while o_unlocked.will_visit(pos) {
+        log!("Starting Orbit Return Deviation Compensation.");
+        let start = Utc::now();
+        while !o_unlocked.will_visit(pos) {
             let (ax, dev) = o_unlocked.get_closest_deviation(pos);
             let (dv, h_dt) = Self::compute_vmax_and_hold_time(dev);
             log!("Computed Orbit Return. Deviation on {ax} is {dev} and vel is {vel}.");
@@ -709,6 +711,8 @@ impl FlightComputer {
             FlightComputer::set_vel_wait(Arc::clone(&self_lock), vel, false).await;
             pos = self_lock.read().await.current_pos();
         }
+        let dt = (Utc::now() - start).num_seconds();
+        info!("Orbit Return Deviation Compensation finished in {dt}s.");
         o_unlocked.get_i(pos).unwrap()
     }
 
