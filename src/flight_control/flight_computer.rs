@@ -770,7 +770,7 @@ impl FlightComputer {
             }
             last_to_target = to_target;
             let dt = to_target.abs() / vel.abs();
-            let dx = (vel * dt).unwrapped_to(&target);
+            let dx = (vel * dt).unwrapped_to(&to_target);
             let new_vel = to_target.normalize() * vel.abs();
 
             if ticker % 10 == 0 {
@@ -826,11 +826,11 @@ impl FlightComputer {
             let per_dx = dx.abs() / dt;
 
             let acc = dx.normalize() * Self::ACC_CONST.min(per_dx);
-            let (mut new_vel, _) = FlightComputer::trunc_vel(vel + acc);
+            let mut new_vel = vel + FlightComputer::round_vel(acc).0;
             let overspeed = new_vel.abs() > max_speed;
             if overspeed {
                 let target_vel = new_vel.normalize() * (new_vel.abs() - Self::DEF_BRAKE_ABS);
-                let (trunc_vel, _) = FlightComputer::trunc_vel(target_vel);
+                let (trunc_vel, _) = FlightComputer::round_vel(target_vel);
                 new_vel = trunc_vel;
             }
             //if ticker % 5 == 0 {
@@ -853,9 +853,9 @@ impl FlightComputer {
                 return (Utc::now() + TimeDelta::seconds(dt.to_num::<i64>()), target);
             }
             if overspeed {
-                self_lock.write().await.set_vel(new_vel, true).await;
-            } else {
                 FlightComputer::set_vel_wait(Arc::clone(&self_lock), new_vel, true).await;
+            } else {
+                self_lock.write().await.set_vel(new_vel, true).await;
             }
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
