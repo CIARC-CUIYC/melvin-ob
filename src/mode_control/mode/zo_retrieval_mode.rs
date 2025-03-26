@@ -48,8 +48,8 @@ impl ZORetrievalMode {
             let current_vel = context.k().f_cont().read().await.current_vel();
             let target_traversal_dt =
                 TimeDelta::seconds((add_target.abs() / current_vel.abs()).to_num::<i64>());
-            let t_end = Utc::now() + Self::SINGLE_TARGET_ACQ_DT + target_traversal_dt;
-            let fut = FlightComputer::turn_for_2nd_target(context.k().f_cont(), *add_target);
+            let t_end = Utc::now() + Self::SINGLE_TARGET_ACQ_DT * 2 + target_traversal_dt;
+            let fut = FlightComputer::turn_for_2nd_target(context.k().f_cont(), *add_target, t_end);
             (t_end, Box::pin(fut))
         } else {
             let sleep_dur_std = Self::SINGLE_TARGET_ACQ_DT.to_std().unwrap_or(DT_0_STD);
@@ -67,7 +67,7 @@ impl ZORetrievalMode {
         let c_cont = context.k().c_cont();
         let (deadline, add_fut) = self.get_img_fut(&context).await;
         let f_cont = context.k().f_cont();
-        let img_fut = c_cont.execute_zo_single_target_cycle(f_cont, deadline);
+        let img_fut = c_cont.execute_zo_target_cycle(f_cont, deadline);
         let add_fut_join = tokio::spawn(async move {
             add_fut.await;
         });

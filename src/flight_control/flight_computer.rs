@@ -749,7 +749,7 @@ impl FlightComputer {
         }
     }
 
-    pub async fn turn_for_2nd_target(self_lock: Arc<RwLock<Self>>, target: Vec2D<I32F32>) {
+    pub async fn turn_for_2nd_target(self_lock: Arc<RwLock<Self>>, target: Vec2D<I32F32>, deadline: DateTime<Utc>) {
         log!("Starting turn for second target");
         let start = Utc::now();
         let pos = self_lock.read().await.current_pos();
@@ -771,19 +771,24 @@ impl FlightComputer {
             }
             last_to_target = to_target;
             let dt = to_target.abs() / vel.abs();
-            let dx = (vel * dt).unwrapped_to(&to_target);
+            let dx = (pos + vel * dt).to(&target).round_to_2();
             let new_vel = to_target.normalize() * vel.abs();
 
             if ticker % 10 == 0 {
-                log!("Turning: DX: {dx}, direct DT: {dt:2}s");
+                log!("Turning: DX: {dx:.2}, direct DT: {dt:.2}s");
             }
-            if dx.abs() < vel.abs() / 2 {
+            if dx.abs() < vel.abs() / 2  {
                 let turn_dt = (Utc::now() - start).num_seconds();
                 log!("Turning finished after {turn_dt}s with remaining DX: {dx} and dt {dt:2}s");
-                FlightComputer::set_vel_wait(Arc::clone(&self_lock), vel, true).await;
+                FlightComputer::stop_ongoing_burn(Arc::clone(&self_lock)).await;
                 let sleep_dt = Duration::from_secs(dt.to_num::<u64>()) + Duration::from_secs(5);
                 tokio::time::sleep(sleep_dt).await;
                 return;
+            }
+            if Utc::now() > deadline {
+                let turn_dt = (Utc::now() - start).num_seconds();
+                log!("Turning timeouted after {turn_dt}s with remaining DX: {dx} and dt {dt:2}s");
+                FlightComputer::stop_ongoing_burn(Arc::clone(&self_lock)).await;
             }
             self_lock.write().await.set_vel(new_vel, true).await;
             tokio::time::sleep(Duration::from_secs(1)).await;
