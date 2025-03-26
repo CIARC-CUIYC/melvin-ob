@@ -1,16 +1,18 @@
+use crate::console_communication::ConsoleMessenger;
 use crate::flight_control::camera_controller::CameraController;
 use crate::flight_control::objective::beacon_objective::BeaconObjective;
 use crate::flight_control::{
     flight_computer::FlightComputer, flight_state::FlightState,
     objective::known_img_objective::KnownImgObjective,
 };
+use crate::http_handler::ImageObjective;
 use crate::http_handler::{
     ZoneType,
     http_request::{
         objective_list_get::ObjectiveListRequest, request_common::NoBodyHTTPRequestType,
     },
 };
-use crate::{error, event, fatal, info, log, warn, DT_0_STD};
+use crate::{DT_0_STD, error, event, fatal, info, log, warn};
 use chrono::{DateTime, NaiveTime, TimeDelta, TimeZone, Utc};
 use futures::StreamExt;
 use reqwest_eventsource::{Event, EventSource};
@@ -20,12 +22,15 @@ use tokio::{
     time::Instant,
 };
 
+use super::objective;
+
 pub struct Supervisor {
     f_cont_lock: Arc<RwLock<FlightComputer>>,
     safe_mon: Arc<Notify>,
     zo_mon: mpsc::Sender<KnownImgObjective>,
     bo_mon: mpsc::Sender<BeaconObjective>,
     event_hub: broadcast::Sender<(DateTime<Utc>, String)>,
+    current_secret_objectives: RwLock<Vec<ImageObjective>>,
 }
 
 impl Supervisor {
@@ -54,6 +59,7 @@ impl Supervisor {
                 zo_mon: tx_obj,
                 bo_mon: tx_beac,
                 event_hub: event_send,
+                current_secret_objectives: RwLock::new(vec![])
             },
             rx_obj,
             rx_beac,
@@ -96,8 +102,7 @@ impl Supervisor {
         let upload_t = now.date_naive().and_time(end_of_day);
         let mut next_upload_t = Utc.from_utc_datetime(&upload_t);
         loop {
-            let next_upload_dt =
-                (next_upload_t - Utc::now()).to_std().unwrap_or(DT_0_STD);
+            let next_upload_dt = (next_upload_t - Utc::now()).to_std().unwrap_or(DT_0_STD);
             tokio::time::sleep(next_upload_dt).await;
             c_cont.export_full_snapshot().await.unwrap_or_else(|e| {
                 error!("Error exporting full snapshot: {e}.");
@@ -107,6 +112,15 @@ impl Supervisor {
             });
             info!("Successfully uploaded Daily Map!");
             next_upload_t = next_upload_t.checked_add_signed(TimeDelta::days(1)).unwrap();
+        }
+    }
+
+    pub async fn schedule_secret_objective(&self, objective_id: usize, zone: [i32; 4]) {
+        let current_secret_objectives = self.current_secret_objectives.read().await;
+        let obj =
+        current_secret_objectives.iter().find(|obj| obj.id() == objective_id);
+        if let Some(obj) = obj {
+            self.zo_mon.send(KnownImgObjective::try_from((obj, zone)).unwrap()).await.unwrap();
         }
     }
 
@@ -142,13 +156,19 @@ impl Supervisor {
                 let mut send_img_objs = Vec::new();
                 let mut send_beac_objs = Vec::new();
 
+                let mut currently_secret_objectives = vec![];
                 for img_obj in objective_list.img_objectives() {
                     let obj_on = img_obj.start() < Utc::now() && img_obj.end() > Utc::now();
                     let is_secret = matches!(img_obj.zone_type(), ZoneType::SecretZone(_));
-                    if obj_on && !id_list.contains(&img_obj.id()) && !is_secret {
-                        send_img_objs.push(KnownImgObjective::try_from(img_obj.clone()).unwrap());
+                    if !id_list.contains(&img_obj.id()) {
+                        if obj_on && !is_secret {
+                            send_img_objs.push(KnownImgObjective::try_from(img_obj.clone()).unwrap());
+                        } else {
+                            currently_secret_objectives.push(img_obj.clone());
+                        }
                     }
                 }
+                *self.current_secret_objectives.write().await = currently_secret_objectives;
                 for b_o in objective_list.beacon_objectives() {
                     let obj_on = b_o.start() < Utc::now() && b_o.end() > Utc::now();
                     if obj_on && !id_list.contains(&b_o.id()) {

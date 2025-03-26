@@ -1,7 +1,3 @@
-use crate::console_communication::{
-    console_endpoint::{ConsoleEndpoint, ConsoleEvent},
-    melvin_messages,
-};
 use crate::flight_control::{
     camera_controller::CameraController,
     camera_state::CameraAngle,
@@ -10,6 +6,13 @@ use crate::flight_control::{
     task::{TaskController, base_task::BaseTask, image_task::ImageTaskStatus},
 };
 use crate::info;
+use crate::{
+    console_communication::{
+        console_endpoint::{ConsoleEndpoint, ConsoleEvent},
+        melvin_messages,
+    },
+    flight_control::supervisor::{self, Supervisor},
+};
 
 use std::sync::Arc;
 
@@ -29,6 +32,7 @@ pub struct ConsoleMessenger {
     camera_controller: Arc<CameraController>,
     /// A shared reference to the task controller, used for managing tasks.
     task_controller: Arc<TaskController>,
+    supervisor: Arc<Supervisor>,
     /// A shared reference to the console endpoint, used for sending and receiving messages.
     endpoint: Arc<ConsoleEndpoint>,
 }
@@ -46,11 +50,13 @@ impl ConsoleMessenger {
     pub(crate) fn start(
         camera_controller: Arc<CameraController>,
         task_controller: Arc<TaskController>,
+        supervisor: Arc<Supervisor>,
     ) -> Self {
         let endpoint = Arc::new(ConsoleEndpoint::start());
         let mut receiver = endpoint.subscribe_upstream_events();
         let endpoint_local = endpoint.clone();
         let camera_controller_local = camera_controller.clone();
+        let supervisor_local = supervisor.clone();
 
         tokio::spawn(async move {
             while let Ok(event) = receiver.recv().await {
@@ -104,7 +110,7 @@ impl ConsoleMessenger {
                                     ),
                                     Vec2D::new(submit_objective.width, submit_objective.height),
                                     None,
-                                    None
+                                    None,
                                 )
                                 .await;
                             info!("Submitted objective '{objective_id}' with result: {result:?}");
@@ -118,6 +124,16 @@ impl ConsoleMessenger {
                                 ),
                             );
                         });
+                    }
+                    ConsoleEvent::Message(
+                        melvin_messages::UpstreamContent::ScheduleSecretObjective(objective),
+                    ) => {
+                        supervisor_local.schedule_secret_objective(objective.objective_id as usize, [
+                            objective.offset_x as i32,
+                            objective.offset_y as i32,
+                            (objective.offset_x + objective.width) as i32,
+                            (objective.offset_y + objective.height) as i32,
+                        ]).await;
                     }
                     ConsoleEvent::Message(melvin_messages::UpstreamContent::SubmitDailyMap(_)) => {
                         let c_cont_lock_local_clone = camera_controller_local.clone();
@@ -141,7 +157,7 @@ impl ConsoleMessenger {
             }
         });
 
-        Self { camera_controller, task_controller, endpoint }
+        Self { camera_controller, task_controller, supervisor, endpoint }
     }
 
     /// Sends a thumbnail image to the operator console.

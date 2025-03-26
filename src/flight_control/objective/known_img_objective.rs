@@ -97,6 +97,29 @@ impl TryFrom<ImageObjective> for KnownImgObjective {
     }
 }
 
+impl TryFrom<(&ImageObjective, [i32; 4])> for KnownImgObjective {
+    type Error = std::io::Error;
+
+    fn try_from(obj_with_zone: (&ImageObjective, [i32; 4])) -> Result<Self, Self::Error> {
+        let obj = obj_with_zone.0;
+        match obj.zone_type() {
+            ZoneType::SecretZone(_) => Ok(Self {
+                id: obj.id(),
+                name: String::from(obj.name()),
+                start: obj.start(),
+                end: obj.end(),
+                zone: obj_with_zone.1,
+                optic_required: CameraAngle::from(obj.optic_required()),
+                coverage_required: obj.coverage_required(),
+            }),
+            ZoneType::KnownZone(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "[FATAL] Wrong objective conversion!",
+            )),
+        }
+    }
+}
+
 impl Eq for KnownImgObjective {}
 
 impl PartialEq<Self> for KnownImgObjective {
