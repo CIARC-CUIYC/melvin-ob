@@ -56,9 +56,8 @@ impl BaseMode {
             let i_start = o_ch_clone.i_entry().new_from_pos(f_cont_lock.read().await.current_pos());
             let k_clone = Arc::clone(context.k());
             let img_dt = o_ch_clone.img_dt();
+            FlightComputer::set_angle_wait(Arc::clone(&f_cont_lock), Self::DEF_MAPPING_ANGLE).await;
             let handle = tokio::spawn(async move {
-                FlightComputer::set_angle_wait(Arc::clone(&f_cont_lock), Self::DEF_MAPPING_ANGLE)
-                    .await;
                 k_clone
                     .c_cont()
                     .execute_acquisition_cycle(
@@ -113,16 +112,14 @@ impl BaseMode {
         };
         log!("Marking done: {} - {}{and}", ranges[0].0, ranges[0].1);
         let k_loc = Arc::clone(context.k());
-        tokio::spawn(async move {
-            let c_orbit_lock = k_loc.c_orbit();
-            let mut c_orbit = c_orbit_lock.write().await;
-            for (start, end) in &fixed_ranges {
-                if start != end {
-                    c_orbit.mark_done(*start, *end);
-                }
+        let c_orbit_lock = k_loc.c_orbit();
+        let mut c_orbit = c_orbit_lock.write().await;
+        for (start, end) in &fixed_ranges {
+            if start != end {
+                c_orbit.mark_done(*start, *end);
             }
-            c_orbit.try_export_default();
-        });
+        }
+        c_orbit.try_export_default();
     }
 
     async fn exec_comms(context: Arc<ModeContext>, due: TaskEndSignal, c_tok: CancellationToken) {
@@ -169,6 +166,7 @@ impl BaseMode {
         }
     }
 
+    #[must_use]
     pub async fn get_schedule_handle(
         &self,
         context: Arc<ModeContext>,
@@ -212,10 +210,11 @@ impl BaseMode {
                 }
             }
         } else {
-            tokio::spawn(async { j_handle.await.ok().unwrap() })
+            j_handle
         }
     }
 
+    #[must_use]
     pub async fn get_wait(
         &self,
         context: Arc<ModeContext>,
@@ -261,14 +260,20 @@ impl BaseMode {
                 FlightComputer::set_state_wait(f_cont, FlightState::Acquisition).await;
             }
             FlightState::Charge => {
-                let join_handle = async {
+                let task_handle = async {
                     FlightComputer::set_state_wait(f_cont, FlightState::Charge).await;
                 };
                 let k_clone = Arc::clone(context.k());
-                tokio::spawn(async move {
+                let export_handle = tokio::spawn(async move {
                     k_clone.c_cont().export_full_snapshot().await.expect("Export failed!");
                 });
-                join_handle.await;
+                task_handle.await;
+                if export_handle.is_finished() {
+                    export_handle.await.unwrap();
+                } else {
+                    error!("Couldnt finish Map export!");
+                    export_handle.abort();
+                }
             }
             FlightState::Comms => match self {
                 BaseMode::MappingMode => {

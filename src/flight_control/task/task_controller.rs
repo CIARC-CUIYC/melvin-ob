@@ -300,8 +300,7 @@ impl TaskController {
         let max_off_orbit_dt = max_dt - Self::OBJECTIVE_SCHEDULE_MIN_DT;
 
         // Spawn a task to compute possible turns asynchronously
-        let turns_handle =
-            tokio::spawn(async move { FlightComputer::compute_possible_turns(curr_vel) });
+        let turns = FlightComputer::compute_possible_turns(curr_vel);
 
         let last_possible_dt = Self::find_last_possible_dt(
             &curr_i,
@@ -314,7 +313,6 @@ impl TaskController {
         let remaining_range = Self::OBJECTIVE_SCHEDULE_MIN_DT..=last_possible_dt;
 
         // Await the result of possible turn computations
-        let turns = turns_handle.await.unwrap();
         let mut evaluator = BurnSequenceEvaluator::new(
             curr_i,
             curr_vel,
@@ -359,8 +357,7 @@ impl TaskController {
         let max_off_orbit_dt = max_dt - Self::OBJECTIVE_SCHEDULE_MIN_DT;
 
         // Spawn a task to compute possible turns asynchronously
-        let turns_handle =
-            tokio::spawn(async move { FlightComputer::compute_possible_turns(curr_vel) });
+        let turns = FlightComputer::compute_possible_turns(curr_vel);
         
         let last_possible_dt =
             Self::find_last_possible_dt(&curr_i, &curr_vel, &entries, max_dt);
@@ -369,7 +366,6 @@ impl TaskController {
         let remaining_range = Self::OBJECTIVE_SCHEDULE_MIN_DT..=last_possible_dt;
 
         // Await the result of possible turn computations
-        let turns = turns_handle.await.unwrap();
         let mut evaluator = BurnSequenceEvaluator::new(
             curr_i,
             curr_vel,

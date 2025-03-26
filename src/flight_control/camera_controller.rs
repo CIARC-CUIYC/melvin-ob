@@ -413,7 +413,7 @@ impl CameraController {
     /// A vector of completed (start, end) time ranges when images were successfully taken.
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
     pub async fn execute_acquisition_cycle(
-        self: Arc<Self>,
+        self: &Arc<Self>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
         console_messenger: Arc<ConsoleMessenger>,
         (end_time, kill): (DateTime<Utc>, oneshot::Receiver<PeriodicImagingEndSignal>),
