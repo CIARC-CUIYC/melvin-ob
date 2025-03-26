@@ -4,18 +4,16 @@ use super::request_common::{
 };
 use prost::bytes::Bytes;
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 #[derive(Debug)]
 pub struct ObjectiveImageRequest {
-    encoded_image: Bytes,
+    image_path: PathBuf,
     objective_id: usize,
 }
 
 impl MultipartBodyHTTPRequestType for ObjectiveImageRequest {
-    async fn body(&self) -> Result<reqwest::multipart::Form, RequestError> {
-        let file_part = reqwest::multipart::Part::stream(self.encoded_image.clone());
-        Ok(reqwest::multipart::Form::new().part("image", file_part))
-    }
+    fn image_path(&self) -> &PathBuf { &self.image_path }
 }
 
 impl HTTPRequestType for ObjectiveImageRequest {
@@ -30,7 +28,7 @@ impl HTTPRequestType for ObjectiveImageRequest {
 }
 
 impl ObjectiveImageRequest {
-    pub fn new(objective_id: usize, encoded_image: Vec<u8>) -> Self {
-        Self { encoded_image: Bytes::from(encoded_image), objective_id }
+    pub fn new(objective_id: usize, image_path: PathBuf) -> Self {
+        Self { objective_id, image_path }
     }
 }

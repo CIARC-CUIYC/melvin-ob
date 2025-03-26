@@ -287,12 +287,13 @@ impl CameraController {
         let map_image = self.fullsize_map_image.read().await;
         let encoded_image = map_image.export_area_as_png(offset, size)?;
         if let Some(img_path) = export_path {
-            let mut img_file = File::create(img_path).await?;
+            let mut img_file = File::create(&img_path).await?;
             img_file.write_all(encoded_image.data.as_slice()).await?;
+            ObjectiveImageRequest::new(objective_id, img_path)
+                .send_request(&self.request_client)
+                .await?;
         }
-        ObjectiveImageRequest::new(objective_id, encoded_image.data)
-            .send_request(&self.request_client)
-            .await?;
+        
         Ok(())
     }
 

@@ -1,6 +1,7 @@
 use super::response_common::{HTTPResponseType, ResponseError};
 use crate::http_handler::{HTTPError, http_client::HTTPClient};
 use std::{collections::HashMap, fmt::Debug, io::ErrorKind};
+use std::path::PathBuf;
 use strum_macros::Display;
 
 #[derive(Debug)]
@@ -78,22 +79,20 @@ pub(crate) trait NoBodyHTTPRequestType: HTTPRequestType {
 }
 
 pub(crate) trait MultipartBodyHTTPRequestType: HTTPRequestType {
-    async fn body(&self) -> Result<reqwest::multipart::Form, RequestError>;
-    fn header_params_with_content_type(&self) -> reqwest::header::HeaderMap {
-        let mut headers = self.header_params();
-        headers.append(
-            "Content-Type",
-            reqwest::header::HeaderValue::from_static("multipart/form-data"),
-        );
-        headers
+    async fn body(&self) -> Result<reqwest::multipart::Form, RequestError> {
+        let file_part = reqwest::multipart::Part::file(self.image_path()).await?;
+        Ok(reqwest::multipart::Form::new().part("image", file_part))
     }
+    
+    fn image_path(&self) -> &PathBuf;
+
     async fn send_request(
         &self,
         client: &HTTPClient,
     ) -> Result<<Self::Response as HTTPResponseType>::ParsedResponseType, HTTPError> {
         let response = self
             .get_request_base(client)
-            .headers(self.header_params_with_content_type())
+            .headers(self.header_params())
             .query(&self.query_params())
             .multipart(self.body().await.map_err(HTTPError::HTTPRequestError)?)
             .send()

@@ -3,17 +3,15 @@ use super::request_common::{
     HTTPRequestMethod, HTTPRequestType, MultipartBodyHTTPRequestType, RequestError,
 };
 use std::{io, path::Path};
+use std::path::PathBuf;
 
 #[derive(Debug)]
 pub struct DailyMapRequest {
-    image_path: String,
+    image_path: PathBuf,
 }
 
 impl MultipartBodyHTTPRequestType for DailyMapRequest {
-    async fn body(&self) -> Result<reqwest::multipart::Form, RequestError> {
-        let file_part = reqwest::multipart::Part::file(&self.image_path).await?;
-        Ok(reqwest::multipart::Form::new().part("image", file_part))
-    }
+    fn image_path(&self) -> &PathBuf { &self.image_path }
 }
 
 impl HTTPRequestType for DailyMapRequest {
@@ -37,6 +35,6 @@ impl DailyMapRequest {
                 "Path is not a valid file",
             ));
         }
-        Ok(Self { image_path: path.to_string_lossy().to_string() })
+        Ok(Self { image_path: path.to_path_buf() })
     }
 }

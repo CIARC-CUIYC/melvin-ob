@@ -81,7 +81,7 @@ impl ZORetrievalMode {
         let img_path = Some(CameraController::generate_zo_img_path(id));
         c_cont.export_and_upload_objective_png(id, offset, dim, img_path).await.unwrap_or_else(
             |e| {
-                error!("Error exporting and uploading objective image: {}", e);
+                error!("Error exporting and uploading objective image: {e}");
             },
         );
     }
