@@ -92,7 +92,10 @@ where T: Display
     /// # Returns
     /// A `Result` indicating the success of the formatting operation.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[{}, {}]", self.x, self.y)
+        match f.precision() {
+            Some(p) => write!(f, "[{:.prec$}, {:.prec$}]", self.x, self.y, prec=p),
+            None => write!(f, "[{}, {}]", self.x, self.y),
+        }
     }
 }
 
