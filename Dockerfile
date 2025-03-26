@@ -16,16 +16,15 @@ ENV RUSTFLAGS="-C target-feature=+crt-static"
 # Build the release version of melvin-ob
 RUN cargo build --release \
         --target=x86_64-unknown-linux-gnu \
-        --config target.x86_64-unknown-linux-gnu.linker="x86_64-linux-gnu-gcc"
+        --config "target.x86_64-unknown-linux-gnu.linker=\"x86_64-linux-gnu-gcc\""
 
 # === Stage 2: Create the Runtime Image ===
-FROM ubuntu:latest AS Runner
+FROM ubuntu:latest AS runner
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install required packages: tmux for session management and wget to fetch gotty
 RUN apt-get update && apt-get install -y \
     tmux \
-    wget \
     openssh-server \
     && rm -rf /var/lib/apt/lists/*
 
