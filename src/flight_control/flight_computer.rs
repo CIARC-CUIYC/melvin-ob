@@ -383,7 +383,12 @@ impl FlightComputer {
             if cond {
                 if !mute {
                     let dt = start_time.elapsed().as_millis();
-                    log!("Condition met after {dt} ms");
+                    if dt > 1000 {
+                        log!("Condition met after {} s", dt / 1000);
+                        
+                    } else {
+                        log!("Condition met after {dt} ms");
+                    }
                 }
                 return;
             }

@@ -37,7 +37,6 @@ impl BurnSequence {
     /// Additional approximate detumble + return fuel need per exit maneuver
     const ADD_FUEL_CONST: I32F32 = I32F32::lit("10.0");
     const ADD_SECOND_MANEUVER_FUEL_CONST: I32F32 = I32F32::lit("5.0");
-    const DEF_ADD_MULTITARGET_ACC: usize = 450;
 
     /// Creates a new `BurnSequence` with the provided parameters.
     ///
@@ -70,10 +69,10 @@ impl BurnSequence {
         let poss_charge_dt =
             i32::try_from(trunc_detumble_time).unwrap_or(i32::MAX) - acq_charge_dt - charge_acq_dt;
         let acq_time = {
-            if poss_charge_dt < 0 {
-                detumble_dt
+            if poss_charge_dt > 0 {
+                0
             } else {
-                TaskController::MANEUVER_MIN_DETUMBLE_DT
+                trunc_detumble_time
             }
         };
 
@@ -84,19 +83,19 @@ impl BurnSequence {
 
         let mut min_fuel = acq_acc_time * FlightComputer::ACC_CONST + Self::ADD_FUEL_CONST;
 
-        let min_acc_acq_batt = -1 * I32F32::from_num(acq_acc_time) * acq_acc_db;
-        let min_acq_batt = -1 * I32F32::from_num(acq_time) * acq_db;
+        let min_acc_acq_batt = (I32F32::from_num(acq_acc_time) * acq_acc_db).abs();
+        let min_acq_batt = (I32F32::from_num(acq_time) * acq_db).abs();
         let mut add_acq_secs =
             2 * usize::try_from(TaskController::ZO_IMAGE_FIRST_DEL.num_seconds()).unwrap_or(0);
         
         if second_target_add_dt > 0 {
-            add_acq_secs += Self::DEF_ADD_MULTITARGET_ACC;
+            add_acq_secs += second_target_add_dt;
             min_fuel += Self::ADD_SECOND_MANEUVER_FUEL_CONST;
         }
-        let second_need =
-            -1 * I32F32::from_num(add_acq_secs) * FlightState::Acquisition.get_charge_rate();
-        let add_charge = (second_need - poss_charge).min(I32F32::zero());
-        let min_charge = min_acc_acq_batt + min_acq_batt + add_charge;
+        
+        let second_need = (I32F32::from_num(add_acq_secs) * acq_acc_db).abs();
+        let add_charge = (second_need - poss_charge).max(I32F32::zero());
+        let min_charge = TaskController::MIN_BATTERY_THRESHOLD + min_acc_acq_batt + min_acq_batt + add_charge;
 
         Self {
             start_i,

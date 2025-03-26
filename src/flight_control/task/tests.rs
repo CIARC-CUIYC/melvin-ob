@@ -136,6 +136,7 @@ async fn test_multi_target_burn_calculator() {
         let est = (exit_pos + exit_vel * detumble_dt).wrap_around_map();
         let target = res.target_pos();
         let add_target = res.add_target().unwrap();
+        let traversal_dt = target.to(&add_target).abs() / exit_vel.abs(); 
         // Check if the estimated Y position is close to the target Y
         let hit_target = est.euclid_distance(res.target_pos())
             < detumble_dt * (I32F32::lit("0.002") * detumble_dt);
@@ -146,7 +147,7 @@ async fn test_multi_target_burn_calculator() {
             info!("Burn Sequence for mocked Zoned Objective at: {target}, due at {mock_end_t}");
             log!("Entry at {entry_t}, Position will be {entry_pos}");
             log!("Exit after {acc_dt}s, Position will be {exit_pos}");
-            log!("Aiming for {target}, then {add_target}.");
+            log!("Aiming for {target}, then {add_target}. Traversal time is {traversal_dt}s.");
             log!("Exit Velocity will be {exit_vel}. Detumble time is {detumble_dt}s.");
             log!("Whole BS: {:?}", res);
             return;

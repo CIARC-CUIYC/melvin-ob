@@ -10,7 +10,7 @@ use crate::http_handler::{
         objective_list_get::ObjectiveListRequest, request_common::NoBodyHTTPRequestType,
     },
 };
-use crate::{error, event, fatal, log, warn, DT_0_STD};
+use crate::{error, event, fatal, info, log, warn, DT_0_STD};
 use chrono::{DateTime, NaiveTime, TimeDelta, TimeZone, Utc};
 use csv::Writer;
 use fixed::types::I32F32;
@@ -108,6 +108,7 @@ impl Supervisor {
             c_cont.upload_daily_map_png().await.unwrap_or_else(|e| {
                 error!("Error uploading Daily Map: {e}.");
             });
+            info!("Successfully uploaded Daily Map!");
             next_upload_t = next_upload_t.checked_add_signed(TimeDelta::days(1)).unwrap();
         }
     }
