@@ -80,6 +80,11 @@ impl CameraController {
             base_path,
         }
     }
+    
+    pub async fn get_coverage(&self) -> I32F32 {
+        let img = self.fullsize_map_image.read().await;
+        img.coverage.get_coverage()
+    }
 
     /// Scores the offset by comparing the decoded image against the map base image.
     ///
@@ -481,7 +486,7 @@ impl CameraController {
         obj!("Starting acquisition cycle for objective!");
         let lens = f_cont_lock.read().await.current_angle();
         let mut pics = 0;
-        let mut step_print = 0;
+        let mut step_print;
         if deadline - Utc::now() > TimeDelta::seconds(20) {
             step_print = 10;
         } else {

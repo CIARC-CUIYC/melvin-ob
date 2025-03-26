@@ -581,7 +581,7 @@ mod tests {
         let mut fullsize_image = FullsizeMapImage::open("tmp.bin");
 
         let angle = CameraAngle::Normal;
-        let area_size = angle.get_square_side_length() as u32;
+        let area_size = u32::from(angle.get_square_side_length());
         let offset = Vec2D::new(
             Vec2D::<u32>::map_size().x() - area_size / 2,
             Vec2D::<u32>::map_size().y() - area_size / 2,

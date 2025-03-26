@@ -14,7 +14,7 @@ use crate::{error, event, fatal, info, log, warn, DT_0_STD};
 use chrono::{DateTime, NaiveTime, TimeDelta, TimeZone, Utc};
 use csv::Writer;
 use fixed::types::I32F32;
-use futures::{StreamExt, TryFutureExt};
+use futures::StreamExt;
 use reqwest_eventsource::{Event, EventSource};
 use std::{collections::HashSet, env, sync::Arc, time::Duration};
 use tokio::{

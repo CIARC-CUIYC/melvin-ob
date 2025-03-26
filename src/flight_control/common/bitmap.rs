@@ -241,6 +241,11 @@ impl Bitmap {
         }
         false
     }
+    
+    pub fn get_coverage(&self) -> I32F32 {
+        let set = self.data.count_ones();
+        I32F32::from_num(set / self.data.len())
+    }
 
     /// Exports the bitmap as a PNG image to the specified file path.
     ///

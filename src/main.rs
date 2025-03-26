@@ -24,7 +24,6 @@ use crate::mode_control::{
 use chrono::TimeDelta;
 use fixed::types::I32F32;
 use std::{env, sync::Arc, time::Duration};
-use crate::http_handler::http_client::HTTPClient;
 use crate::mode_control::mode::orbit_return_mode::OrbitReturnMode;
 
 const DT_MIN: TimeDelta = TimeDelta::seconds(5);
@@ -75,6 +74,7 @@ async fn init(url: &str) -> (Arc<ModeContext>, Box<dyn GlobalMode>) {
         (Arc::new(sv), rx_obj, rx_beac)
     };
     if env::var("SKIP_RESET").is_ok() {
+        warn!("Skipping reset!");
         FlightComputer::charge_full_wait(&init_k.f_cont()).await;
     } else {
         init_k.f_cont().write().await.reset().await; 
@@ -105,8 +105,13 @@ async fn init(url: &str) -> (Arc<ModeContext>, Box<dyn GlobalMode>) {
 
     tokio::time::sleep(DT_MIN.to_std().unwrap()).await;
     
-    if let Some(c_orbit) = ClosedOrbit::try_from_env() {
+    if let Some(mut c_orbit) = ClosedOrbit::try_from_env() {
+        info!("Imported existing Orbit!");
         let orbit_char = OrbitCharacteristics::new(&c_orbit, &init_k.f_cont()).await;
+        if init_k.c_cont().get_coverage().await.is_zero() {
+            info!("Imported Orbit and map image coverage dont align. Clearing!");
+            c_orbit.clear_done();
+        }
         let mode_context = ModeContext::new(
             KeychainWithOrbit::new(init_k, c_orbit),
             orbit_char,
@@ -119,6 +124,7 @@ async fn init(url: &str) -> (Arc<ModeContext>, Box<dyn GlobalMode>) {
     }
     
     let c_orbit: ClosedOrbit = {
+        info!("Creating new Static Orbit!");
         let f_cont_lock = init_k.f_cont();
         FlightComputer::set_state_wait(init_k.f_cont(), FlightState::Acquisition).await;
         FlightComputer::set_vel_wait(init_k.f_cont(), STATIC_ORBIT_VEL.into(), false).await;

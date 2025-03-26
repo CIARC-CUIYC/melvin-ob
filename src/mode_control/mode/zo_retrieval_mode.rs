@@ -170,7 +170,7 @@ impl GlobalMode for ZORetrievalMode {
                 }
             }
             BaseTask::ChangeVelocity(_) => {
-                error!("Change Velocity task is forbidden in ZORetrievalMode.")
+                error!("Change Velocity task is forbidden in ZORetrievalMode.");
             }
         }
         ExecExitSignal::Continue

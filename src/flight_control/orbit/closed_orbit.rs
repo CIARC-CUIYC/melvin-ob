@@ -127,6 +127,10 @@ impl ClosedOrbit {
             },
         }
     }
+    
+    pub fn clear_done(&mut self) {
+        self.done.fill(false);
+    }
 
     pub fn try_from_env() -> Option<Self> {
         if env::var(Self::TRY_IMPORT_ENV).is_ok() {

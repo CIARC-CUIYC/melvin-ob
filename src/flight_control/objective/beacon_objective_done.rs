@@ -48,7 +48,9 @@ impl BeaconObjectiveDone {
             let height = guess.y().abs().to_num::<u32>();
             let req = BeaconPositionRequest { beacon_id: id_u16, width, height };
             obj!("Sending request for beacon {id_u16} with width {width} and height {height}...");
-            self.submit_guess(req, client.clone(), guess, i).await;
+            if self.submit_guess(req, client.clone(), guess, i).await.is_err() {
+                return
+            };
         }
     }
 
@@ -56,20 +58,21 @@ impl BeaconObjectiveDone {
     pub async fn randomize_no_meas_guesses(&mut self, client: Arc<HTTPClient>) {
         if !self.guesses.is_empty() {
             obj!("Guesses are provided already, skipping randomization.");
-            self.guess_max(client).await;
-            return;
+            return self.guess_max(client).await;
         }
-        obj!("No guesses for {}, randomizing 3 guesses.", self.id);
+        obj!("No guesses for {}, randomizing 10 guesses.", self.id);
 
         let random_guesses = Self::generate_random_guesses();
-
+        self.submitted = true;
         for (i, guess) in random_guesses.iter().enumerate() {
             let guess_req = BeaconPositionRequest {
                 beacon_id: self.id as u16,
                 width: guess.x().abs().to_num::<u32>(),
                 height: guess.y().abs().to_num::<u32>(),
             };
-            self.submit_guess(guess_req, Arc::clone(&client), guess, i).await;
+            if self.submit_guess(guess_req, Arc::clone(&client), guess, i).await.is_err() {
+                return;
+            }
         }
     }
 
@@ -79,27 +82,27 @@ impl BeaconObjectiveDone {
         client: Arc<HTTPClient>,
         guess: &Vec2D<I32F32>,
         guess_num: usize,
-    ) {
+    ) -> Result<(), std::io::Error>{
         loop {
             if let Ok(msg) = req.send_request(&client).await {
                 if msg.is_success() {
                     obj!("And Rohan will answer! Mustered Rohirrim {} at {}!", req.beacon_id, guess);
-                    return;
+                    return Ok(());
                 } else if msg.is_last() {
                     obj!(
                         "Where was Gondor when the Westfold fell! Could not find beacon {} after {} tries!",
                         req.beacon_id,
                         guess_num
                     );
-                    return;
+                    return Ok(());
                 } else if msg.is_unknown() {
                     obj!("Beacon {} is unknown!", req.beacon_id);
-                    return;
+                    return Err(std::io::Error::new(std::io::ErrorKind::Other, "Beacon unknown!"));
                 } else if msg.is_fail() {
                     continue;
                 }
                 obj!("Unknown Message: {}! Returning!", msg.msg());
-                return;
+                return Err(std::io::Error::new(std::io::ErrorKind::Other, "Unknown Message!"));
             }
             error!("Unnoticed HTTP Error in updateObservation()");
             tokio::time::sleep(FlightComputer::STD_REQUEST_DELAY).await;
@@ -109,7 +112,7 @@ impl BeaconObjectiveDone {
     fn generate_random_guesses() -> Vec<Vec2D<I32F32>> {
         let mut rng = rand::rng();
         let mut random_guesses = Vec::new();
-        while random_guesses.len() < 2 {
+        while random_guesses.len() <= 10 {
             let random_width = rng.random_range(Self::MAP_WIDTH_RANGE);
             let random_height = rng.random_range(Self::MAP_HEIGHT_RANGE);
             let rand_guess = Vec2D::new(

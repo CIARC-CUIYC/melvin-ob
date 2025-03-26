@@ -21,15 +21,15 @@ jobs:
           sshpass -p password ssh root@10.100.10.3 'tmux kill-session -t melvin-runner || true'
           sshpass -p password scp target/x86_64-unknown-linux-gnu/release/melvin-ob root@10.100.10.3:/home/melvin-ob
 
-      - name: Build Cirdan Image
-        run: |
-          sudo apt-get update && sudo apt-get install ca-certificates curl && sudo install -m 0755 -d /etc/apt/keyrings
-          sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-          sudo chmod a+r /etc/apt/keyrings/docker.asc
+      #- name: Build Cirdan Image
+       # run: |
+        #  sudo apt-get update && sudo apt-get install ca-certificates curl && sudo install -m 0755 -d /etc/apt/keyrings
+         # sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+          #sudo chmod a+r /etc/apt/keyrings/docker.asc
 
           # Add the repository to Apt sources:
-          echo \
-            "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
-            $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}") stable" | \
-            sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-          sudo apt-get update
+          #echo \
+           # "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+           # $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}") stable" | \
+            #sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+          #sudo apt-get update
