@@ -24,6 +24,7 @@ use crate::mode_control::{
 use chrono::TimeDelta;
 use fixed::types::I32F32;
 use std::{env, sync::Arc, time::Duration};
+use crate::http_handler::http_client::HTTPClient;
 use crate::mode_control::mode::orbit_return_mode::OrbitReturnMode;
 
 const DT_MIN: TimeDelta = TimeDelta::seconds(5);

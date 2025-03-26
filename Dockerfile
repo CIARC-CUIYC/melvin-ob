@@ -45,5 +45,5 @@ EXPOSE 22
 
 # The CMD starts a tmux session running your Rust binary, then launches gotty to attach to that session.
 CMD service ssh start && tmux new-session -d -s melvin_debug bash \
-    -c 'export TRACK_MELVIN_POS=1; export DRS_BASE_URL="http://10.100.10.3:33000"; export EXPORT_ORBIT=1; exec bash' && \
+    -c 'export TRACK_MELVIN_POS=1; export DRS_BASE_URL="http://palantiri:5000"; export EXPORT_ORBIT=1; exec bash' && \
     tail -f /dev/null
