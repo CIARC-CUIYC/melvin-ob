@@ -37,7 +37,7 @@ impl BurnSequence {
     /// Additional approximate detumble + return fuel need per exit maneuver
     const ADD_FUEL_CONST: I32F32 = I32F32::lit("10.0");
     const ADD_SECOND_MANEUVER_FUEL_CONST: I32F32 = I32F32::lit("5.0");
-    const DEF_ADD_MULTITARGET_ACC: usize = 375;
+    const DEF_ADD_MULTITARGET_ACC: usize = 450;
 
     /// Creates a new `BurnSequence` with the provided parameters.
     ///
@@ -58,9 +58,9 @@ impl BurnSequence {
         rem_angle_dev: I32F32,
         second_target_add_dt: usize,
     ) -> Self {
-        let acc_db = FlightState::Acquisition.get_charge_rate();
-        let acc_acq_db = acc_db + FlightState::ACQ_ACC_ADDITION;
-        let trunc_detumble_time = detumble_dt - TaskController::MANEUVER_MIN_DETUMBLE_DT;
+        let acq_db = FlightState::Acquisition.get_charge_rate();
+        let acq_acc_db = acq_db + FlightState::ACQ_ACC_ADDITION;
+        let trunc_detumble_time = detumble_dt.saturating_sub(TaskController::MANEUVER_MIN_DETUMBLE_DT);
         let acq_charge_dt =
             i32::try_from(FlightState::Acquisition.dt_to(FlightState::Charge).as_secs())
                 .unwrap_or(i32::MAX);
@@ -73,9 +73,7 @@ impl BurnSequence {
             if poss_charge_dt < 0 {
                 detumble_dt
             } else {
-                trunc_detumble_time
-                    - usize::try_from(acq_charge_dt).unwrap_or(0)
-                    - usize::try_from(charge_acq_dt).unwrap_or(0)
+                TaskController::MANEUVER_MIN_DETUMBLE_DT
             }
         };
 
@@ -86,10 +84,11 @@ impl BurnSequence {
 
         let mut min_fuel = acq_acc_time * FlightComputer::ACC_CONST + Self::ADD_FUEL_CONST;
 
-        let min_acc_acq_batt = -1 * I32F32::from_num(acq_acc_time) * acc_acq_db;
-        let min_acq_batt = -1 * I32F32::from_num(acq_time) * acc_db;
+        let min_acc_acq_batt = -1 * I32F32::from_num(acq_acc_time) * acq_acc_db;
+        let min_acq_batt = -1 * I32F32::from_num(acq_time) * acq_db;
         let mut add_acq_secs =
             2 * usize::try_from(TaskController::ZO_IMAGE_FIRST_DEL.num_seconds()).unwrap_or(0);
+        
         if second_target_add_dt > 0 {
             add_acq_secs += Self::DEF_ADD_MULTITARGET_ACC;
             min_fuel += Self::ADD_SECOND_MANEUVER_FUEL_CONST;

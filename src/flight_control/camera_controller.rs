@@ -1,8 +1,6 @@
 use super::imaging::{
     cycle_state::CycleState,
-    map_image::{
-        EncodedImageExtract, FullsizeMapImage, MapImage, ThumbnailMapImage,
-    },
+    map_image::{EncodedImageExtract, FullsizeMapImage, MapImage, ThumbnailMapImage},
 };
 use crate::console_communication::ConsoleMessenger;
 use crate::flight_control::{
@@ -19,13 +17,17 @@ use crate::http_handler::{
 };
 use crate::mode_control::base_mode::PeriodicImagingEndSignal;
 use crate::mode_control::base_mode::PeriodicImagingEndSignal::{KillLastImage, KillNow};
-use crate::{DT_0_STD, error, info, log, obj, fatal};
+use crate::{DT_0_STD, error, fatal, info, log, obj};
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use futures::StreamExt;
 use image::{GenericImageView, ImageReader, Pixel, RgbImage, imageops::Lanczos3};
-use std::{fs, path::Path, {io::Cursor, sync::Arc}};
 use std::path::PathBuf;
+use std::{
+    fs,
+    path::Path,
+    {io::Cursor, sync::Arc},
+};
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{Mutex, RwLock, oneshot};
@@ -471,7 +473,7 @@ impl CameraController {
         }
     }
 
-    pub async fn execute_zo_single_target_cycle(
+    pub async fn execute_zo_target_cycle(
         self: Arc<Self>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
         deadline: DateTime<Utc>,
@@ -479,6 +481,12 @@ impl CameraController {
         obj!("Starting acquisition cycle for objective!");
         let lens = f_cont_lock.read().await.current_angle();
         let mut pics = 0;
+        let mut step_print = 0;
+        if deadline - Utc::now() > TimeDelta::seconds(20) {
+            step_print = 10;
+        } else {
+            step_print = 2;
+        }
         loop {
             let next_img_due = Utc::now() + TimeDelta::seconds(1);
             let img_init_timestamp = Utc::now();
@@ -486,7 +494,9 @@ impl CameraController {
                 Ok((pos, _)) => {
                     pics += 1;
                     let s = (Utc::now() - img_init_timestamp).num_seconds();
-                    obj!("Took {pics:02}. picture. Processed for {s}s. Position was {pos}");
+                    if pics % step_print == 0 {
+                        obj!("Took {pics:02}. picture. Processed for {s}s. Position was {pos}");
+                    }
                 }
                 Err(e) => {
                     error!("Couldn't take picture: {e}");
