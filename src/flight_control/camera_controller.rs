@@ -179,7 +179,7 @@ impl CameraController {
                 Self::score_offset(&decoded_image, &fullsize_map_image, offset.to_unsigned());
             let tot_offset: Vec2D<u32> =
                 (offset + best_additional_offset).wrap_around_map().to_unsigned();
-            fullsize_map_image.update_area(tot_offset, decoded_image);
+            fullsize_map_image.update_area(tot_offset, &decoded_image);
             fullsize_map_image.coverage.set_region(Vec2D::new(pos.x(), pos.y()), angle, true);
             tot_offset
         };
@@ -217,7 +217,7 @@ impl CameraController {
         );
         self.thumbnail_map_image.write().await.update_area(
             thumbnail_offset / ThumbnailMapImage::THUMBNAIL_SCALE_FACTOR,
-            resized_image,
+            &resized_image,
         );
     }
 

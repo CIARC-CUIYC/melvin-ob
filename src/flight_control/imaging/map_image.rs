@@ -1,13 +1,11 @@
 use super::{file_based_buffer::FileBackedBuffer, sub_buffer::SubBuffer};
-use crate::flight_control::common::{
+use crate::{fatal, flight_control::common::{
     bitmap::Bitmap,
     vec2d::{MapSize, Vec2D},
-};
+}};
+use fixed::types::I32F32;
 use image::{
-    DynamicImage, EncodableLayout, GenericImage, GenericImageView, ImageBuffer, Pixel,
-    PixelWithColorType, Rgb, Rgba, RgbaImage,
-    codecs::png::{CompressionType, FilterType, PngDecoder, PngEncoder},
-    imageops,
+    codecs::png::{CompressionType, FilterType, PngDecoder, PngEncoder}, imageops, DynamicImage, EncodableLayout, GenericImage, GenericImageView, ImageBuffer, Pixel, PixelWithColorType, Rgb, RgbImage, Rgba, RgbaImage
 };
 use std::{
     io::{BufReader, Cursor},
@@ -134,7 +132,7 @@ pub(crate) trait MapImage {
         let mut area_image = ImageBuffer::<
             <Self::ViewSubBuffer as GenericImageView>::Pixel,
             Vec<<<Self::ViewSubBuffer as GenericImageView>::Pixel as Pixel>::Subpixel>,
-        >::new(area_view.width(), area_view.width());
+        >::new(size.x(), size.y());
         area_image.copy_from(&area_view, 0, 0).unwrap();
         let mut writer = Cursor::new(Vec::<u8>::new());
         area_image.write_with_encoder(PngEncoder::new(&mut writer))?;
@@ -168,9 +166,9 @@ pub(crate) trait MapImage {
     fn update_area<I: GenericImageView<Pixel = Self::Pixel>>(
         &mut self,
         offset: Vec2D<u32>,
-        image: I,
+        image: &I,
     ) {
-        self.mut_vec_view(offset).copy_from(&image, 0, 0).unwrap();
+        self.mut_vec_view(offset).copy_from(image, 0, 0).unwrap();
     }
 }
 
@@ -188,6 +186,103 @@ pub(crate) struct FullsizeMapImage {
     pub(crate) coverage: Bitmap,
     /// The image buffer containing the pixel data, backed by a file.
     image_buffer: ImageBuffer<Rgb<u8>, FileBackedBuffer>,
+}
+
+pub(crate) struct OffsetZonedObjectiveImage {
+    offset: Vec2D<I32F32>,
+    image_buffer: ImageBuffer<Rgb<u8>, Vec<u8>>,
+}
+
+impl OffsetZonedObjectiveImage {
+    pub fn new(bottom_left: Vec2D<I32F32>, dimensions: Vec2D<u32>) -> Self {
+        Self { offset: bottom_left, image_buffer: ImageBuffer::new(dimensions.x(), dimensions.y()) }
+    }
+
+    pub fn cut_image(
+        &self,
+        mut image: RgbImage,
+        img_bot_left: Vec2D<I32F32>,
+    ) -> Option<(RgbImage, Vec2D<u32>)> {
+        let corr_offs = self.offset + self.offset.unwrapped_to_top_right(&img_bot_left);
+        let start_x = self.offset.x().max(corr_offs.x()).to_num::<u32>();
+        let start_y = self.offset.y().max(corr_offs.y()).to_num::<u32>();
+        let offset_u32 = self.offset.to_num::<u32>();
+        let corr_offs_u32 = corr_offs.to_num::<u32>();
+        let end_x =
+            (offset_u32.x() + self.image_buffer.width()).min(corr_offs_u32.x() + image.width());
+        let end_y =
+            (offset_u32.y() + self.image_buffer.height()).min(corr_offs_u32.y() + image.height());
+
+        // If there's no overlap, return None
+        if start_x >= end_x || start_y >= end_y {
+            return None;
+        }
+        let mapped_start_x = start_x - corr_offs_u32.x();
+        let mapped_start_y = start_y - corr_offs_u32.y();
+        let mapped_end_y = end_y - corr_offs_u32.y();
+
+        let crop_width = end_x - corr_offs_u32.x() - mapped_start_x;
+        let crop_height = mapped_end_y - mapped_start_y;
+
+        let rgb_start_y = image.height() - mapped_end_y;
+
+        if rgb_start_y < image.height() && mapped_start_x < image.width() {
+            let img = imageops::crop(
+                &mut image,
+                mapped_start_x,
+                rgb_start_y,
+                crop_width,
+                crop_height,
+            )
+            .to_image();
+            return Some((
+                img,
+                self.map_offset(Vec2D::from_real(&Vec2D::new(start_x, start_y))),
+            ));
+        }
+        fatal!("Image Coordinates aren't matching, this should never happen!");
+    }
+
+    fn map_offset(&self, offset: Vec2D<I32F32>) -> Vec2D<u32> {
+        let corr_offs = self.offset + self.offset.unwrapped_to_top_right(&offset);
+        if corr_offs.x() < self.offset.x() || corr_offs.y() < self.offset.y() {
+            fatal!("Offset is outside of the image! This should never happen!");
+        }
+        let mapped_offset = self.offset - corr_offs;
+        mapped_offset.to_num::<u32>()
+    }
+}
+
+impl GenericImageView for OffsetZonedObjectiveImage {
+    type Pixel = Rgb<u8>;
+
+    fn dimensions(&self) -> (u32, u32) { self.image_buffer.dimensions() }
+
+    fn get_pixel(&self, x: u32, y: u32) -> Self::Pixel { *self.image_buffer.get_pixel(x, y) }
+}
+
+impl MapImage for OffsetZonedObjectiveImage {
+    type Pixel = Rgb<u8>;
+    type Container = Vec<u8>;
+    type ViewSubBuffer = OffsetZonedObjectiveImage;
+
+    fn mut_vec_view(
+        &mut self,
+        offset: Vec2D<u32>,
+    ) -> SubBuffer<&mut ImageBuffer<Self::Pixel, Self::Container>> {
+        SubBuffer {
+            buffer: &mut self.image_buffer,
+            buffer_size: u32::map_size(),
+            offset,
+            size: u32::map_size(),
+        }
+    }
+
+    fn vec_view(&self, offset: Vec2D<u32>, size: Vec2D<u32>) -> SubBuffer<&Self::ViewSubBuffer> {
+        SubBuffer { buffer: self, buffer_size: u32::map_size(), offset, size }
+    }
+
+    fn buffer(&self) -> &ImageBuffer<Self::Pixel, Self::Container> { &self.image_buffer }
 }
 
 impl FullsizeMapImage {
@@ -470,5 +565,69 @@ impl ThumbnailMapImage {
         } else {
             self.export_as_png()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use image::buffer::ConvertBuffer;
+
+    use crate::flight_control::camera_state::CameraAngle;
+
+    use super::*;
+
+    #[test]
+    fn test_overflow() {
+        let mut fullsize_image = FullsizeMapImage::open("tmp.bin");
+
+        let angle = CameraAngle::Normal;
+        let area_size = angle.get_square_side_length() as u32;
+        let offset = Vec2D::new(
+            Vec2D::<u32>::map_size().x() - area_size / 2,
+            Vec2D::<u32>::map_size().y() - area_size / 2,
+        );
+
+        let mut area_image: ImageBuffer<Rgb<u8>, Vec<u8>> = ImageBuffer::new(area_size, area_size);
+        for x in 0..area_size {
+            for y in 0..area_size {
+                *area_image.get_pixel_mut(x, y) = Rgb([
+                    (x % 0xFF) as u8,
+                    (y % 0xFF) as u8,
+                    ((x + 7 + y * 3) % 130) as u8,
+                ]);
+            }
+        }
+        fullsize_image.update_area(offset, &area_image);
+        fullsize_image.coverage.set_region(
+            Vec2D::new(
+                I32F32::from_num(offset.x() + area_size / 2),
+                I32F32::from_num(offset.y() + area_size / 2),
+            ),
+            angle,
+            true,
+        );
+
+        let assert_area_edge = |fs_offset: Vec2D<u32>, area_offset: Vec2D<u32>, size: u32| {
+            let fs_view = fullsize_image.vec_view(fs_offset, Vec2D::new(size, size));
+            let mut fs_image: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(size, size);
+            fs_image.copy_from(&fs_view, 0, 0).unwrap();
+            let fs_image_rgb: ImageBuffer<Rgb<u8>, Vec<u8>> = fs_image.convert();
+            let area_view = area_image.view(area_offset.x(), area_offset.y(), size, size);
+            assert_eq!(fs_image_rgb.as_raw(), area_view.to_image().as_raw());
+        };
+        assert_area_edge(
+            Vec2D::new(0, 0),
+            Vec2D::new(area_size / 2, area_size / 2),
+            area_size / 2,
+        );
+        assert_area_edge(
+            Vec2D::new(
+                Vec2D::<u32>::map_size().x() - area_size / 2,
+                Vec2D::<u32>::map_size().y() - area_size / 2,
+            ),
+            Vec2D::new(0, 0),
+            area_size / 2,
+        );
+        assert_area_edge(offset, Vec2D::new(0, 0), area_size);
     }
 }
