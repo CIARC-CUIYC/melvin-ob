@@ -37,11 +37,7 @@ itertools = "0.14.0"
 bincode = { version = "2.0.1", features = ["serde"] }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
-tikv-jemallocator = { version = "0.6.0", features = ["profiling"], optional = true }
-
-[features]
-default = []
-profiling = ["tikv-jemallocator/profiling"]
+tikv-jemallocator = { version = "0.6.0", features = ["profiling"]}
 
 
 [lints.clippy]
@@ -64,7 +60,6 @@ panic = 'unwind'
 codegen-units = 256
 incremental = true
 rpath = false
-features = ["profiling"]
 
 [profile.release]
 opt-level = 3
@@ -76,6 +71,5 @@ overflow-checks = false
 lto = true
 panic = 'unwind'
 incremental = false
-codegen-units = 8
+codegen-units = 4
 rpath = false
-features = ["profiling"] # TODO: this is enabled for compatibility for now
