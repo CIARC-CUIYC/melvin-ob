@@ -67,7 +67,8 @@ impl ZORetrievalMode {
         let c_cont = context.k().c_cont();
         let (deadline, add_fut) = self.get_img_fut(context).await;
         let f_cont = context.k().f_cont();
-        let img_fut = c_cont.execute_zo_target_cycle(f_cont, deadline);
+        let mut zoned_objective_image_buffer = None;
+        let img_fut = c_cont.execute_zo_target_cycle(f_cont, deadline,&mut zoned_objective_image_buffer, offset, dim);
         tokio::pin!(add_fut);
         tokio::select! {
             () = img_fut => {
@@ -78,7 +79,7 @@ impl ZORetrievalMode {
         let c_cont = context.k().c_cont();
         let id = self.target.id();
         let img_path = Some(CameraController::generate_zo_img_path(id));
-        c_cont.export_and_upload_objective_png(id, offset, dim, img_path).await.unwrap_or_else(
+        c_cont.export_and_upload_objective_png(id, offset, dim, img_path, zoned_objective_image_buffer.as_ref()).await.unwrap_or_else(
             |e| {
                 error!("Error exporting and uploading objective image: {e}");
             },
