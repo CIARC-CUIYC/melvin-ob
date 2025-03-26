@@ -1,9 +1,5 @@
 use super::{file_based_buffer::FileBackedBuffer, sub_buffer::SubBuffer};
-use crate::{
-    fatal,
-    flight_control::common::vec2d::{MapSize, Vec2D},
-};
-use fixed::types::I32F32;
+use crate::flight_control::common::vec2d::{MapSize, Vec2D};
 use image::{
     DynamicImage, EncodableLayout, GenericImage, GenericImageView, ImageBuffer, Pixel,
     PixelWithColorType, Rgb, RgbImage,
@@ -205,7 +201,7 @@ impl OffsetZonedObjectiveImage {
         offset: Vec2D<u32>,
         image: &I,
     ) {
-        for x in 0..(image.width()) {
+        for x in 0..image.width() {
             let offset_x = (offset.x() + x) as i32;
             let relative_offset_x =
                 Vec2D::wrap_coordinate(offset_x - self.offset.x() as i32, Vec2D::map_size().x())
@@ -214,7 +210,7 @@ impl OffsetZonedObjectiveImage {
             if relative_offset_x > self.image_buffer.width() {
                 continue;
             }
-            for y in 0..(image.height()) {
+            for y in 0..image.height() {
                 let offset_y = (offset.y() + y) as i32;
                 let relative_offset_y = Vec2D::wrap_coordinate(
                     offset_y - self.offset.y() as i32,

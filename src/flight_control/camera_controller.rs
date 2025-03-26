@@ -169,7 +169,6 @@ impl CameraController {
         &self,
         f_cont_locked: Arc<RwLock<FlightComputer>>,
         angle: CameraAngle,
-        zoned_objective_map_image: Option<&mut OffsetZonedObjectiveImage>,
     ) -> Result<(Vec2D<I32F32>, Vec2D<u32>), Box<dyn std::error::Error + Send + Sync>> {
         let (pos, offset, decoded_image) = self.get_image(f_cont_locked, angle).await?;
 
@@ -182,9 +181,6 @@ impl CameraController {
             fullsize_map_image.update_area(tot_offset, &decoded_image);
             tot_offset
         };
-        if let Some(zoned_objective_map_image) = zoned_objective_map_image {
-            zoned_objective_map_image.update_area(tot_offset_u32, &decoded_image);
-        }
         self.update_thumbnail_area_from_fullsize(
             tot_offset_u32,
             u32::from(angle.get_square_side_length() / 2),
@@ -546,7 +542,7 @@ impl CameraController {
         let img_init_timestamp = Utc::now();
 
         let img_handle = tokio::spawn(async move {
-            match self_clone.shoot_image_to_map_buffer(Arc::clone(&f_cont_clone), lens, None).await {
+            match self_clone.shoot_image_to_map_buffer(Arc::clone(&f_cont_clone), lens).await {
                 Ok((pos, offset)) => {
                     let pic_num = {
                         let mut lock = p_c_clone.lock().await;
