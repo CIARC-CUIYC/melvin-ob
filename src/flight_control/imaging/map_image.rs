@@ -190,67 +190,53 @@ pub(crate) struct FullsizeMapImage {
 }
 
 pub(crate) struct OffsetZonedObjectiveImage {
-    offset: Vec2D<I32F32>,
+    offset: Vec2D<u32>,
     image_buffer: ImageBuffer<Rgb<u8>, Vec<u8>>,
 }
 
 impl OffsetZonedObjectiveImage {
-    pub fn new(bottom_left: Vec2D<I32F32>, dimensions: Vec2D<u32>) -> Self {
-        Self { offset: bottom_left, image_buffer: ImageBuffer::new(dimensions.x(), dimensions.y()) }
+    pub fn new(offset: Vec2D<u32>, dimensions: Vec2D<u32>) -> Self {
+        Self { offset, image_buffer: ImageBuffer::new(dimensions.x(), dimensions.y()) }
     }
 
-    pub fn cut_image(
-        &self,
-        mut image: RgbImage,
-        img_bot_left: Vec2D<I32F32>,
-    ) -> Option<(RgbImage, Vec2D<u32>)> {
-        let corr_offs = self.offset + self.offset.unwrapped_to_top_right(&img_bot_left);
-        let start_x = self.offset.x().max(corr_offs.x()).to_num::<u32>();
-        let start_y = self.offset.y().max(corr_offs.y()).to_num::<u32>();
-        let offset_u32 = self.offset.to_num::<u32>();
-        let corr_offs_u32 = corr_offs.to_num::<u32>();
-        let end_x =
-            (offset_u32.x() + self.image_buffer.width()).min(corr_offs_u32.x() + image.width());
-        let end_y =
-            (offset_u32.y() + self.image_buffer.height()).min(corr_offs_u32.y() + image.height());
+    pub fn update_area<I: GenericImageView<Pixel = Rgb<u8>>>(
+        &mut self,
+        offset: Vec2D<u32>,
+        image: &I,
+    ) {
+        for x in 0..(image.width()) {
+            let offset_x = (offset.x() + x) as i32;
+            let relative_offset_x =
+                Vec2D::wrap_coordinate(offset_x - self.offset.x() as i32, Vec2D::map_size().x())
+                    as u32;
 
-        // If there's no overlap, return None
-        if start_x >= end_x || start_y >= end_y {
-            return None;
+            if relative_offset_x > self.image_buffer.width() {
+                continue;
+            }
+            for y in 0..(image.height()) {
+                let offset_y = (offset.y() + y) as i32;
+                let relative_offset_y = Vec2D::wrap_coordinate(
+                    offset_y - self.offset.y() as i32,
+                    Vec2D::map_size().y(),
+                ) as u32;
+
+                if relative_offset_y as u32 > self.image_buffer.height() {
+                    continue;
+                }
+                *self.image_buffer.get_pixel_mut(relative_offset_x, relative_offset_y) =
+                    image.get_pixel(x, y);
+            }
         }
-        let mapped_start_x = start_x - corr_offs_u32.x();
-        let mapped_start_y = start_y - corr_offs_u32.y();
-        let mapped_end_y = end_y - corr_offs_u32.y();
-
-        let crop_width = end_x - corr_offs_u32.x() - mapped_start_x;
-        let crop_height = mapped_end_y - mapped_start_y;
-
-        let rgb_start_y = image.height() - mapped_end_y;
-
-        if rgb_start_y < image.height() && mapped_start_x < image.width() {
-            let img = imageops::crop(
-                &mut image,
-                mapped_start_x,
-                rgb_start_y,
-                crop_width,
-                crop_height,
-            )
-            .to_image();
-            return Some((
-                img,
-                self.map_offset(Vec2D::from_real(&Vec2D::new(start_x, start_y))),
-            ));
-        }
-        fatal!("Image Coordinates aren't matching, this should never happen!");
     }
 
-    fn map_offset(&self, offset: Vec2D<I32F32>) -> Vec2D<u32> {
-        let corr_offs = self.offset + self.offset.unwrapped_to_top_right(&offset);
-        if corr_offs.x() < self.offset.x() || corr_offs.y() < self.offset.y() {
-            fatal!("Offset is outside of the image! This should never happen!");
-        }
-        let mapped_offset = self.offset - corr_offs;
-        mapped_offset.to_num::<u32>()
+    fn export_as_png(&self) -> Result<EncodedImageExtract, Box<dyn std::error::Error>> {
+        let mut writer = Cursor::new(Vec::<u8>::new());
+        self.image_buffer.write_with_encoder(PngEncoder::new(&mut writer))?;
+        Ok(EncodedImageExtract {
+            offset: self.offset,
+            size: Vec2D::new(self.image_buffer.width(), self.image_buffer.height()),
+            data: writer.into_inner(),
+        })
     }
 }
 

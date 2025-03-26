@@ -1,6 +1,6 @@
 use super::imaging::{
     cycle_state::CycleState,
-    map_image::{EncodedImageExtract, FullsizeMapImage, MapImage, ThumbnailMapImage},
+    map_image::{EncodedImageExtract, FullsizeMapImage, MapImage, OffsetZonedObjectiveImage, ThumbnailMapImage},
 };
 use crate::console_communication::ConsoleMessenger;
 use crate::flight_control::{
@@ -169,6 +169,7 @@ impl CameraController {
         &self,
         f_cont_locked: Arc<RwLock<FlightComputer>>,
         angle: CameraAngle,
+        zoned_objective_map_image: Option<&mut OffsetZonedObjectiveImage>,
     ) -> Result<(Vec2D<I32F32>, Vec2D<u32>), Box<dyn std::error::Error + Send + Sync>> {
         let (pos, offset, decoded_image) = self.get_image(f_cont_locked, angle).await?;
 
@@ -181,6 +182,9 @@ impl CameraController {
             fullsize_map_image.update_area(tot_offset, &decoded_image);
             tot_offset
         };
+        if let Some(zoned_objective_map_image) = zoned_objective_map_image {
+            zoned_objective_map_image.update_area(tot_offset_u32, &decoded_image);
+        }
         self.update_thumbnail_area_from_fullsize(
             tot_offset_u32,
             u32::from(angle.get_square_side_length() / 2),
@@ -283,9 +287,14 @@ impl CameraController {
         offset: Vec2D<u32>,
         size: Vec2D<u32>,
         export_path: Option<PathBuf>,
+        zoned_objective_map_image: Option<&OffsetZonedObjectiveImage>
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let map_image = self.fullsize_map_image.read().await;
-        let encoded_image = map_image.export_area_as_png(offset, size)?;
+        let encoded_image = if let Some(zoned_objective_map_image) = zoned_objective_map_image {
+            zoned_objective_map_image.export_as_png()?
+        } else {
+            let map_image = self.fullsize_map_image.read().await;
+            map_image.export_area_as_png(offset, size)?
+        };
         if let Some(img_path) = export_path {
             let mut img_file = File::create(&img_path).await?;
             img_file.write_all(encoded_image.data.as_slice()).await?;
@@ -474,8 +483,11 @@ impl CameraController {
         self: Arc<Self>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
         deadline: DateTime<Utc>,
+        zoned_objective_image_buffer: &mut Option<OffsetZonedObjectiveImage>,
+        offset: Vec2D<u32>, dimensions: Vec2D<u32>
     ) {
         obj!("Starting acquisition cycle for objective!");
+        zoned_objective_image_buffer.replace(OffsetZonedObjectiveImage::new(offset, dimensions));
         let lens = f_cont_lock.read().await.current_angle();
         let mut pics = 0;
         let deadline_cont = deadline - Utc::now() > TimeDelta::seconds(20);
@@ -483,7 +495,7 @@ impl CameraController {
         loop {
             let next_img_due = Utc::now() + TimeDelta::seconds(1);
             let img_init_timestamp = Utc::now();
-            match self.shoot_image_to_buffer(Arc::clone(&f_cont_lock), lens).await {
+            match self.shoot_image_to_buffer(Arc::clone(&f_cont_lock), lens, zoned_objective_image_buffer.as_mut()).await {
                 Ok((pos, _)) => {
                     pics += 1;
                     let s = (Utc::now() - img_init_timestamp).num_seconds();
@@ -519,7 +531,7 @@ impl CameraController {
         let img_init_timestamp = Utc::now();
 
         let img_handle = tokio::spawn(async move {
-            match self_clone.shoot_image_to_buffer(Arc::clone(&f_cont_clone), lens).await {
+            match self_clone.shoot_image_to_buffer(Arc::clone(&f_cont_clone), lens, None).await {
                 Ok((pos, offset)) => {
                     let pic_num = {
                         let mut lock = p_c_clone.lock().await;
