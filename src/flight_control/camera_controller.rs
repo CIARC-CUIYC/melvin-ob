@@ -165,7 +165,7 @@ impl CameraController {
     ///
     /// The updated offset as `Vec2D<u32>` or an error.
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
-    pub async fn shoot_image_to_buffer(
+    pub async fn shoot_image_to_map_buffer(
         &self,
         f_cont_locked: Arc<RwLock<FlightComputer>>,
         angle: CameraAngle,
@@ -193,6 +193,21 @@ impl CameraController {
         Ok((pos, tot_offset_u32))
     }
 
+    pub async fn shoot_image_to_zo_buffer(
+        &self,
+        f_cont_locked: Arc<RwLock<FlightComputer>>,
+        angle: CameraAngle,
+        zoned_objective_map_image: Option<&mut OffsetZonedObjectiveImage>,
+    ) -> Result<Vec2D<I32F32>, Box<dyn std::error::Error + Send + Sync>> {
+        let (pos, offset, decoded_image) = self.get_image(f_cont_locked, angle).await?;
+        let offset_u32 = offset.to_unsigned();
+        if let Some(image) = zoned_objective_map_image {
+            image.update_area(offset_u32, &decoded_image);
+        }
+        
+        Ok(pos)
+    }
+    
     /// Updates the thumbnail area of the map based on the full-size map data.
     ///
     /// # Arguments
@@ -495,8 +510,8 @@ impl CameraController {
         loop {
             let next_img_due = Utc::now() + TimeDelta::seconds(1);
             let img_init_timestamp = Utc::now();
-            match self.shoot_image_to_buffer(Arc::clone(&f_cont_lock), lens, zoned_objective_image_buffer.as_mut()).await {
-                Ok((pos, _)) => {
+            match self.shoot_image_to_zo_buffer(Arc::clone(&f_cont_lock), lens, zoned_objective_image_buffer.as_mut()).await {
+                Ok(pos) => {
                     pics += 1;
                     let s = (Utc::now() - img_init_timestamp).num_seconds();
                     if pics % step_print == 0 {
@@ -531,7 +546,7 @@ impl CameraController {
         let img_init_timestamp = Utc::now();
 
         let img_handle = tokio::spawn(async move {
-            match self_clone.shoot_image_to_buffer(Arc::clone(&f_cont_clone), lens, None).await {
+            match self_clone.shoot_image_to_map_buffer(Arc::clone(&f_cont_clone), lens, None).await {
                 Ok((pos, offset)) => {
                     let pic_num = {
                         let mut lock = p_c_clone.lock().await;

@@ -199,6 +199,7 @@ impl OffsetZonedObjectiveImage {
         Self { offset, image_buffer: ImageBuffer::new(dimensions.x(), dimensions.y()) }
     }
 
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
     pub fn update_area<I: GenericImageView<Pixel = Rgb<u8>>>(
         &mut self,
         offset: Vec2D<u32>,
@@ -220,7 +221,7 @@ impl OffsetZonedObjectiveImage {
                     Vec2D::map_size().y(),
                 ) as u32;
 
-                if relative_offset_y as u32 > self.image_buffer.height() {
+                if relative_offset_y > self.image_buffer.height() {
                     continue;
                 }
                 *self.image_buffer.get_pixel_mut(relative_offset_x, relative_offset_y) =
