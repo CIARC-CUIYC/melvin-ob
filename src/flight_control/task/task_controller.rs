@@ -200,7 +200,7 @@ impl TaskController {
 
                     let switch = if score_cube.len() < score_cube.size() {
                         // We do not swap here as the time after the maximum prediction time is not predictable
-                        i32::MIN
+                        ScoreGrid::MIN_SCORE - 1
                     } else {
                         // Compute score for the decision to switch to the other state.
                         score_cube.back().unwrap().get(e, s ^ 1)

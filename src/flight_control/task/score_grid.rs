@@ -12,6 +12,7 @@ pub struct ScoreGrid {
 }
 
 impl ScoreGrid {
+    pub const MIN_SCORE: i32 = i32::MIN + 2;
     /// Creates a new `ScoreGrid` with specified dimensions, initializing all values to `0`.
     ///
     /// # Arguments
@@ -41,7 +42,7 @@ impl ScoreGrid {
         (end_s, end_min_e): (Option<usize>, usize),
     ) -> Self {
         let (end_st, step) = if let Some(s) = end_s { (s, s_len) } else { (0, 1) };
-        let mut min_score = vec![i32::MIN; e_len * s_len].into_boxed_slice();
+        let mut min_score = vec![Self::MIN_SCORE; e_len * s_len].into_boxed_slice();
         if end_st < s_len && end_min_e < e_len {
             let start_ind = end_min_e * s_len + end_st;
             let end_ind = s_len * e_len;
