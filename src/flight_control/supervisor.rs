@@ -118,7 +118,7 @@ impl Supervisor {
     pub async fn schedule_secret_objective(&self, objective_id: usize, zone: [i32; 4]) {
         let current_secret_objectives = self.current_secret_objectives.read().await;
         let obj =
-        current_secret_objectives.iter().find(|obj| obj.id() == objective_id);
+        current_secret_objectives.iter().find(|obj| obj.id() == objective_id && obj.end() > Utc::now());
         if let Some(obj) = obj {
             self.zo_mon.send(KnownImgObjective::try_from((obj, zone)).unwrap()).await.unwrap();
         }
@@ -153,18 +153,18 @@ impl Supervisor {
             if last_objective_check + Self::OBJ_UPDATE_INTERVAL < Utc::now() {
                 let handle = self.f_cont_lock.read().await.client();
                 let objective_list = ObjectiveListRequest {}.send_request(&handle).await.unwrap();
-                let mut send_img_objs = Vec::new();
-                let mut send_beac_objs = Vec::new();
+                let mut send_img_objs =  vec![];
+                let mut send_beac_objs =  vec![];
 
                 let mut currently_secret_objectives = vec![];
                 for img_obj in objective_list.img_objectives() {
                     let obj_on = img_obj.start() < Utc::now() && img_obj.end() > Utc::now();
                     let is_secret = matches!(img_obj.zone_type(), ZoneType::SecretZone(_));
-                    if !id_list.contains(&img_obj.id()) {
-                        if obj_on && !is_secret {
-                            send_img_objs.push(KnownImgObjective::try_from(img_obj.clone()).unwrap());
-                        } else {
+                    if !id_list.contains(&img_obj.id()) && obj_on {
+                        if is_secret {
                             currently_secret_objectives.push(img_obj.clone());
+                        } else {
+                            send_img_objs.push(KnownImgObjective::try_from(img_obj.clone()).unwrap());
                         }
                     }
                 }
