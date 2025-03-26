@@ -75,6 +75,7 @@ async fn init(url: &str) -> (Arc<ModeContext>, Box<dyn GlobalMode>) {
     };
     if env::var("SKIP_RESET").is_ok() {
         warn!("Skipping reset!");
+        FlightComputer::avoid_transition(&init_k.f_cont()).await;
         FlightComputer::charge_full_wait(&init_k.f_cont()).await;
     } else {
         init_k.f_cont().write().await.reset().await; 

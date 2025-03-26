@@ -412,18 +412,7 @@ impl FlightComputer {
         };
         info!("Safe Mode Runtime initiated. Transitioning back to {target_state} asap.");
         Self::wait_for_duration(Self::TO_SAFE_SLEEP, false).await;
-        let cond_not_trans = (
-            |cont: &FlightComputer| cont.state() != FlightState::Transition,
-            format!("State is not {}", FlightState::Transition),
-        );
-        Self::wait_for_condition(
-            &self_lock,
-            cond_not_trans,
-            Self::DEF_COND_TO,
-            Self::DEF_COND_PI,
-            false,
-        )
-        .await;
+        Self::avoid_transition(&self_lock).await;
         let state = self_lock.read().await.state();
         if state != FlightState::Safe {
             error!("State is not safe but {}", state);
@@ -441,6 +430,22 @@ impl FlightComputer {
         )
         .await;
         Self::set_state_wait(self_lock, target_state).await;
+    }
+    
+    pub async fn avoid_transition(self_lock: &Arc<RwLock<Self>>) {
+        let not_trans = (
+            |cont: &FlightComputer| cont.state() != FlightState::Transition,
+            format!("State is not {}", FlightState::Transition),
+            );
+        let max_dt = TRANS_DEL[&(FlightState::Safe, FlightState::Acquisition)];
+        Self::wait_for_condition(
+            &self_lock,
+            not_trans,
+            max_dt.as_millis() as u32,
+            Self::DEF_COND_PI,
+            false,
+        )
+            .await;
     }
 
     #[allow(clippy::cast_possible_wrap)]
