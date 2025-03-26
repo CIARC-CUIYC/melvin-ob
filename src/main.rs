@@ -7,6 +7,13 @@ mod keychain;
 mod logger;
 mod mode_control;
 
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
 use crate::flight_control::beacon_controller::BeaconController;
 use crate::flight_control::{
     camera_state::CameraAngle,

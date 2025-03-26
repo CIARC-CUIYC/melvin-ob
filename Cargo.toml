@@ -13,9 +13,9 @@ A high performance asychronous compute framework for system simulation.
 categories = ["aerospace", "science"]
 
 [dependencies]
-reqwest = { version = "0.12.9", default-features = false, features = ["json", "multipart", "stream", "http2", "deflate" ] }
+reqwest = { version = "0.12.9", default-features = false, features = ["json", "multipart", "stream", "http2", "deflate"] }
 tokio = { version = "1.0", features = ["rt-multi-thread", "net", "macros"] }
-tokio-util = {version = "0.7.13"}
+tokio-util = { version = "0.7.13" }
 async-trait = "0.1.86"
 reqwest-eventsource = "0.6.0"
 serde = { version = "1.0", features = ["derive"] }
@@ -25,7 +25,7 @@ strum = "0.27.0"
 strum_macros = "0.27.0"
 bitvec = { version = "1.0.1", features = ["serde"] }
 futures = "0.3.31"
-fixed = {version = "1.28.0", features = ["serde", "num-traits"]}
+fixed = { version = "1.28.0", features = ["serde", "num-traits"] }
 image = { version = "0.25.5", default-features = false, features = ["jpeg", "png", "rayon"] }
 prost = "0.13"
 num = "0.4.3"
@@ -33,9 +33,16 @@ libc = "0.2.169"
 regex = "1.11.1"
 rand = "0.9.0"
 kiddo = "5.0.3"
-csv = "1.3.1"
 itertools = "0.14.0"
 bincode = { version = "2.0.1", features = ["serde"] }
+
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = { version = "0.6.0", features = ["profiling"], optional = true }
+
+[features]
+default = []
+profiling = ["tikv-jemallocator/profiling"]
+
 
 [lints.clippy]
 correctness = "deny"
@@ -45,6 +52,19 @@ perf = "warn"
 style = "warn"
 complexity = "warn"
 pedantic = "warn"
+
+[profile.dev]
+opt-level = 0
+debug = true
+split-debuginfo = '...'
+debug-assertions = true
+overflow-checks = true
+lto = false
+panic = 'unwind'
+codegen-units = 256
+incremental = true
+rpath = false
+features = ["profiling"]
 
 [profile.release]
 opt-level = 3
@@ -56,8 +76,6 @@ overflow-checks = false
 lto = true
 panic = 'unwind'
 incremental = false
-codegen-units = 16
+codegen-units = 8
 rpath = false
-
-[build-dependencies]
-prost-build = "0.13.4"
+features = ["profiling"] # TODO: this is enabled for compatibility for now
