@@ -517,8 +517,7 @@ impl FlightComputer {
             let acq_acc_db =
                 FlightState::Acquisition.get_charge_rate() + FlightState::ACQ_ACC_ADDITION;
             let or_vel_corr_db = I32F32::from_num(vel_change_dt.as_secs()) * acq_acc_db;
-            let or_db = Self::max_or_maneuver_charge();
-            TaskController::MIN_BATTERY_THRESHOLD - 1 * (or_vel_corr_db + or_db)
+            TaskController::MIN_BATTERY_THRESHOLD + or_vel_corr_db.abs()
         };
         log!("Getting back to orbit velocity {orbit_vel}. Minimum charge needed: {charge_needed}");
         if batt < charge_needed {
@@ -718,8 +717,9 @@ impl FlightComputer {
             pos = self_lock.read().await.current_pos();
         }
         let dt = (Utc::now() - start).num_seconds();
-        info!("Orbit Return Deviation Compensation finished in {dt}s.");
-        o_unlocked.get_i(pos).unwrap()
+        let entry_i = o_unlocked.get_i(pos).unwrap();
+        info!("Orbit Return Deviation Compensation finished in {dt}s. New Orbit Index: {entry_i}");
+        entry_i
     }
 
     pub fn max_or_maneuver_charge() -> I32F32 {

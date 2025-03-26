@@ -80,11 +80,6 @@ impl CameraController {
             base_path,
         }
     }
-    
-    pub async fn get_coverage(&self) -> I32F32 {
-        let img = self.fullsize_map_image.read().await;
-        img.coverage.get_coverage()
-    }
 
     /// Scores the offset by comparing the decoded image against the map base image.
     ///
@@ -120,14 +115,11 @@ impl CameraController {
                 let mut score: i32 = map_image_view
                     .pixels()
                     .zip(decoded_image.pixels())
-                    .map(|((_, _, existing_pixel), new_pixel)| {
-                        if existing_pixel.0[3] == 0 || existing_pixel.to_rgb() == new_pixel.to_rgb()
-                        {
-                            0
-                        } else {
-                            -1
-                        }
-                    })
+                    .map(
+                        |((_, _, existing_pixel), new_pixel)| {
+                            if existing_pixel.to_rgb() == new_pixel.to_rgb() { 0 } else { -1 }
+                        },
+                    )
                     .sum();
 
                 score -= additional_offset_x.abs() + additional_offset_y.abs();
@@ -187,7 +179,6 @@ impl CameraController {
             let tot_offset: Vec2D<u32> =
                 (offset + best_additional_offset).wrap_around_map().to_unsigned();
             fullsize_map_image.update_area(tot_offset, &decoded_image);
-            fullsize_map_image.coverage.set_region(Vec2D::new(pos.x(), pos.y()), angle, true);
             tot_offset
         };
         self.update_thumbnail_area_from_fullsize(
@@ -486,12 +477,8 @@ impl CameraController {
         obj!("Starting acquisition cycle for objective!");
         let lens = f_cont_lock.read().await.current_angle();
         let mut pics = 0;
-        let mut step_print;
-        if deadline - Utc::now() > TimeDelta::seconds(20) {
-            step_print = 10;
-        } else {
-            step_print = 2;
-        }
+        let deadline_cont = deadline - Utc::now() > TimeDelta::seconds(20);
+        let step_print = if deadline_cont { 10 } else { 2 };
         loop {
             let next_img_due = Utc::now() + TimeDelta::seconds(1);
             let img_init_timestamp = Utc::now();

@@ -1,11 +1,14 @@
 use super::{file_based_buffer::FileBackedBuffer, sub_buffer::SubBuffer};
-use crate::{fatal, flight_control::common::{
-    bitmap::Bitmap,
-    vec2d::{MapSize, Vec2D},
-}};
+use crate::{
+    fatal,
+    flight_control::common::vec2d::{MapSize, Vec2D},
+};
 use fixed::types::I32F32;
 use image::{
-    codecs::png::{CompressionType, FilterType, PngDecoder, PngEncoder}, imageops, DynamicImage, EncodableLayout, GenericImage, GenericImageView, ImageBuffer, Pixel, PixelWithColorType, Rgb, RgbImage, Rgba, RgbaImage
+    DynamicImage, EncodableLayout, GenericImage, GenericImageView, ImageBuffer, Pixel,
+    PixelWithColorType, Rgb, RgbImage,
+    codecs::png::{CompressionType, FilterType, PngDecoder, PngEncoder},
+    imageops,
 };
 use std::{
     io::{BufReader, Cursor},
@@ -182,8 +185,6 @@ pub(crate) trait MapImage {
 /// * `coverage` - A `Bitmap` instance representing the coverage of the map image.
 /// * `image_buffer` - An `ImageBuffer` containing the RGB pixel data, backed by a `FileBackedBuffer`.
 pub(crate) struct FullsizeMapImage {
-    /// The bitmap representing the coverage of the map image.
-    pub(crate) coverage: Bitmap,
     /// The image buffer containing the pixel data, backed by a file.
     image_buffer: ImageBuffer<Rgb<u8>, FileBackedBuffer>,
 }
@@ -307,7 +308,6 @@ impl FullsizeMapImage {
             (u32::map_size().x() as usize) * (u32::map_size().y() as usize) * 3;
         let file_based_buffer = FileBackedBuffer::open(path, fullsize_buffer_size).unwrap();
         Self {
-            coverage: Bitmap::from_map_size(),
             image_buffer: ImageBuffer::from_raw(
                 u32::map_size().x(),
                 u32::map_size().y(),
@@ -320,7 +320,7 @@ impl FullsizeMapImage {
 
 impl GenericImageView for FullsizeMapImage {
     /// The pixel type used by the image buffer, in this case, `Rgba<u8>`.
-    type Pixel = Rgba<u8>;
+    type Pixel = Rgb<u8>;
 
     /// Returns the dimensions of the image buffer as a tuple `(width, height)`.
     ///
@@ -341,14 +341,7 @@ impl GenericImageView for FullsizeMapImage {
     /// # Returns
     /// An `Rgba<u8>` pixel that is either from the image buffer (if covered) or
     /// a transparent black pixel (if not covered).
-    fn get_pixel(&self, x: u32, y: u32) -> Self::Pixel {
-        if self.coverage.is_set(x, y) {
-            let pixel = self.image_buffer.get_pixel(x, y).0;
-            Rgba([pixel[0], pixel[1], pixel[2], 0xFF])
-        } else {
-            Rgba([0, 0, 0, 0])
-        }
-    }
+    fn get_pixel(&self, x: u32, y: u32) -> Self::Pixel { *self.image_buffer.get_pixel(x, y) }
 }
 
 impl MapImage for FullsizeMapImage {
@@ -405,16 +398,16 @@ impl MapImage for FullsizeMapImage {
 /// which are useful for generating previews or comparing snapshots.
 pub(crate) struct ThumbnailMapImage {
     /// The underlying image buffer storing the pixel data of the thumbnail.
-    image_buffer: RgbaImage,
+    image_buffer: RgbImage,
 }
 
 impl MapImage for ThumbnailMapImage {
     /// The pixel type used, which is RGBA with 8-bit sub-pixels.
-    type Pixel = Rgba<u8>;
+    type Pixel = Rgb<u8>;
     /// The container type for the pixel data, represented as a vector of bytes.
     type Container = Vec<u8>;
     /// The view type for sub-regions of the thumbnail, implemented as an `ImageBuffer`.
-    type ViewSubBuffer = ImageBuffer<Rgba<u8>, Vec<u8>>;
+    type ViewSubBuffer = ImageBuffer<Rgb<u8>, Vec<u8>>;
 
     /// Provides a mutable view of the thumbnail at the specified offset.
     ///
@@ -426,7 +419,7 @@ impl MapImage for ThumbnailMapImage {
     fn mut_vec_view(
         &mut self,
         offset: Vec2D<u32>,
-    ) -> SubBuffer<&mut ImageBuffer<Rgba<u8>, Vec<u8>>> {
+    ) -> SubBuffer<&mut ImageBuffer<Rgb<u8>, Vec<u8>>> {
         SubBuffer {
             buffer: &mut self.image_buffer,
             buffer_size: Self::thumbnail_size(),
@@ -447,7 +440,7 @@ impl MapImage for ThumbnailMapImage {
         &self,
         offset: Vec2D<u32>,
         size: Vec2D<u32>,
-    ) -> SubBuffer<&ImageBuffer<Rgba<u8>, Vec<u8>>> {
+    ) -> SubBuffer<&ImageBuffer<Rgb<u8>, Vec<u8>>> {
         SubBuffer { buffer: &self.image_buffer, buffer_size: Self::thumbnail_size(), offset, size }
     }
 
@@ -507,7 +500,7 @@ impl ThumbnailMapImage {
         let image_buffer = if let Ok(file) = std::fs::File::open(snapshot_path) {
             DynamicImage::from_decoder(PngDecoder::new(&mut BufReader::new(file)).unwrap())
                 .unwrap()
-                .to_rgba8()
+                .to_rgb8()
         } else {
             ImageBuffer::new(Self::thumbnail_size().x(), Self::thumbnail_size().y())
         };
@@ -540,14 +533,14 @@ impl ThumbnailMapImage {
             let old_snapshot = DynamicImage::from_decoder(PngDecoder::new(&mut Cursor::new(
                 old_snapshot_encoded,
             ))?)?
-            .to_rgba8();
+            .to_rgb8();
             let mut current_snapshot = self.image_buffer.clone();
 
             for (current_pixel, new_pixel) in
                 old_snapshot.pixels().zip(current_snapshot.pixels_mut())
             {
                 if *current_pixel == *new_pixel {
-                    *new_pixel = Rgba([0, 0, 0, 0]);
+                    *new_pixel = Rgb([0, 0, 0]);
                 }
             }
             let mut writer = Cursor::new(Vec::<u8>::new());
@@ -570,8 +563,6 @@ impl ThumbnailMapImage {
 
 #[cfg(test)]
 mod tests {
-    use image::buffer::ConvertBuffer;
-
     use crate::flight_control::camera_state::CameraAngle;
 
     use super::*;
@@ -598,22 +589,12 @@ mod tests {
             }
         }
         fullsize_image.update_area(offset, &area_image);
-        fullsize_image.coverage.set_region(
-            Vec2D::new(
-                I32F32::from_num(offset.x() + area_size / 2),
-                I32F32::from_num(offset.y() + area_size / 2),
-            ),
-            angle,
-            true,
-        );
-
         let assert_area_edge = |fs_offset: Vec2D<u32>, area_offset: Vec2D<u32>, size: u32| {
             let fs_view = fullsize_image.vec_view(fs_offset, Vec2D::new(size, size));
-            let mut fs_image: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(size, size);
+            let mut fs_image: ImageBuffer<Rgb<u8>, Vec<u8>> = ImageBuffer::new(size, size);
             fs_image.copy_from(&fs_view, 0, 0).unwrap();
-            let fs_image_rgb: ImageBuffer<Rgb<u8>, Vec<u8>> = fs_image.convert();
             let area_view = area_image.view(area_offset.x(), area_offset.y(), size, size);
-            assert_eq!(fs_image_rgb.as_raw(), area_view.to_image().as_raw());
+            assert_eq!(fs_image.as_raw(), area_view.to_image().as_raw());
         };
         assert_area_edge(
             Vec2D::new(0, 0),
