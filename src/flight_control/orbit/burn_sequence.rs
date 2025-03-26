@@ -251,7 +251,7 @@ impl<'a> BurnSequenceEvaluator<'a> {
             let cost = self.get_bs_cost(&b);
             let add_cost = Self::get_add_target_cost(&b, &n_target);
             let curr_cost = self.best_burn.as_ref().map_or(I32F32::MAX, ExitBurnResult::cost);
-            if curr_cost.saturating_add(add_cost) > cost
+            if curr_cost > cost.saturating_add(add_cost)
                 && b.min_charge() <= max_needed_batt
                 && b.min_fuel() <= self.fuel_left
             {

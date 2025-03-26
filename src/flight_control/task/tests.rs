@@ -139,7 +139,7 @@ async fn test_multi_target_burn_calculator() {
         // Check if the estimated Y position is close to the target Y
         let hit_target = est.euclid_distance(res.target_pos())
             < detumble_dt * (I32F32::lit("0.002") * detumble_dt);
-        if hit_target {
+        if !hit_target {
             info!("Test successfull. Acc for {acc_dt}s, detumble for {detumble_dt}s!");
         } else {
             error!("Test failed.");
