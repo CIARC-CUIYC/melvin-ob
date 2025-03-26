@@ -281,7 +281,7 @@ impl TaskController {
         clippy::cast_possible_wrap,
         clippy::too_many_lines
     )]
-    pub async fn calculate_single_target_burn_sequence(
+    pub fn calculate_single_target_burn_sequence(
         curr_i: IndexedOrbitPosition,
         curr_vel: Vec2D<I32F32>,
         target_pos: Vec2D<I32F32>,
@@ -337,7 +337,7 @@ impl TaskController {
         clippy::cast_possible_wrap,
         clippy::too_many_lines
     )]
-    pub async fn calculate_multi_target_burn_sequence(
+    pub fn calculate_multi_target_burn_sequence(
         curr_i: IndexedOrbitPosition,
         curr_vel: Vec2D<I32F32>,
         entries: [(Vec2D<I32F32>, Vec2D<I32F32>); 4],

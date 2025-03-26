@@ -17,7 +17,6 @@ use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use std::{pin::Pin, sync::Arc};
 use tokio::sync::Mutex;
-use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
 pub struct ZORetrievalMode {
@@ -66,7 +65,7 @@ impl ZORetrievalMode {
         let dim = Vec2D::new(self.target.width(), self.target.height()).to_unsigned();
 
         let c_cont = context.k().c_cont();
-        let (deadline, add_fut) = self.get_img_fut(&context).await;
+        let (deadline, add_fut) = self.get_img_fut(context).await;
         let f_cont = context.k().f_cont();
         let img_fut = c_cont.execute_zo_target_cycle(f_cont, deadline);
         tokio::pin!(add_fut);
@@ -74,7 +73,7 @@ impl ZORetrievalMode {
             () = img_fut => {
                 FlightComputer::stop_ongoing_burn(context.k().f_cont()).await;
             },
-            _ = &mut add_fut => ()
+            () = &mut add_fut => ()
         }
         let c_cont = context.k().c_cont();
         let id = self.target.id();

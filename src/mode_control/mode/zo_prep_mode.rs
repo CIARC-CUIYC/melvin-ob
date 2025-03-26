@@ -73,7 +73,6 @@ impl ZOPrepMode {
                 due,
                 fuel_left,
             )
-            .await
         } else {
             let entries = zo.get_corners();
             TaskController::calculate_multi_target_burn_sequence(
@@ -82,7 +81,7 @@ impl ZOPrepMode {
                 entries,
                 due,
                 fuel_left
-            ).await
+            )
         }?;
         Self::log_burn(&exit_burn, &zo);
         let base = Self::overthink_base(context, curr_base, exit_burn.sequence()).await;

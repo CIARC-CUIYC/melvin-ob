@@ -54,7 +54,6 @@ async fn test_single_target_burn_calculator() {
             mock_end_t,
             mock_fuel_left,
         )
-        .await
         .unwrap();
         let exit_burn = res.sequence();
         let entry_pos = exit_burn.sequence_pos().first().unwrap();
@@ -124,7 +123,6 @@ async fn test_multi_target_burn_calculator() {
             mock_end_t,
             mock_fuel_left,
         )
-        .await
         .unwrap();
         let exit_burn = res.sequence();
         let entry_pos = exit_burn.sequence_pos().first().unwrap();

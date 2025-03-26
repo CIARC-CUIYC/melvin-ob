@@ -1,8 +1,7 @@
 use super::objective_image::ObjectiveImageResponse;
 use super::request_common::{
-    HTTPRequestMethod, HTTPRequestType, MultipartBodyHTTPRequestType, RequestError,
+    HTTPRequestMethod, HTTPRequestType, MultipartBodyHTTPRequestType,
 };
-use prost::bytes::Bytes;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -29,6 +28,6 @@ impl HTTPRequestType for ObjectiveImageRequest {
 
 impl ObjectiveImageRequest {
     pub fn new(objective_id: usize, image_path: PathBuf) -> Self {
-        Self { objective_id, image_path }
+        Self { image_path, objective_id }
     }
 }

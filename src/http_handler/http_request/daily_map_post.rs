@@ -1,6 +1,6 @@
 use super::daily_map::DailyMapResponse;
 use super::request_common::{
-    HTTPRequestMethod, HTTPRequestType, MultipartBodyHTTPRequestType, RequestError,
+    HTTPRequestMethod, HTTPRequestType, MultipartBodyHTTPRequestType,
 };
 use std::{io, path::Path};
 use std::path::PathBuf;

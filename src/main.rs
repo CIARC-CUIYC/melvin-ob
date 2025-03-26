@@ -24,11 +24,6 @@ use crate::mode_control::{
 use chrono::TimeDelta;
 use fixed::types::I32F32;
 use std::{env, sync::Arc, time::Duration};
-use std::io::Read;
-use crate::http_handler::http_client::HTTPClient;
-use crate::http_handler::http_request::daily_map_post::DailyMapRequest;
-use crate::http_handler::http_request::objective_image_post::ObjectiveImageRequest;
-use crate::http_handler::http_request::request_common::MultipartBodyHTTPRequestType;
 use crate::mode_control::mode::orbit_return_mode::OrbitReturnMode;
 
 const DT_MIN: TimeDelta = TimeDelta::seconds(5);

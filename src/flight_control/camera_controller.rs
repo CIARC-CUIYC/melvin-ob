@@ -434,7 +434,7 @@ impl CameraController {
 
         loop {
             let (img_t, offset) =
-                Self::exec_map_capture(&self, &f_cont_lock, &pic_count_lock, lens).await;
+                Self::exec_map_capture(self, &f_cont_lock, &pic_count_lock, lens).await;
 
             let mut next_img_due = Self::get_next_map_img(image_max_dt, end_time);
             if let Some(off) = offset {
