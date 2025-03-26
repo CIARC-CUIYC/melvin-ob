@@ -1,3 +1,4 @@
+use crate::flight_control::camera_controller::CameraController;
 use crate::flight_control::{
     common::vec2d::Vec2D,
     flight_computer::FlightComputer,
@@ -16,7 +17,6 @@ use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use std::{pin::Pin, sync::Arc};
 use tokio::sync::Mutex;
-use crate::flight_control::camera_controller::CameraController;
 
 #[derive(Clone)]
 pub struct ZORetrievalMode {
@@ -137,7 +137,6 @@ impl GlobalMode for ZORetrievalMode {
     ) -> WaitExitSignal {
         let safe_mon = context.super_v().safe_mon();
         let dt = (due - Utc::now()).to_std().unwrap_or(DT_0_STD);
-        // TODO: here we should maybe also monitor battery
         tokio::select! {
             () = tokio::time::sleep(dt) => {
                 WaitExitSignal::Continue
@@ -150,7 +149,15 @@ impl GlobalMode for ZORetrievalMode {
 
     async fn exec_task(&self, context: Arc<ModeContext>, task: Task) -> ExecExitSignal {
         match task.task_type() {
-            BaseTask::TakeImage(_) => self.exec_img_task(context).await,
+            BaseTask::TakeImage(_) => {
+                let safe_mon = context.super_v().safe_mon();
+                tokio::select! {
+                    () = self.exec_img_task(context) => { },
+                    () = safe_mon.notified() => {
+                        return ExecExitSignal::SafeEvent;
+                    }
+                }
+            }
             BaseTask::SwitchState(switch) => {
                 let f_cont = context.k().f_cont();
                 if matches!(
