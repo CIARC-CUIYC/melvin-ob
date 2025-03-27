@@ -20,7 +20,6 @@ use crate::flight_control::{
     flight_computer::FlightComputer,
     flight_state::FlightState,
     orbit::{ClosedOrbit, OrbitBase, OrbitCharacteristics, OrbitUsabilityError},
-    supervisor::Supervisor,
 };
 use crate::keychain::{Keychain, KeychainWithOrbit};
 use crate::mode_control::{
@@ -75,7 +74,6 @@ async fn main() {
 #[allow(clippy::cast_precision_loss)]
 async fn init(url: &str) -> (Arc<ModeContext>, Box<dyn GlobalMode>) {
     let (init_k,  obj_rx, beac_rx) = Keychain::new(url).await;
-    let init_k_f_cont_clone = init_k.f_cont();
 
     if env::var("SKIP_RESET").is_ok() {
         warn!("Skipping reset!");
