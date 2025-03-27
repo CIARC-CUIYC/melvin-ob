@@ -104,7 +104,7 @@ impl BeaconObjectiveDone {
                 obj!("Unknown Message: {}! Returning!", msg.msg());
                 return Err(std::io::Error::new(std::io::ErrorKind::Other, "Unknown Message!"));
             }
-            error!("Unnoticed HTTP Error in updateObservation()");
+            error!("Unnoticed HTTP Error in submit_guess()");
             tokio::time::sleep(FlightComputer::STD_REQUEST_DELAY).await;
         }
     }

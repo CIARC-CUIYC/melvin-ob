@@ -22,28 +22,22 @@ RUN cargo build --release \
 FROM ubuntu:latest AS runner
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install required packages: tmux for session management and wget to fetch gotty
+# Install required packages: tmux for session management
 RUN apt-get update && apt-get install -y \
     tmux \
-    openssh-server \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /var/run/sshd && \
-    sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
-    sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
-
-# Custom tmux.conf (optional)
+# Custom tmux.conf
 COPY tmux.conf /root/.tmux.conf
 
 WORKDIR /app
 
-# Copy the compiled binary from the builder stage. Replace `rust_binary` with your binary name.
+# Copy the compiled binary from the builder stage.
 COPY --from=builder /usr/src/app/target/x86_64-unknown-linux-gnu/release/melvin-ob /app/melvin-bin
 
 # Expose port 22 for ssh access
 EXPOSE 22
 
-# The CMD starts a tmux session running your Rust binary, then launches gotty to attach to that session.
-CMD service ssh start && tmux new-session -d -s melvin_debug bash \
-    -c 'export TRACK_MELVIN_POS=1; export DRS_BASE_URL="http://palantiri:5000"; export EXPORT_ORBIT=1; exec bash' && \
+CMD tmux new-session -d -s melvin_debug bash \
+    -c 'export TRACK_MELVIN_POS=1; export DRS_BASE_URL="http://sil-adapter:5000"; export EXPORT_ORBIT=1; exec bash' && \
     tail -f /dev/null

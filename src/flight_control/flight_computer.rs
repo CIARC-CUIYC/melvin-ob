@@ -112,9 +112,9 @@ impl FlightComputer {
     const AFTER_SAFE_MIN_BATT: I32F32 = I32F32::lit("50");
     const EXIT_SAFE_MIN_BATT: I32F32 = I32F32::lit("10.0");
     const DEF_BRAKE_ABS: I32F32 = I32F32::lit("1.0");
-    const MAX_DETUMBLE_DT: TimeDelta = TimeDelta::seconds(20);
+    const MAX_DETUMBLE_DT: TimeDelta = TimeDelta::seconds(20); 
     /// Constant minimum delay between requests
-    pub(crate) const STD_REQUEST_DELAY: Duration = Duration::from_millis(100);
+    pub(crate) const STD_REQUEST_DELAY: Duration = Duration::from_millis(500);
     /// Legal Target States for State Change
     const LEGAL_TARGET_STATES: [FlightState; 3] = [
         FlightState::Acquisition,
@@ -917,7 +917,7 @@ impl FlightComputer {
                 info!("State change started to {new_state}");
                 return;
             }
-            error!("Unnoticed HTTP Error in updateObservation()");
+            error!("Unnoticed HTTP Error in set_state()");
             tokio::time::sleep(Self::STD_REQUEST_DELAY).await;
         }
     }
