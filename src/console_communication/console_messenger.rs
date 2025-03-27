@@ -11,7 +11,7 @@ use crate::{
         console_endpoint::{ConsoleEndpoint, ConsoleEvent},
         melvin_messages,
     },
-    flight_control::supervisor::{Supervisor},
+    flight_control::supervisor::Supervisor,
 };
 
 use std::sync::Arc;
@@ -47,6 +47,7 @@ impl ConsoleMessenger {
     ///
     /// # Returns
     /// An instance of `ConsoleMessenger`.
+    #[allow(clippy::cast_possible_wrap)]
     pub(crate) fn start(
         camera_controller: Arc<CameraController>,
         task_controller: Arc<TaskController>,
@@ -57,7 +58,6 @@ impl ConsoleMessenger {
         let endpoint_local = endpoint.clone();
         let camera_controller_local = camera_controller.clone();
         let supervisor_local = supervisor.clone();
-
         tokio::spawn(async move {
             while let Ok(event) = receiver.recv().await {
                 match event {
@@ -114,7 +114,6 @@ impl ConsoleMessenger {
                                 )
                                 .await;
                             info!("Submitted objective '{objective_id}' with result: {result:?}");
-
                             endpoint_local_clone.send_downstream(
                                 melvin_messages::DownstreamContent::SubmitResponse(
                                     melvin_messages::SubmitResponse {
@@ -128,12 +127,17 @@ impl ConsoleMessenger {
                     ConsoleEvent::Message(
                         melvin_messages::UpstreamContent::ScheduleSecretObjective(objective),
                     ) => {
-                        supervisor_local.schedule_secret_objective(objective.objective_id as usize, [
-                            objective.offset_x as i32,
-                            objective.offset_y as i32,
-                            (objective.offset_x + objective.width) as i32,
-                            (objective.offset_y + objective.height) as i32,
-                        ]).await;
+                        supervisor_local
+                            .schedule_secret_objective(
+                                objective.objective_id as usize,
+                                [
+                                    objective.offset_x as i32,
+                                    objective.offset_y as i32,
+                                    (objective.offset_x + objective.width) as i32,
+                                    (objective.offset_y + objective.height) as i32,
+                                ],
+                            )
+                            .await;
                     }
                     ConsoleEvent::Message(melvin_messages::UpstreamContent::SubmitDailyMap(_)) => {
                         let c_cont_lock_local_clone = camera_controller_local.clone();
@@ -156,7 +160,6 @@ impl ConsoleMessenger {
                 }
             }
         });
-
         Self { camera_controller, task_controller, supervisor, endpoint }
     }
 

@@ -159,8 +159,8 @@ impl GlobalMode for ZORetrievalMode {
                 let c_tok = CancellationToken::new();
                 let c_tok_clone = c_tok.clone();
                 let context_clone = Arc::clone(&context);
-                let second_target = self.add_target.clone();
-                let unwrapped_target = self.unwrapped_pos.lock().await.clone();
+                let second_target = self.add_target;
+                let unwrapped_target = *self.unwrapped_pos.lock().await;
                 let target = self.target.clone();
                 let img_handle = tokio::spawn(async move {
                     Self::exec_img_task(target, unwrapped_target, second_target, context_clone, c_tok_clone).await;

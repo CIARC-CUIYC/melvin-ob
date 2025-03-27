@@ -119,8 +119,8 @@ impl Supervisor {
         let obj = current_secret_objectives
             .iter()
             .find(|obj| obj.id() == objective_id && obj.end() > Utc::now());
-        if let Some(obj) = obj {
-            self.zo_mon.send(KnownImgObjective::try_from((obj, zone)).unwrap()).await.unwrap();
+        if let Some(new_obj) = obj {
+            self.zo_mon.send(KnownImgObjective::try_from((new_obj, zone)).unwrap()).await.unwrap();
         }
     }
 

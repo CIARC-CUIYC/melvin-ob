@@ -140,9 +140,7 @@ async fn test_multi_target_burn_calculator() {
         // Check if the estimated Y position is close to the target Y
         let hit_target = est.euclid_distance(res.target_pos())
             < detumble_dt * (I32F32::lit("0.002") * detumble_dt);
-        if !hit_target {
-            info!("Test successfull. Acc for {acc_dt}s, detumble for {detumble_dt}s!");
-        } else {
+        if hit_target {
             error!("Test failed.");
             info!("Burn Sequence for mocked Zoned Objective at: {target}, due at {mock_end_t}");
             log!("Entry at {entry_t}, Position will be {entry_pos}");
@@ -151,6 +149,8 @@ async fn test_multi_target_burn_calculator() {
             log!("Exit Velocity will be {exit_vel}. Detumble time is {detumble_dt}s.");
             log!("Whole BS: {:?}", res);
             return;
+        } else {
+            info!("Test successfull. Acc for {acc_dt}s, detumble for {detumble_dt}s!");
         }
     }
 }

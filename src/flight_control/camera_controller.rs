@@ -301,8 +301,8 @@ impl CameraController {
         export_path: Option<PathBuf>,
         zoned_objective_map_image: Option<&OffsetZonedObjectiveImage>
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let encoded_image = if let Some(zoned_objective_map_image) = zoned_objective_map_image {
-            zoned_objective_map_image.export_as_png()?
+        let encoded_image = if let Some(zo_image) = zoned_objective_map_image {
+            zo_image.export_as_png()?
         } else {
             let map_image = self.fullsize_map_image.read().await;
             map_image.export_area_as_png(offset, size)?
