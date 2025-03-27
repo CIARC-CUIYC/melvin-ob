@@ -11,6 +11,7 @@ use std::time::Duration;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::{Mutex, RwLock, watch};
 use tokio::time::interval;
+use crate::logger::JsonDump;
 
 pub struct BeaconController {
     active_bo: RwLock<HashMap<usize, BeaconObjective>>,
@@ -130,10 +131,10 @@ impl BeaconController {
     async fn move_to_done(&self, finished: HashMap<usize, BeaconObjective>) {
         let mut done_bo = self.done_bo.write().await;
         for (id, beacon) in finished {
+            beacon.dump_json();
             let done_beacon = BeaconObjectiveDone::from(beacon);
             let guesses = done_beacon.guesses().len();
             obj!("Finished Beacon objective: ID {id} with {guesses} guesses.");
-
             done_bo.insert(done_beacon.id(), done_beacon.clone());
         }
     }

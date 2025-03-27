@@ -8,12 +8,13 @@ use crate::flight_control::{
 use chrono::{TimeDelta, Utc};
 use fixed::types::I32F32;
 use num::Zero;
+use crate::logger::JsonDump;
 
 /// Represents a sequence of corrective burns for orbital adjustments.
 ///
 /// The `BurnSequence` contains position and velocity sequences, along with
 /// timing and cost information, for controlling orbit behavior.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct BurnSequence {
     /// The orbital position where the sequence starts.
     start_i: IndexedOrbitPosition,
@@ -134,13 +135,20 @@ impl BurnSequence {
     pub fn min_fuel(&self) -> I32F32 { self.min_fuel }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct ExitBurnResult {
     sequence: BurnSequence,
     cost: I32F32,
     target_pos: Vec2D<I32F32>,
     add_target: Option<Vec2D<I32F32>>,
     unwrapped_target: Vec2D<I32F32>,
+    target_id: usize,
+}
+
+impl JsonDump for ExitBurnResult {
+    fn file_name(&self) -> String {format!("zo_burn_{}", self.target_id)  }
+
+    fn dir_name(&self) -> &'static str { "zoned_objectives"  }
 }
 
 impl ExitBurnResult {
@@ -149,6 +157,7 @@ impl ExitBurnResult {
         target: (Vec2D<I32F32>, Vec2D<I32F32>),
         unwrapped_target: Vec2D<I32F32>,
         cost: I32F32,
+        target_id: usize
     ) -> Self {
         let target_pos = target.0;
         let add_target = if target.1 == Vec2D::zero() {
@@ -156,7 +165,7 @@ impl ExitBurnResult {
         } else {
             Some((target.0 + target.1).wrap_around_map())
         };
-        Self { sequence, cost, target_pos, add_target, unwrapped_target }
+        Self { sequence, cost, target_pos, add_target, unwrapped_target, target_id }
     }
 
     pub fn cost(&self) -> I32F32 { self.cost }
@@ -177,6 +186,7 @@ pub struct BurnSequenceEvaluator<'a> {
     best_burn: Option<ExitBurnResult>,
     fuel_left: I32F32,
     dynamic_fuel_w: I32F32,
+    target_id: usize,
 }
 
 impl<'a> BurnSequenceEvaluator<'a> {
@@ -193,6 +203,7 @@ impl<'a> BurnSequenceEvaluator<'a> {
     /// Weight assigned to additional target angle deviation.
     const ADD_ANGLE_DEV_W: I32F32 = I32F32::lit("3.0");
 
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         i: IndexedOrbitPosition,
         vel: Vec2D<I32F32>,
@@ -201,6 +212,7 @@ impl<'a> BurnSequenceEvaluator<'a> {
         max_off_orbit_dt: usize,
         turns: TurnsClockCClockTup,
         fuel_left: I32F32,
+        target_id: usize,
     ) -> Self {
         let max_angle_dev = {
             let vel_perp = vel.perp_unit(true) * FlightComputer::ACC_CONST;
@@ -223,6 +235,7 @@ impl<'a> BurnSequenceEvaluator<'a> {
             turns,
             fuel_left,
             dynamic_fuel_w,
+            target_id,
             best_burn: None,
         }
     }
@@ -254,7 +267,7 @@ impl<'a> BurnSequenceEvaluator<'a> {
                 && b.min_fuel() <= self.fuel_left
             {
                 let unwrapped_target = Self::get_unwrapped_target(&b, &n_target.0);
-                self.best_burn = Some(ExitBurnResult::new(b, n_target, unwrapped_target, cost));
+                self.best_burn = Some(ExitBurnResult::new(b, n_target, unwrapped_target, cost, self.target_id));
             }
         }
     }

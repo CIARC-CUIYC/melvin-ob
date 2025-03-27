@@ -21,13 +21,14 @@ use crate::mode_control::{
     mode_context::ModeContext,
     signal::{ExecExitSignal, OpExitSignal, WaitExitSignal},
 };
-use crate::{DT_0, error, fatal, info, log};
+use crate::{DT_0, error, fatal, info, log, log_burn};
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use std::mem::discriminant;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio_util::sync::CancellationToken;
+use crate::logger::JsonDump;
 
 pub struct ZOPrepMode {
     base: BaseMode,
@@ -72,6 +73,7 @@ impl ZOPrepMode {
                 target,
                 due,
                 fuel_left,
+                zo.id()
             )
         } else {
             let entries = zo.get_corners();
@@ -80,11 +82,13 @@ impl ZOPrepMode {
                 current_vel,
                 entries,
                 due,
-                fuel_left
+                fuel_left,
+                zo.id()
             )
         }?;
         Self::log_burn(&exit_burn, &zo);
         let base = Self::overthink_base(context, curr_base, exit_burn.sequence()).await;
+        exit_burn.dump_json();
         Some(ZOPrepMode { base, exit_burn, target: zo, left_orbit: AtomicBool::new(false) })
     }
 
@@ -103,13 +107,12 @@ impl ZOPrepMode {
             "Calculated Burn Sequence for Zoned Objective: {}",
             target.id()
         );
-        log!("Entry at {entry_t}, Position will be {entry_pos}");
-        log!("Exit after {acq_dt}s, Position will be {exit_pos}. Detumble time is {det_dt}s.");
-        log!("Exit Velocity will be {vel} aiming for target at {tar} unwrapped to {tar_unwrap}.");
+        log_burn!("Entry at {entry_t}, Position will be {entry_pos}");
+        log_burn!("Exit after {acq_dt}s, Position will be {exit_pos}. Detumble time is {det_dt}s.");
+        log_burn!("Exit Velocity will be {vel} aiming for target at {tar} unwrapped to {tar_unwrap}.");
         if let Some(tar2) = add_tar {
-            log!("Additional Target will be {tar2}");
+            log_burn!("Additional Target will be {tar2}");
         }
-        log!("Whole BS: {:?}", exit_burn);
     }
 
     fn new_base(&self, base: BaseMode) -> Self {
@@ -191,7 +194,7 @@ impl GlobalMode for ZOPrepMode {
             BaseTask::SwitchState(switch) => self.base.get_task(context, *switch).await,
             BaseTask::ChangeVelocity(vel_change) => {
                 let pos = context.k().f_cont().read().await.current_pos();
-                log!(
+                log_burn!(
                     "Burn started at Pos {pos}. Expected Position was: {}.",
                     vel_change.burn().sequence_pos()[0]
                 );

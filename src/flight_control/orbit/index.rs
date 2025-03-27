@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use fixed::types::I32F32;
 
 /// Represents a position in an orbit with associated metadata.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]
 pub struct IndexedOrbitPosition {
     /// The timestamp representing the current time of this position.
     t: DateTime<Utc>,

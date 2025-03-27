@@ -287,6 +287,7 @@ impl TaskController {
         target_pos: Vec2D<I32F32>,
         target_end_time: DateTime<Utc>,
         fuel_left: I32F32,
+        target_id: usize,
     ) -> Option<ExitBurnResult> {
         info!("Starting to calculate single-target burn towards {target_pos}");
         let target = [(target_pos, Vec2D::zero())];
@@ -321,6 +322,7 @@ impl TaskController {
             max_off_orbit_dt,
             turns,
             fuel_left,
+            target_id
         );
 
         for dt in remaining_range.rev() {
@@ -343,6 +345,7 @@ impl TaskController {
         entries: [(Vec2D<I32F32>, Vec2D<I32F32>); 4],
         target_end_time: DateTime<Utc>,
         fuel_left: I32F32,
+        target_id: usize,
     ) -> Option<ExitBurnResult> {
         info!("Starting to calculate multi-target burn sequence!");
 
@@ -374,6 +377,7 @@ impl TaskController {
             max_off_orbit_dt,
             turns,
             fuel_left,
+            target_id
         );
 
         for dt in remaining_range.rev() {

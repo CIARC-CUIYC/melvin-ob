@@ -1,10 +1,11 @@
 use crate::STATIC_ORBIT_VEL;
 use crate::flight_control::common::{bayesian_set::BayesianSet, vec2d::Vec2D};
+use crate::logger::JsonDump;
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use std::cmp::Ordering;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct BeaconMeas {
     id: usize,
     pos: Vec2D<I32F32>,
@@ -27,13 +28,19 @@ impl BeaconMeas {
     pub fn delay(&self) -> TimeDelta { self.delay }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct BeaconObjective {
     id: usize,
     name: String,
     start: DateTime<Utc>,
     end: DateTime<Utc>,
     measurements: Option<BayesianSet>,
+}
+
+impl JsonDump for BeaconObjective {
+    fn file_name(&self) -> String { format!("bo_{}.json", self.id) }
+
+    fn dir_name(&self) -> &'static str { "beacon_objectives" }
 }
 
 impl BeaconObjective {

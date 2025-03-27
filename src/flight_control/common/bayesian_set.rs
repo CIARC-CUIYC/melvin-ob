@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::num::NonZero;
 use crate::fatal;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct SquareSlice {
     offset: Vec2D<I32F32>,
     side_length: Vec2D<I32F32>,
@@ -117,8 +117,9 @@ impl SquareSlice {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct BayesianSet {
+    #[serde(skip)]
     set: HashSet<Vec2D<i32>>,
     curr_slice: SquareSlice,
     measurements: Vec<BeaconMeas>,

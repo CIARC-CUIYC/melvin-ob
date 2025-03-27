@@ -18,7 +18,7 @@ use crate::http_handler::{
         reset_get::ResetRequest,
     },
 };
-use crate::{STATIC_ORBIT_VEL, error, fatal, info, log, warn};
+use crate::{STATIC_ORBIT_VEL, error, fatal, info, log, warn, log_burn};
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::{I32F32, I64F64};
 use num::{ToPrimitive, Zero};
@@ -696,7 +696,7 @@ impl FlightComputer {
             (f_cont.current_pos(), f_cont.current_vel())
         };
         let burn_dt = (Utc::now() - burn_start).num_seconds();
-        log!(
+        log_burn!(
             "Burn sequence finished after {burn_dt}s! Position: {pos}, Velocity: {vel:.2}, expected Position: {target_pos:.0}, expected Velocity: {target_vel:.2}."
         );
     }
@@ -712,9 +712,9 @@ impl FlightComputer {
         while !o_unlocked.will_visit(pos) {
             let (ax, dev) = o_unlocked.get_closest_deviation(pos);
             let (dv, h_dt) = Self::compute_vmax_and_hold_time(dev);
-            log!("Computed Orbit Return. Deviation on {ax} is {dev:.2} and vel is {vel:.2}.");
+            log_burn!("Computed Orbit Return. Deviation on {ax} is {dev:.2} and vel is {vel:.2}.");
             let corr_v = vel + Vec2D::from_axis_and_val(ax, dv);
-            log!(
+            log_burn!(
                 "Correction velocity is {corr_v:.2}, ramping by {dv:.2}. Hold time will be {h_dt}s."
             );
             FlightComputer::set_vel_wait(Arc::clone(&self_lock), corr_v, false).await;
@@ -793,7 +793,7 @@ impl FlightComputer {
             let new_vel = to_target.normalize() * vel.abs();
 
             if ticker % 10 == 0 {
-                log!("Turning: DX: {dx:.2}, direct DT: {dt:.2}s");
+                log_burn!("Turning: DX: {dx:.2}, direct DT: {dt:.2}s");
             }
             if dx.abs() < vel.abs() / 2 {
                 let turn_dt = (Utc::now() - start).num_seconds();
@@ -806,7 +806,7 @@ impl FlightComputer {
             if Utc::now() > deadline {
                 let turn_dt = (Utc::now() - start).num_seconds();
                 log!(
-                    "Turning timeouted after {turn_dt}s with remaining DX: {dx:.2} and dt {dt:2}s"
+                    "Turning timeout after {turn_dt}s with remaining DX: {dx:.2} and dt {dt:2}s"
                 );
                 FlightComputer::stop_ongoing_burn(Arc::clone(&self_lock)).await;
             }
@@ -860,7 +860,7 @@ impl FlightComputer {
                 new_vel = trunc_vel;
             }
             if ticker % 5 == 0 {
-                log!("Detumbling Step {ticker}: DX: {dx:.2}, direct DT: {dt:2}s");
+                log_burn!("Detumbling Step {ticker}: DX: {dx:.2}, direct DT: {dt:2}s");
                 if overspeed {
                     let overspeed_amount = vel.abs() - max_speed;
                     warn!("Overspeeding by {overspeed_amount:.2}");

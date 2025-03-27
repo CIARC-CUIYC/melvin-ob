@@ -53,6 +53,7 @@ async fn test_single_target_burn_calculator() {
             mock_obj_point,
             mock_end_t,
             mock_fuel_left,
+            1,
         )
         .unwrap();
         let exit_burn = res.sequence();
@@ -122,6 +123,7 @@ async fn test_multi_target_burn_calculator() {
             mock_obj_point,
             mock_end_t,
             mock_fuel_left,
+            1
         )
         .unwrap();
         let exit_burn = res.sequence();
