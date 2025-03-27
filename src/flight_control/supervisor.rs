@@ -92,7 +92,7 @@ impl Supervisor {
 
     pub async fn run_daily_map_uploader(&self, c_cont: Arc<CameraController>) {
         let now = Utc::now();
-        let end_of_day = NaiveTime::from_hms_opt(23, 59, 55).unwrap();
+        let end_of_day = NaiveTime::from_hms_opt(23, 55, 0).unwrap();
         let upload_t = now.date_naive().and_time(end_of_day);
         let mut next_upload_t = Utc.from_utc_datetime(&upload_t);
         loop {
