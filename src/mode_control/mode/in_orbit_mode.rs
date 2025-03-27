@@ -11,7 +11,7 @@ use crate::mode_control::{
     mode_context::ModeContext,
     signal::{ExecExitSignal, OpExitSignal, WaitExitSignal},
 };
-use crate::{fatal, obj};
+use crate::{fatal, obj, warn};
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use std::sync::Arc;
@@ -89,14 +89,19 @@ impl GlobalMode for InOrbitMode {
     }
 
     async fn zo_handler(&self, c: &Arc<ModeContext>, obj: KnownImgObjective) -> OptOpExitSignal {
-        obj!("Found new Zoned Objective {}!", obj.id());
-        c.o_ch_lock().write().await.finish(
-            c.k().f_cont().read().await.current_pos(),
-            self.new_zo_rationale(),
-        );
-        ZOPrepMode::from_obj(c, obj, self.base)
-            .await
-            .map(|mode| OpExitSignal::ReInit(Box::new(mode)))
+        let id = obj.id();
+        obj!("Found new Zoned Objective {id}!");
+
+        if let Some(zo_mode) = ZOPrepMode::from_obj(c, obj, self.base).await {
+            c.o_ch_lock().write().await.finish(
+                c.k().f_cont().read().await.current_pos(),
+                self.new_zo_rationale(),
+            );
+            Some(OpExitSignal::ReInit(Box::new(zo_mode)))
+        } else {
+            warn!("Skipping Objective, burn not feasible.");
+            None
+        }
     }
 
     async fn bo_event_handler(&self, context: &Arc<ModeContext>) -> OptOpExitSignal {

@@ -54,6 +54,7 @@ const SNAPSHOT_THUMBNAIL_PATH: &str = "snapshot_thumb.png";
 impl CameraController {
     const LAST_IMG_END_DELAY: TimeDelta = TimeDelta::milliseconds(500);
     const ZO_IMG_FOLDER: &'static str = "zo_img/";
+    const ZO_IMG_ACQ_DELAY: TimeDelta = TimeDelta::seconds(2);
 
     /// Initializes the `CameraController` with the given base path and HTTP client.
     ///
@@ -504,7 +505,7 @@ impl CameraController {
         let deadline_cont = deadline - Utc::now() > TimeDelta::seconds(20);
         let step_print = if deadline_cont { 10 } else { 2 };
         loop {
-            let next_img_due = Utc::now() + TimeDelta::seconds(1);
+            let next_img_due = Utc::now() + Self::ZO_IMG_ACQ_DELAY;
             let img_init_timestamp = Utc::now();
             match self.shoot_image_to_zo_buffer(Arc::clone(&f_cont_lock), lens, zoned_objective_image_buffer.as_mut()).await {
                 Ok(pos) => {
