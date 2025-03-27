@@ -207,7 +207,7 @@ impl OffsetZonedObjectiveImage {
                 Vec2D::wrap_coordinate(offset_x - self.offset.x() as i32, Vec2D::map_size().x())
                     as u32;
 
-            if relative_offset_x > self.image_buffer.width() {
+            if relative_offset_x >= self.image_buffer.width() {
                 continue;
             }
             for y in 0..image.height() {
@@ -217,7 +217,7 @@ impl OffsetZonedObjectiveImage {
                     Vec2D::map_size().y(),
                 ) as u32;
 
-                if relative_offset_y > self.image_buffer.height() {
+                if relative_offset_y >= self.image_buffer.height() {
                     continue;
                 }
                 *self.image_buffer.get_pixel_mut(relative_offset_x, relative_offset_y) =
