@@ -15,7 +15,7 @@ use crate::{DT_0_STD, error, event, fatal, info, log, warn};
 use chrono::{DateTime, NaiveTime, TimeDelta, TimeZone, Utc};
 use futures::StreamExt;
 use reqwest_eventsource::{Event, EventSource};
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::{collections::HashSet, env, sync::Arc, time::Duration};
 use tokio::{
     sync::{Notify, RwLock, broadcast, mpsc, mpsc::Receiver},
     time::Instant,
@@ -38,6 +38,8 @@ impl Supervisor {
     /// Constant minimum time delta to the objective start for sending the objective to `main`
     const B_O_MIN_DT: TimeDelta = TimeDelta::minutes(20);
 
+    const ENV_SKIP_OBJ: &'static str = "SKIP_OBJ";
+
     /// Creates a new instance of `Supervisor`
     pub fn new(
         f_cont_lock: Arc<RwLock<FlightComputer>>,
@@ -56,7 +58,7 @@ impl Supervisor {
                 zo_mon: tx_obj,
                 bo_mon: tx_beac,
                 event_hub: event_send,
-                current_secret_objectives: RwLock::new(vec![])
+                current_secret_objectives: RwLock::new(vec![]),
             },
             rx_obj,
             rx_beac,
@@ -114,8 +116,9 @@ impl Supervisor {
 
     pub async fn schedule_secret_objective(&self, objective_id: usize, zone: [i32; 4]) {
         let current_secret_objectives = self.current_secret_objectives.read().await;
-        let obj =
-        current_secret_objectives.iter().find(|obj| obj.id() == objective_id && obj.end() > Utc::now());
+        let obj = current_secret_objectives
+            .iter()
+            .find(|obj| obj.id() == objective_id && obj.end() > Utc::now());
         if let Some(obj) = obj {
             self.zo_mon.send(KnownImgObjective::try_from((obj, zone)).unwrap()).await.unwrap();
         }
@@ -127,13 +130,14 @@ impl Supervisor {
     pub async fn run_obs_obj_mon(&self) {
         let mut last_objective_check = Utc::now() - Self::OBJ_UPDATE_INTERVAL;
         let mut id_list: HashSet<usize> = HashSet::new();
+        Self::prefill_id_list(&mut id_list);
         log!("Starting obs/obj supervisor loop!");
         loop {
             let mut f_cont = self.f_cont_lock.write().await;
             // Update observation and fetch new position
             f_cont.update_observation().await;
             let last_update = Instant::now();
-            
+
             let is_safe_trans = {
                 let current_state = f_cont.state();
                 let target_state = f_cont.target_state();
@@ -150,8 +154,8 @@ impl Supervisor {
             if last_objective_check + Self::OBJ_UPDATE_INTERVAL < Utc::now() {
                 let handle = self.f_cont_lock.read().await.client();
                 let objective_list = ObjectiveListRequest {}.send_request(&handle).await.unwrap();
-                let mut send_img_objs =  vec![];
-                let mut send_beac_objs =  vec![];
+                let mut send_img_objs = vec![];
+                let mut send_beac_objs = vec![];
 
                 let mut currently_secret_objectives = vec![];
                 for img_obj in objective_list.img_objectives() {
@@ -161,7 +165,8 @@ impl Supervisor {
                         if is_secret {
                             currently_secret_objectives.push(img_obj.clone());
                         } else {
-                            send_img_objs.push(KnownImgObjective::try_from(img_obj.clone()).unwrap());
+                            send_img_objs
+                                .push(KnownImgObjective::try_from(img_obj.clone()).unwrap());
                         }
                     }
                 }
@@ -184,6 +189,20 @@ impl Supervisor {
             }
 
             tokio::time::sleep_until(last_update + Self::OBS_UPDATE_INTERVAL).await;
+        }
+    }
+
+    pub fn prefill_id_list(id_list: &mut HashSet<usize>) {
+        let done_ids: Vec<Option<usize>> = env::var("ENV_SKIP_OBJ")
+            .unwrap_or_default()
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.parse::<usize>().ok())
+            .collect();
+        for done_id in done_ids.into_iter().flatten() {
+            info!("Prefilling done obj id list with id: {done_id}");
+            id_list.insert(done_id);
         }
     }
 }
