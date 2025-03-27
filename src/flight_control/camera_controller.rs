@@ -498,7 +498,7 @@ impl CameraController {
         zoned_objective_image_buffer: &mut Option<OffsetZonedObjectiveImage>,
         offset: Vec2D<u32>, dimensions: Vec2D<u32>
     ) {
-        obj!("Starting acquisition cycle for objective!");
+        obj!("Starting acquisition cycle for objective. Deadline {}!", deadline.format("%H:%M:%S"));
         zoned_objective_image_buffer.replace(OffsetZonedObjectiveImage::new(offset, dimensions));
         let lens = f_cont_lock.read().await.current_angle();
         let mut pics = 0;

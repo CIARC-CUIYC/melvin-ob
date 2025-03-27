@@ -22,11 +22,11 @@ use crate::{STATIC_ORBIT_VEL, error, fatal, info, log, warn};
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::{I32F32, I64F64};
 use num::{ToPrimitive, Zero};
+use rand::Rng;
 use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use rand::Rng;
 use tokio::sync::RwLock;
 
 pub type TurnsClockCClockTup = (
@@ -112,9 +112,7 @@ impl FlightComputer {
     const AFTER_SAFE_MIN_BATT: I32F32 = I32F32::lit("50");
     const EXIT_SAFE_MIN_BATT: I32F32 = I32F32::lit("10.0");
     const DEF_BRAKE_ABS: I32F32 = I32F32::lit("1.0");
-    const MAX_DETUMBLE_DT: TimeDelta = TimeDelta::seconds(20); 
-    /// Constant minimum delay between requests
-    pub(crate) const STD_REQUEST_DELAY: Duration = Duration::from_millis(500);
+    const MAX_DETUMBLE_DT: TimeDelta = TimeDelta::seconds(20);
     /// Legal Target States for State Change
     const LEGAL_TARGET_STATES: [FlightState; 3] = [
         FlightState::Acquisition,
@@ -326,7 +324,7 @@ impl FlightComputer {
     /// # Panics
     /// - If the reset request fails, this method will panic with an error message.
     pub async fn reset(&self) {
-        ResetRequest {}.send_request(&self.request_client).await.expect("ERROR: Failed to reset");
+        ResetRequest {}.send_request(&self.request_client).await.unwrap_or_else(|_| fatal!("Failed to reset"));
         Self::wait_for_duration(Duration::from_secs(4), false).await;
         log!("Reset request complete.");
     }
@@ -385,7 +383,6 @@ impl FlightComputer {
                     let dt = start_time.elapsed().as_millis();
                     if dt > 1000 {
                         log!("Condition met after {} s", dt / 1000);
-                        
                     } else {
                         log!("Condition met after {dt} ms");
                     }
@@ -413,7 +410,11 @@ impl FlightComputer {
         info!("Safe Mode Runtime initiated. Transitioning back to {target_state} asap.");
         Self::wait_for_duration(Self::TO_SAFE_SLEEP, false).await;
         Self::avoid_transition(&self_lock).await;
-        let state = self_lock.read().await.state();
+        let state = {
+            let mut lock = self_lock.write().await;
+            lock.target_state = None;
+            lock.current_state
+        };
         if state != FlightState::Safe {
             error!("State is not safe but {}", state);
         }
@@ -431,12 +432,12 @@ impl FlightComputer {
         .await;
         Self::set_state_wait(self_lock, target_state).await;
     }
-    
+
     pub async fn avoid_transition(self_lock: &Arc<RwLock<Self>>) {
         let not_trans = (
             |cont: &FlightComputer| cont.state() != FlightState::Transition,
             format!("State is not {}", FlightState::Transition),
-            );
+        );
         let max_dt = TRANS_DEL[&(FlightState::Safe, FlightState::Acquisition)];
         Self::wait_for_condition(
             &self_lock,
@@ -445,7 +446,7 @@ impl FlightComputer {
             Self::DEF_COND_PI,
             false,
         )
-            .await;
+        .await;
     }
 
     #[allow(clippy::cast_possible_wrap)]
@@ -713,7 +714,9 @@ impl FlightComputer {
             let (dv, h_dt) = Self::compute_vmax_and_hold_time(dev);
             log!("Computed Orbit Return. Deviation on {ax} is {dev:.2} and vel is {vel:.2}.");
             let corr_v = vel + Vec2D::from_axis_and_val(ax, dv);
-            log!("Correction velocity is {corr_v:.2}, ramping by {dv:.2}. Hold time will be {h_dt}s.");
+            log!(
+                "Correction velocity is {corr_v:.2}, ramping by {dv:.2}. Hold time will be {h_dt}s."
+            );
             FlightComputer::set_vel_wait(Arc::clone(&self_lock), corr_v, false).await;
             if h_dt > 0 {
                 FlightComputer::wait_for_duration(Duration::from_secs(h_dt), false).await;
@@ -759,7 +762,11 @@ impl FlightComputer {
         }
     }
 
-    pub async fn turn_for_2nd_target(self_lock: Arc<RwLock<Self>>, target: Vec2D<I32F32>, deadline: DateTime<Utc>) {
+    pub async fn turn_for_2nd_target(
+        self_lock: Arc<RwLock<Self>>,
+        target: Vec2D<I32F32>,
+        deadline: DateTime<Utc>,
+    ) {
         log!("Starting turn for second target");
         let start = Utc::now();
         let pos = self_lock.read().await.current_pos();
@@ -772,22 +779,23 @@ impl FlightComputer {
             };
 
             let to_target = pos.unwrapped_to(&target);
-
+            let dt = to_target.abs() / vel.abs();
             if !last_to_target.is_eq_signum(&to_target) {
+                let wait_dt = dt.to_num::<u64>()
+                    + TaskController::ZO_IMAGE_FIRST_DEL.num_seconds().to_u64().unwrap();
                 log!("Overshot target! Holding velocity change and waiting for 5s!");
                 FlightComputer::set_vel_wait(Arc::clone(&self_lock), vel, true).await;
-                FlightComputer::wait_for_duration(Duration::from_secs(5), false).await;
+                FlightComputer::wait_for_duration(Duration::from_secs(wait_dt), false).await;
                 return;
             }
             last_to_target = to_target;
-            let dt = to_target.abs() / vel.abs();
             let dx = (pos + vel * dt).to(&target).round_to_2();
             let new_vel = to_target.normalize() * vel.abs();
 
             if ticker % 10 == 0 {
                 log!("Turning: DX: {dx:.2}, direct DT: {dt:.2}s");
             }
-            if dx.abs() < vel.abs() / 2  {
+            if dx.abs() < vel.abs() / 2 {
                 let turn_dt = (Utc::now() - start).num_seconds();
                 log!("Turning finished after {turn_dt}s with remaining DX: {dx:.2} and dt {dt:2}s");
                 FlightComputer::stop_ongoing_burn(Arc::clone(&self_lock)).await;
@@ -797,7 +805,9 @@ impl FlightComputer {
             }
             if Utc::now() > deadline {
                 let turn_dt = (Utc::now() - start).num_seconds();
-                log!("Turning timeouted after {turn_dt}s with remaining DX: {dx:.2} and dt {dt:2}s");
+                log!(
+                    "Turning timeouted after {turn_dt}s with remaining DX: {dx:.2} and dt {dt:2}s"
+                );
                 FlightComputer::stop_ongoing_burn(Arc::clone(&self_lock)).await;
             }
             self_lock.write().await.set_vel(new_vel, true).await;
@@ -819,7 +829,7 @@ impl FlightComputer {
         let mut dt;
         let mut dx;
         let mut last_to_target = to_target;
-        log!("Starting detumble to {target}");
+        log!("Starting detumble to {target} (projected position).");
         loop {
             let (pos, vel) = {
                 let f_locked = self_lock.read().await;
@@ -840,7 +850,7 @@ impl FlightComputer {
             dt = (to_target.abs() / vel.abs()).round();
             dx = (pos + vel * dt).to(&target).round_to_2();
             let per_dx = dx.abs() / dt;
-            
+
             let acc = dx.normalize() * Self::ACC_CONST.min(per_dx * Self::rand_weight());
             let mut new_vel = vel + FlightComputer::round_vel(acc).0;
             let overspeed = new_vel.abs() > max_speed;
@@ -859,7 +869,9 @@ impl FlightComputer {
             ticker += 1;
             if dx.abs() < vel.abs() / 2 || Utc::now() - detumble_start > Self::MAX_DETUMBLE_DT {
                 let detumble_dt = (Utc::now() - detumble_start).num_seconds();
-                log!("Detumbling finished after {detumble_dt}s with rem. DX: {dx:.2} and dt {dt:.2}s");
+                log!(
+                    "Detumbling finished after {detumble_dt}s with rem. DX: {dx:.2} and dt {dt:.2}s"
+                );
                 FlightComputer::stop_ongoing_burn(Arc::clone(&self_lock)).await;
                 FlightComputer::set_angle_wait(Arc::clone(&self_lock), lens).await;
                 return (Utc::now() + TimeDelta::seconds(dt.to_num::<i64>()), target);
@@ -872,7 +884,7 @@ impl FlightComputer {
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
-    
+
     fn rand_weight() -> I32F32 {
         let mut rng = rand::rng();
         I32F32::from_num(rng.random_range(0.0..10.0))
@@ -880,24 +892,21 @@ impl FlightComputer {
 
     /// Updates the satellite's internal fields with the latest observation data.
     pub async fn update_observation(&mut self) {
-        loop {
-            if let Ok(obs) = (ObservationRequest {}.send_request(&self.request_client).await) {
-                self.current_pos =
-                    Vec2D::from((I32F32::from_num(obs.pos_x()), I32F32::from_num(obs.pos_y())));
-                self.current_vel =
-                    Vec2D::from((I32F32::from_num(obs.vel_x()), I32F32::from_num(obs.vel_y())));
-                self.current_state = FlightState::from(obs.state());
-                self.current_angle = CameraAngle::from(obs.angle());
-                self.last_observation_timestamp = obs.timestamp();
-                self.current_battery =
-                    I32F32::from_num(obs.battery()).clamp(Self::MIN_0, Self::MAX_100);
-                self.max_battery =
-                    I32F32::from_num(obs.max_battery()).clamp(Self::MIN_0, Self::MAX_100);
-                self.fuel_left = I32F32::from_num(obs.fuel()).clamp(Self::MIN_0, Self::MAX_100);
-                return;
-            }
+        if let Ok(obs) = (ObservationRequest {}.send_request(&self.request_client).await) {
+            self.current_pos =
+                Vec2D::from((I32F32::from_num(obs.pos_x()), I32F32::from_num(obs.pos_y())));
+            self.current_vel =
+                Vec2D::from((I32F32::from_num(obs.vel_x()), I32F32::from_num(obs.vel_y())));
+            self.current_state = FlightState::from(obs.state());
+            self.current_angle = CameraAngle::from(obs.angle());
+            self.last_observation_timestamp = obs.timestamp();
+            self.current_battery =
+                I32F32::from_num(obs.battery()).clamp(Self::MIN_0, Self::MAX_100);
+            self.max_battery =
+                I32F32::from_num(obs.max_battery()).clamp(Self::MIN_0, Self::MAX_100);
+            self.fuel_left = I32F32::from_num(obs.fuel()).clamp(Self::MIN_0, Self::MAX_100);
+        } else {
             error!("Unnoticed HTTP Error in updateObservation()");
-            tokio::time::sleep(Self::STD_REQUEST_DELAY).await;
         }
     }
 
@@ -912,13 +921,10 @@ impl FlightComputer {
             camera_angle: self.current_angle.into(),
             state: new_state.into(),
         };
-        loop {
-            if req.send_request(&self.request_client).await.is_ok() {
-                info!("State change started to {new_state}");
-                return;
-            }
+        if req.send_request(&self.request_client).await.is_ok() {
+            info!("State change started to {new_state}");
+        } else {
             error!("Unnoticed HTTP Error in set_state()");
-            tokio::time::sleep(Self::STD_REQUEST_DELAY).await;
         }
     }
 
@@ -934,15 +940,13 @@ impl FlightComputer {
             camera_angle: self.current_angle.into(),
             state: self.current_state.into(),
         };
-        loop {
-            if req.send_request(&self.request_client).await.is_ok() {
-                if !mute {
-                    info!("Velocity change commanded to [{}, {}]", vel.x(), vel.y());
-                }
-                return;
+
+        if req.send_request(&self.request_client).await.is_ok() {
+            if !mute {
+                info!("Velocity change commanded to [{}, {}]", vel.x(), vel.y());
             }
-            error!("Unnoticed HTTP Error in set_vel()");
-            tokio::time::sleep(Self::STD_REQUEST_DELAY).await;
+        }else {
+            error!("Unnoticed HTTP Error in set_state()");
         }
     }
 
@@ -957,13 +961,11 @@ impl FlightComputer {
             camera_angle: new_angle.into(),
             state: self.current_state.into(),
         };
-        loop {
-            if req.send_request(&self.request_client).await.is_ok() {
-                info!("Angle change commanded to {new_angle}");
-                return;
-            }
-            error!("Unnoticed HTTP Error in setAngle()");
-            tokio::time::sleep(Self::STD_REQUEST_DELAY).await;
+        
+        if req.send_request(&self.request_client).await.is_ok() {
+            info!("Angle change commanded to {new_angle}");
+        }else {
+            error!("Unnoticed HTTP Error in set_state()");
         }
     }
 

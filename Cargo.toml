@@ -37,7 +37,7 @@ itertools = "0.14.0"
 bincode = { version = "2.0.1", features = ["serde"] }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
-tikv-jemallocator = { version = "0.6.0", features = ["profiling"]}
+tikv-jemallocator = { version = "0.6.0"}
 
 
 [lints.clippy]

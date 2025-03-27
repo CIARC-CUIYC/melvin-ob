@@ -1,5 +1,5 @@
 use super::beacon_objective::BeaconObjective;
-use crate::flight_control::{common::vec2d::Vec2D, flight_computer::FlightComputer};
+use crate::flight_control::common::vec2d::Vec2D;
 use crate::http_handler::{
     http_client::HTTPClient,
     http_request::{
@@ -10,6 +10,7 @@ use crate::{error, obj};
 use chrono::{DateTime, Utc};
 use fixed::types::I32F32;
 use rand::Rng;
+use std::io::{Error, ErrorKind};
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -49,7 +50,7 @@ impl BeaconObjectiveDone {
             let req = BeaconPositionRequest { beacon_id: id_u16, width, height };
             obj!("Sending request for beacon {id_u16} with width {width} and height {height}...");
             if self.submit_guess(req, client.clone(), guess, i).await.is_err() {
-                return
+                return;
             };
         }
     }
@@ -82,31 +83,31 @@ impl BeaconObjectiveDone {
         client: Arc<HTTPClient>,
         guess: &Vec2D<I32F32>,
         guess_num: usize,
-    ) -> Result<(), std::io::Error>{
-        loop {
-            if let Ok(msg) = req.send_request(&client).await {
-                if msg.is_success() {
-                    obj!("And Rohan will answer! Mustered Rohirrim {} at {}!", req.beacon_id, guess);
-                    return Ok(());
-                } else if msg.is_last() {
-                    obj!(
-                        "Where was Gondor when the Westfold fell! Could not find beacon {} after {} tries!",
-                        req.beacon_id,
-                        guess_num
-                    );
-                    return Ok(());
-                } else if msg.is_unknown() {
-                    obj!("Beacon {} is unknown!", req.beacon_id);
-                    return Err(std::io::Error::new(std::io::ErrorKind::Other, "Beacon unknown!"));
-                } else if msg.is_fail() {
-                    continue;
-                }
-                obj!("Unknown Message: {}! Returning!", msg.msg());
-                return Err(std::io::Error::new(std::io::ErrorKind::Other, "Unknown Message!"));
-            }
-            error!("Unnoticed HTTP Error in submit_guess()");
-            tokio::time::sleep(FlightComputer::STD_REQUEST_DELAY).await;
+    ) -> Result<(), Error> {
+        if let Ok(msg) = req.send_request(&client).await {
+            if msg.is_success() {
+                obj!(
+                    "And Rohan will answer! Mustered Rohirrim {} at {}!",
+                    req.beacon_id,
+                    guess
+                );
+                return Ok(());
+            } else if msg.is_last() {
+                obj!(
+                    "Where was Gondor when the Westfold fell! Could not find beacon {} after {} tries!",
+                    req.beacon_id,
+                    guess_num
+                );
+                return Ok(());
+            } else if msg.is_unknown() {
+                obj!("Beacon {} is unknown!", req.beacon_id);
+                return Err(Error::new(ErrorKind::Other, "Beacon unknown!"));
+            } 
+            obj!("Unknown Message: {}! Returning!", msg.msg());
+            return Err(Error::new(ErrorKind::Other, "Unknown Message!"));
         }
+        error!("Unnoticed HTTP Error in submit_guess()");
+        Err(Error::new(ErrorKind::Other, "HTTP Error!"))
     }
 
     fn generate_random_guesses() -> Vec<Vec2D<I32F32>> {

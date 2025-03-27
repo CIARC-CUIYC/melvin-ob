@@ -3,6 +3,7 @@ use super::{
     switch_state_task::SwitchStateTask,
     vel_change_task::{VelocityChangeTask, VelocityChangeTaskRationale},
 };
+use crate::fatal;
 use crate::flight_control::{
     camera_state::CameraAngle, common::vec2d::Vec2D, flight_state::FlightState, orbit::BurnSequence,
 };
@@ -74,7 +75,7 @@ impl Task {
         Self {
             task_type: BaseTask::SwitchState(
                 SwitchStateTask::new(target_state)
-                    .expect("[FATAL] Tried to schedule invalid state switch"),
+                    .unwrap_or_else(|| fatal!("Tried to schedule invalid state switch")),
             ),
             t,
         }

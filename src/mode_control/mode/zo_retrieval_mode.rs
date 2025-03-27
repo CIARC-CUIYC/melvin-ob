@@ -17,6 +17,7 @@ use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use std::{pin::Pin, sync::Arc};
 use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
 pub struct ZORetrievalMode {
@@ -38,18 +39,23 @@ impl ZORetrievalMode {
     }
 
     async fn get_img_fut(
-        &self,
+        second_target: Option<Vec2D<I32F32>>,
+        unwrapped_pos: Vec2D<I32F32>,
         context: &Arc<ModeContext>,
     ) -> (
         DateTime<Utc>,
         Pin<Box<dyn Future<Output = ()> + Send + Sync>>,
     ) {
-        if let Some(add_target) = &self.add_target {
+        if let Some(add_target) = second_target {
             let current_vel = context.k().f_cont().read().await.current_vel();
+            let to_target = {
+                let wrapped = unwrapped_pos.wrap_around_map();
+                wrapped.unwrapped_to(&add_target)
+            };
             let target_traversal_dt =
-                TimeDelta::seconds((add_target.abs() / current_vel.abs()).to_num::<i64>());
+                TimeDelta::seconds((to_target.abs() / current_vel.abs()).to_num::<i64>());
             let t_end = Utc::now() + Self::SINGLE_TARGET_ACQ_DT * 2 + target_traversal_dt;
-            let fut = FlightComputer::turn_for_2nd_target(context.k().f_cont(), *add_target, t_end);
+            let fut = FlightComputer::turn_for_2nd_target(context.k().f_cont(), add_target, t_end);
             (t_end, Box::pin(fut))
         } else {
             let sleep_dur_std = Self::SINGLE_TARGET_ACQ_DT.to_std().unwrap_or(DT_0_STD);
@@ -60,24 +66,26 @@ impl ZORetrievalMode {
         }
     }
 
-    async fn exec_img_task(&self, context: &Arc<ModeContext>) {
-        let offset = Vec2D::new(self.target.zone()[0], self.target.zone()[1]).to_unsigned();
-        let dim = Vec2D::new(self.target.width(), self.target.height()).to_unsigned();
+    async fn exec_img_task(target: KnownImgObjective,  unwrapped_target: Vec2D<I32F32>, second_target: Option<Vec2D<I32F32>>, context: Arc<ModeContext>, c_tok: CancellationToken) {
+        let offset = Vec2D::new(target.zone()[0], target.zone()[1]).to_unsigned();
+        let dim = Vec2D::new(target.width(), target.height()).to_unsigned();
 
         let c_cont = context.k().c_cont();
-        let (deadline, add_fut) = self.get_img_fut(context).await;
+        let (deadline, add_fut) = Self::get_img_fut(second_target, unwrapped_target, &context).await;
         let f_cont = context.k().f_cont();
         let mut zoned_objective_image_buffer = None;
         let img_fut = c_cont.execute_zo_target_cycle(f_cont, deadline,&mut zoned_objective_image_buffer, offset, dim);
         tokio::pin!(add_fut);
         tokio::select! {
-            () = img_fut => {
+            () = img_fut => FlightComputer::stop_ongoing_burn(context.k().f_cont()).await,
+            () = &mut add_fut => (),
+            () = c_tok.cancelled() => {
+                warn!("Zoned Objective image Task has been cancelled. Cleaning up!");
                 FlightComputer::stop_ongoing_burn(context.k().f_cont()).await;
-            },
-            () = &mut add_fut => ()
+            }
         }
         let c_cont = context.k().c_cont();
-        let id = self.target.id();
+        let id = target.id();
         let img_path = Some(CameraController::generate_zo_img_path(id));
         c_cont.export_and_upload_objective_png(id, offset, dim, img_path, zoned_objective_image_buffer.as_ref()).await.unwrap_or_else(
             |e| {
@@ -148,9 +156,23 @@ impl GlobalMode for ZORetrievalMode {
         match task.task_type() {
             BaseTask::TakeImage(_) => {
                 let safe_mon = context.super_v().safe_mon();
+                let c_tok = CancellationToken::new();
+                let c_tok_clone = c_tok.clone();
+                let context_clone = Arc::clone(&context);
+                let second_target = self.add_target.clone();
+                let unwrapped_target = self.unwrapped_pos.lock().await.clone();
+                let target = self.target.clone();
+                let img_handle = tokio::spawn(async move {
+                    Self::exec_img_task(target, unwrapped_target, second_target, context_clone, c_tok_clone).await;
+                });
+                tokio::pin!(img_handle);
                 tokio::select! {
-                    () = self.exec_img_task(&context) => { },
+                    _ = &mut img_handle => { },
                     () = safe_mon.notified() => {
+                        c_tok.cancel();
+                        img_handle.await.unwrap_or_else(|e| {
+                            error!("Error joining zo image task: {e}");
+                        });
                         return ExecExitSignal::SafeEvent;
                     }
                 }

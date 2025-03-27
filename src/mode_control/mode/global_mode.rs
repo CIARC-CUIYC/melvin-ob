@@ -1,6 +1,7 @@
 use crate::flight_control::beacon_controller::BeaconControllerState;
 use crate::flight_control::objective::known_img_objective::KnownImgObjective;
 use crate::flight_control::task::base_task::Task;
+use crate::mode_control::signal::OptOpExitSignal;
 use crate::mode_control::{
     base_mode::BaseMode,
     mode_context::ModeContext,
@@ -11,11 +12,10 @@ use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use std::mem::discriminant;
 use std::{future::Future, pin::Pin, sync::Arc};
-use tokio::sync::watch::Receiver;
 use tokio::sync::RwLock;
+use tokio::sync::watch::Receiver;
 use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
-use crate::mode_control::signal::OptOpExitSignal;
 
 #[async_trait]
 pub trait GlobalMode: Sync + Send {
@@ -87,7 +87,11 @@ pub trait GlobalMode: Sync + Send {
     -> WaitExitSignal;
     async fn exec_task(&self, context: Arc<ModeContext>, task: Task) -> ExecExitSignal;
     async fn safe_handler(&self, context: Arc<ModeContext>) -> OpExitSignal;
-    async fn zo_handler(&self, context: &Arc<ModeContext>, obj: KnownImgObjective) -> OptOpExitSignal;
+    async fn zo_handler(
+        &self,
+        context: &Arc<ModeContext>,
+        obj: KnownImgObjective,
+    ) -> OptOpExitSignal;
     async fn bo_event_handler(&self, context: &Arc<ModeContext>) -> OptOpExitSignal;
     async fn exit_mode(&self, context: Arc<ModeContext>) -> Box<dyn GlobalMode>;
 }
@@ -122,7 +126,7 @@ pub trait OrbitalMode: GlobalMode {
         tokio::pin!(fut);
         tokio::select! {
             exit_sig = &mut fut => {
-                exit_sig.expect("[FATAL] Task wait hung up!");
+                exit_sig.unwrap_or_else(|_|fatal!("Task wait hung up!"));
                 WaitExitSignal::Continue
             },
             () = safe_mon.notified() => {
@@ -131,7 +135,7 @@ pub trait OrbitalMode: GlobalMode {
                 WaitExitSignal::SafeEvent
             },
             msg =  zo_mon.recv() => {
-                let img_obj = msg.expect("[FATAL] Objective monitor hung up!");
+                let img_obj = msg.unwrap_or_else(||fatal!("Objective monitor wait hung up!"));
                 cancel_task.cancel();
                 fut.await.ok();
                 WaitExitSignal::NewZOEvent(img_obj)
@@ -158,7 +162,6 @@ pub trait OrbitalMode: GlobalMode {
                     return;
                 }
             }
-
         }
     }
 

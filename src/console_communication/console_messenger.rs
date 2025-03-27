@@ -11,7 +11,7 @@ use crate::{
         console_endpoint::{ConsoleEndpoint, ConsoleEvent},
         melvin_messages,
     },
-    flight_control::supervisor::{self, Supervisor},
+    flight_control::supervisor::{Supervisor},
 };
 
 use std::sync::Arc;

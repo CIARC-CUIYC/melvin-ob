@@ -441,7 +441,7 @@ where T: FixedSigned + NumAssignOps
     }
     
     pub fn is_eq_signum(&self, other: &Self) -> bool {
-        self.x().signum() == other.x().signum() || self.y().signum() == other.y().signum()
+        self.x().signum() == other.x().signum() && self.y().signum() == other.y().signum()
     }
 
     /// Computes the Euclidean distance between the current vector and another vector.

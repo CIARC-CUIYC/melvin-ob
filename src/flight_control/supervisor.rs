@@ -1,4 +1,3 @@
-use crate::console_communication::ConsoleMessenger;
 use crate::flight_control::camera_controller::CameraController;
 use crate::flight_control::objective::beacon_objective::BeaconObjective;
 use crate::flight_control::{
@@ -21,8 +20,6 @@ use tokio::{
     sync::{Notify, RwLock, broadcast, mpsc, mpsc::Receiver},
     time::Instant,
 };
-
-use super::objective;
 
 pub struct Supervisor {
     f_cont_lock: Arc<RwLock<FlightComputer>>,

@@ -5,6 +5,7 @@ use kiddo::{ImmutableKdTree, SquaredEuclidean};
 use num::traits::FloatConst;
 use std::collections::{HashMap, HashSet};
 use std::num::NonZero;
+use crate::fatal;
 
 #[derive(Debug, Clone)]
 pub struct SquareSlice {
@@ -157,7 +158,7 @@ impl BayesianSet {
         let slice = self
             .curr_slice
             .intersect(&SquareSlice::new(pos, Vec2D::new(max_dist, max_dist)))
-            .expect("No possible intersection");
+            .unwrap_or_else(| |fatal!("No possible intersection found!"));
         let new_set = slice.get_coord_set(pos, min_dist, max_dist);
         self.set = self.set.intersection(&new_set).copied().collect();
         self.curr_slice = slice;

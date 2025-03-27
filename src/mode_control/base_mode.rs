@@ -78,13 +78,13 @@ impl BaseMode {
                 tokio::select! {
                     () = c_tok.cancelled() => {
                         let sig = PeriodicImagingEndSignal::KillNow;
-                        acq_phase.1.send(sig).expect("[FATAL] Receiver hung up!");
+                        acq_phase.1.send(sig).unwrap_or_else(|_|fatal!("Receiver hung up!"));
                         join_handle.abort();
                         acq_phase.0.await.ok().unwrap_or(vec![(0, 0)])
                     },
                     _ = &mut join_handle => {
                         let sig = PeriodicImagingEndSignal::KillLastImage;
-                        acq_phase.1.send(sig).expect("[FATAL] Receiver hung up!");
+                        acq_phase.1.send(sig).unwrap_or_else(|_|fatal!("Receiver hung up!"));
                         acq_phase.0.await.ok().unwrap_or(vec![(0, 0)])
                     }
                 }
@@ -265,7 +265,7 @@ impl BaseMode {
                 };
                 let k_clone = Arc::clone(context.k());
                 let export_handle = tokio::spawn(async move {
-                    k_clone.c_cont().export_full_snapshot().await.expect("Export failed!");
+                    k_clone.c_cont().export_full_snapshot().await.unwrap_or_else(|_|fatal!("Export failed!"));
                 });
                 task_handle.await;
                 if export_handle.is_finished() {
