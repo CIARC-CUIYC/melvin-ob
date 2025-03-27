@@ -3,7 +3,7 @@ FROM rust:latest AS builder
 WORKDIR /usr/src/app
 
 # leverage Docker layer caching for dependencies
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.* ./
 # Copy the source code
 COPY src/ ./src/
 
