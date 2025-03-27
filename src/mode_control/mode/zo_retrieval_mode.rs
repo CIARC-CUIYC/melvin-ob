@@ -143,7 +143,7 @@ impl GlobalMode for ZORetrievalMode {
         let safe_mon = context.super_v().safe_mon();
         let dt = (due - Utc::now()).to_std().unwrap_or(DT_0_STD);
         tokio::select! {
-            () = tokio::time::sleep(dt) => {
+            () = FlightComputer::wait_for_duration(dt, false) => {
                 WaitExitSignal::Continue
             },
             () = safe_mon.notified() => {

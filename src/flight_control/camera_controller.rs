@@ -310,6 +310,7 @@ impl CameraController {
         if let Some(img_path) = export_path {
             let mut img_file = File::create(&img_path).await?;
             img_file.write_all(encoded_image.data.as_slice()).await?;
+            drop(img_file);
             ObjectiveImageRequest::new(objective_id, img_path)
                 .send_request(&self.request_client)
                 .await?;
@@ -503,7 +504,7 @@ impl CameraController {
         let lens = f_cont_lock.read().await.current_angle();
         let mut pics = 0;
         let deadline_cont = deadline - Utc::now() > TimeDelta::seconds(20);
-        let step_print = if deadline_cont { 10 } else { 2 };
+        let step_print = if deadline_cont { 20 } else { 2 };
         loop {
             let next_img_due = Utc::now() + Self::ZO_IMG_ACQ_DELAY;
             let img_init_timestamp = Utc::now();

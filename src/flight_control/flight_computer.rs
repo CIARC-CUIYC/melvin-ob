@@ -93,7 +93,7 @@ impl FlightComputer {
     /// Maximum decimal places that are used in the observation endpoint for velocity
     pub const VEL_BE_MAX_DECIMAL: u8 = MAX_DEC;
     /// Constant timeout for the `wait_for_condition`-method
-    const DEF_COND_TO: u32 = 10000;
+    const DEF_COND_TO: u32 = 3000;
     /// Constant timeout for the `wait_for_condition`-method
     const DEF_COND_PI: u16 = 500;
     /// Constant transition to SAFE sleep time for all states

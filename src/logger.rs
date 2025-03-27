@@ -56,7 +56,7 @@ macro_rules! event {
 #[macro_export]
 macro_rules! log_burn {
     ($($arg:tt)*) => {
-            println!("\x1b[36m[EVENT][{}]\x1b[0m {}", chrono::Utc::now().format("%H:%M:%S"), format!($($arg)*))
+            println!("\x1b[36m[BURN] [{}]\x1b[0m {}", chrono::Utc::now().format("%H:%M:%S"), format!($($arg)*))
     };
 }
 
