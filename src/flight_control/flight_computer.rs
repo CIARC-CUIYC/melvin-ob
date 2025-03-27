@@ -93,7 +93,7 @@ impl FlightComputer {
     /// Maximum decimal places that are used in the observation endpoint for velocity
     pub const VEL_BE_MAX_DECIMAL: u8 = MAX_DEC;
     /// Constant timeout for the `wait_for_condition`-method
-    const DEF_COND_TO: u32 = 3000;
+    const DEF_COND_TO: u32 = 10000;
     /// Constant timeout for the `wait_for_condition`-method
     const DEF_COND_PI: u16 = 500;
     /// Constant transition to SAFE sleep time for all states
@@ -407,16 +407,19 @@ impl FlightComputer {
                 FlightState::Acquisition
             }
         };
+        let mut curr_state = self_lock.read().await.state();
         info!("Safe Mode Runtime initiated. Transitioning back to {target_state} asap.");
-        Self::wait_for_duration(Self::TO_SAFE_SLEEP, false).await;
-        Self::avoid_transition(&self_lock).await;
-        let state = {
-            let mut lock = self_lock.write().await;
-            lock.target_state = None;
-            lock.current_state
-        };
-        if state != FlightState::Safe {
-            error!("State is not safe but {}", state);
+        if curr_state == FlightState::Transition {
+            Self::wait_for_duration(Self::TO_SAFE_SLEEP, false).await;
+            Self::avoid_transition(&self_lock).await;
+            curr_state = {
+                let mut lock = self_lock.write().await;
+                lock.target_state = None;
+                lock.current_state
+            };
+        }
+        if curr_state != FlightState::Safe {
+            error!("State is not safe but {}", curr_state);
         }
         let cond_min_charge = (
             |cont: &FlightComputer| cont.current_battery() > Self::EXIT_SAFE_MIN_BATT,
@@ -558,7 +561,6 @@ impl FlightComputer {
         }
         if state == FlightState::Safe {
             FlightComputer::escape_safe(Arc::clone(self_lock), true).await;
-            FlightComputer::set_state_wait(Arc::clone(self_lock), FlightState::Charge).await;
         } else {
             FlightComputer::set_state_wait(Arc::clone(self_lock), FlightState::Charge).await;
         }
@@ -961,7 +963,7 @@ impl FlightComputer {
             camera_angle: new_angle.into(),
             state: self.current_state.into(),
         };
-        
+
         if req.send_request(&self.request_client).await.is_ok() {
             info!("Angle change commanded to {new_angle}");
         }else {
