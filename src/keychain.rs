@@ -1,10 +1,14 @@
 use crate::console_communication::ConsoleMessenger;
+use crate::flight_control::objective::beacon_objective::BeaconObjective;
+use crate::flight_control::objective::known_img_objective::KnownImgObjective;
+use crate::flight_control::supervisor::Supervisor;
 use crate::flight_control::{
     camera_controller::CameraController, flight_computer::FlightComputer, orbit::ClosedOrbit,
     task::TaskController,
 };
 use crate::http_handler::http_client::HTTPClient;
 use std::sync::Arc;
+use tokio::sync::mpsc::Receiver;
 use tokio::sync::RwLock;
 
 /// Struct representing the key components of the application, providing access
@@ -14,6 +18,7 @@ use tokio::sync::RwLock;
 pub struct Keychain {
     /// The HTTP client for performing network requests.
     client: Arc<HTTPClient>,
+    supervisor: Arc<Supervisor>,
     /// The console messenger for handling console-related operations.
     con: Arc<ConsoleMessenger>,
     /// The flight computer responsible for managing satellite operations.
@@ -32,23 +37,35 @@ impl Keychain {
     ///
     /// # Returns
     /// A new instance of `Keychain` containing initialized subsystems.
-    pub async fn new(url: &str) -> Self {
+    pub async fn new(url: &str) -> (
+        Self,
+        Receiver<KnownImgObjective>,
+        Receiver<BeaconObjective>,
+    ) {
         let client = Arc::new(HTTPClient::new(url));
         let c_cont = Arc::new(CameraController::start(
             "./".to_string(),
             Arc::clone(&client),
         ));
         let t_cont = Arc::new(TaskController::new());
+        
+        let f_cont = Arc::new(RwLock::new(FlightComputer::new(Arc::clone(&client)).await));
+        let (supervisor, obj_rx, beac_rx) = {
+            let (sv, rx_obj, rx_beac) = Supervisor::new(Arc::clone(&f_cont));
+            (Arc::new(sv), rx_obj, rx_beac)
+        };
         let con = Arc::new(ConsoleMessenger::start(
             Arc::clone(&c_cont),
             Arc::clone(&t_cont),
+            Arc::clone(&supervisor)
         ));
-        let f_cont = Arc::new(RwLock::new(FlightComputer::new(Arc::clone(&client)).await));
-        Self { client, con, f_cont, t_cont, c_cont }
+        (Self { client, supervisor, con, f_cont, t_cont, c_cont }, obj_rx, beac_rx)
     }
 
     /// Provides a cloned reference to the HTTP client.
     pub fn client(&self) -> Arc<HTTPClient> { Arc::clone(&self.client) }
+
+    pub fn supervisor(&self) -> Arc<Supervisor> { Arc::clone(&self.supervisor)}
 
     /// Provides a cloned reference to the flight computer.
     pub fn f_cont(&self) -> Arc<RwLock<FlightComputer>> { Arc::clone(&self.f_cont) }

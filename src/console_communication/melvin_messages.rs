@@ -2,7 +2,7 @@ use crate::flight_control::imaging::map_image::EncodedImageExtract;
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Upstream {
-    #[prost(oneof = "UpstreamContent", tags = "1, 2, 3, 4, 5, 6")]
+    #[prost(oneof = "UpstreamContent", tags = "1, 2, 3, 4, 5, 6, 7")]
     pub content: Option<UpstreamContent>,
 }
 
@@ -106,15 +106,17 @@ pub enum UpstreamContent {
     #[prost(message, tag = "4")]
     CreateSnapshotImage(CreateSnapshotImage),
     #[prost(message, tag = "5")]
-    SubmitObjective(SubmitObjective),
+    SubmitObjective(ObjectiveArea),
     #[prost(message, tag = "6")]
     SubmitDailyMap(SubmitDailyMap),
+    #[prost(message, tag = "7")]
+    ScheduleSecretObjective(ObjectiveArea),
 }
 #[derive(Clone, Copy, PartialEq, prost::Message)]
 pub struct GetFullImage {}
 
 #[derive(Clone, PartialEq, prost::Message)]
-pub struct SubmitObjective {
+pub struct ObjectiveArea {
     #[prost(uint32, tag = "1")]
     pub objective_id: u32,
     #[prost(uint32, tag = "2")]
