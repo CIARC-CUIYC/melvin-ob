@@ -1,14 +1,15 @@
 [package]
 name = "melvin-ob"
-authors = ["Felix Renzikowski <felix.renzi@outlook.de", "Nicolai Kallis <nicolai.kallis@gmx.de>"]
-version = "0.9.5"
+authors = ["Felix Renzikowski <felix.renzi@outlook.de", "Nicolai Kallis <nicolai.kallis@gmx.de>", "Christoph Walcher <chris@wiomoc.de>"]
+version = "0.9.8"
 edition = "2024"
 rust-version = "1.85.0"
 license-file = "LICENSE"
 repository = "https://github.com/CIARC-CUIYC/melvin-ob"
 readme = "README.md"
 description = """
-A high performance asychronous compute framework for system simulation.
+A highly adapted and performant binary with a great focus on planning and scheduling.
+This was implemented for the 2024/2025 ESA Computer in a Room Challenge
 """
 categories = ["aerospace", "science"]
 

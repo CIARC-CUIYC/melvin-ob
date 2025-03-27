@@ -75,6 +75,11 @@ async fn main() {
 async fn init(url: &str) -> (Arc<ModeContext>, Box<dyn GlobalMode>) {
     let (init_k,  obj_rx, beac_rx) = Keychain::new(url).await;
 
+    let supervisor_clone = init_k.supervisor();
+    tokio::spawn(async move {
+        supervisor_clone.run_obs_obj_mon().await;
+    });
+    
     if env::var("SKIP_RESET").is_ok() {
         warn!("Skipping reset!");
         FlightComputer::avoid_transition(&init_k.f_cont()).await;
@@ -87,10 +92,7 @@ async fn init(url: &str) -> (Arc<ModeContext>, Box<dyn GlobalMode>) {
         let res = BeaconController::new(beac_rx);
         (Arc::new(res.0), res.1)
     };
-    let supervisor_clone = init_k.supervisor();
-    tokio::spawn(async move {
-        supervisor_clone.run_obs_obj_mon().await;
-    });
+    
     let supervisor_clone = init_k.supervisor();
     tokio::spawn(async move {
         supervisor_clone.run_announcement_hub().await;

@@ -146,6 +146,9 @@ impl FlightComputer {
             request_client,
         };
         return_controller.update_observation().await;
+        if return_controller.current_state == FlightState::Transition {
+            return_controller.target_state = Some(FlightState::Transition);
+        }
         return_controller
     }
 
@@ -323,9 +326,10 @@ impl FlightComputer {
     ///
     /// # Panics
     /// - If the reset request fails, this method will panic with an error message.
-    pub async fn reset(&self) {
+    pub async fn reset(&mut self) {
         ResetRequest {}.send_request(&self.request_client).await.unwrap_or_else(|_| fatal!("Failed to reset"));
         Self::wait_for_duration(Duration::from_secs(4), false).await;
+        self.target_state = None;
         log!("Reset request complete.");
     }
 
@@ -443,13 +447,14 @@ impl FlightComputer {
         );
         let max_dt = TRANS_DEL[&(FlightState::Safe, FlightState::Acquisition)];
         Self::wait_for_condition(
-            &self_lock,
+            self_lock,
             not_trans,
-            max_dt.as_millis() as u32,
+            u32::try_from(max_dt.as_millis()).unwrap_or(u32::MAX),
             Self::DEF_COND_PI,
             false,
         )
         .await;
+        self_lock.write().await.target_state = None;
     }
 
     #[allow(clippy::cast_possible_wrap)]
