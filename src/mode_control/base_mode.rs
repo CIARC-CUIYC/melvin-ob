@@ -265,7 +265,14 @@ impl BaseMode {
                 };
                 let k_clone = Arc::clone(context.k());
                 let export_handle = tokio::spawn(async move {
-                    k_clone.c_cont().export_full_snapshot().await.unwrap_or_else(|_|fatal!("Export failed!"));
+                    let c_cont = k_clone.c_cont();
+                    c_cont
+                        .export_full_snapshot()
+                        .await
+                        .unwrap_or_else(|_| fatal!("Export failed!"));
+                    c_cont.create_thumb_snapshot().await.unwrap_or_else(|e| {
+                        error!("Error exporting thumb snapshot: {e}.");
+                    });
                 });
                 task_handle.await;
                 if export_handle.is_finished() {
