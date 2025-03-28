@@ -285,19 +285,14 @@ impl TaskController {
         curr_i: IndexedOrbitPosition,
         curr_vel: Vec2D<I32F32>,
         target_pos: Vec2D<I32F32>,
+        target_start_time: DateTime<Utc>,
         target_end_time: DateTime<Utc>,
         fuel_left: I32F32,
         target_id: usize,
     ) -> Option<ExitBurnResult> {
         info!("Starting to calculate single-target burn towards {target_pos}");
         let target = [(target_pos, Vec2D::zero())];
-        // Calculate maximum allowed time delta for the maneuver
-        let time_left = target_end_time - curr_i.t();
-        let max_dt = {
-            let max = usize::try_from(time_left.num_seconds()).unwrap_or(0);
-            max - Self::OBJECTIVE_MIN_RETRIEVAL_TOL
-        };
-
+        let (min_dt, max_dt) = Self::get_min_max_dt(target_start_time, target_end_time, curr_i.t());
         let max_off_orbit_dt = max_dt - Self::OBJECTIVE_SCHEDULE_MIN_DT;
 
         // Spawn a task to compute possible turns asynchronously
@@ -318,6 +313,7 @@ impl TaskController {
             curr_i,
             curr_vel,
             &target,
+            min_dt,
             max_dt,
             max_off_orbit_dt,
             turns,
@@ -343,20 +339,13 @@ impl TaskController {
         curr_i: IndexedOrbitPosition,
         curr_vel: Vec2D<I32F32>,
         entries: [(Vec2D<I32F32>, Vec2D<I32F32>); 4],
+        target_start_time: DateTime<Utc>,
         target_end_time: DateTime<Utc>,
         fuel_left: I32F32,
         target_id: usize,
     ) -> Option<ExitBurnResult> {
         info!("Starting to calculate multi-target burn sequence!");
-
-        // Calculate maximum allowed time delta for the maneuver
-        let time_left = target_end_time - curr_i.t();
-        
-        let max_dt = {
-            let max = usize::try_from(time_left.num_seconds()).unwrap_or(0);
-            max - Self::OBJECTIVE_MIN_RETRIEVAL_TOL
-        };
-
+        let (min_dt, max_dt) = Self::get_min_max_dt(target_start_time, target_end_time, curr_i.t());
         let max_off_orbit_dt = max_dt - Self::OBJECTIVE_SCHEDULE_MIN_DT;
 
         // Spawn a task to compute possible turns asynchronously
@@ -373,6 +362,7 @@ impl TaskController {
             curr_i,
             curr_vel,
             &entries,
+            min_dt,
             max_dt,
             max_off_orbit_dt,
             turns,
@@ -385,6 +375,26 @@ impl TaskController {
         }
         // Return the best burn sequence, panicking if none was found
         evaluator.get_best_burn()
+    }
+
+    fn get_min_max_dt(start_time: DateTime<Utc>, end_time: DateTime<Utc>, curr: DateTime<Utc>) -> (usize, usize) {
+        // Calculate maximum allowed time delta for the maneuver, clamp to a maximum of 8 hours
+        let time_left = (end_time - curr).clamp(TimeDelta::zero(), TimeDelta::hours(8));
+        let max_dt = {
+            let max = usize::try_from(time_left.num_seconds()).unwrap_or(0);
+            max - Self::OBJECTIVE_MIN_RETRIEVAL_TOL
+        };
+
+        let time_to_start = start_time - curr;
+        let min_dt = {
+            if time_to_start.num_seconds() > 0 {
+                let min = usize::try_from(time_to_start.num_seconds()).unwrap_or(0);
+                min + Self::OBJECTIVE_MIN_RETRIEVAL_TOL
+            } else {
+                0
+            }
+        };
+        (min_dt, max_dt)
     }
 
     #[allow(clippy::cast_possible_wrap)]

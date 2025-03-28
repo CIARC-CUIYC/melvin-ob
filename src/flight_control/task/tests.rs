@@ -23,13 +23,32 @@ fn get_rand_pos() -> Vec2D<I32F32> {
     .round()
 }
 
-fn get_rand_end_t() -> DateTime<Utc> {
-    const MIN_SECS: i64 = 4 * 3600;
-    const MAX_SECS: i64 = 8 * 3600;
+fn get_rand_end_t(start: DateTime<Utc>) -> DateTime<Utc> {
+    if start > Utc::now() {
+        const MIN_SECS: i64 = 900;
+        const MAX_SECS: i64 = 3600;
+        let mut rng = rand::rng();
+        let rand_secs = rng.random_range(MIN_SECS..MAX_SECS);
+        start + TimeDelta::minutes(30)
+        //start + TimeDelta::seconds(rand_secs)
+    } else {
+        const MIN_SECS: i64 = 4 * 3600;
+        const MAX_SECS: i64 = 8 * 3600;
+        let mut rng = rand::rng();
+        let rand_secs = rng.random_range(MIN_SECS..MAX_SECS);
+        start + TimeDelta::seconds(rand_secs)
+    }    
+}
+
+fn get_rand_start_t() -> DateTime<Utc> {
     let mut rng = rand::rng();
-    let now = Utc::now();
-    let rand_secs = rng.random_range(MIN_SECS..MAX_SECS);
-    now + TimeDelta::seconds(rand_secs)
+    let is_future = rng.random_bool(1.0);
+    if is_future {
+        log!("Future short objective decision!");
+        Utc::now() + TimeDelta::hours(2)
+    } else {
+        Utc::now()
+    }   
 }
 
 fn get_rand_fuel() -> I32F32 {
@@ -45,12 +64,15 @@ async fn test_single_target_burn_calculator() {
         info!("Running Single Target Burn Calculator Test");
         let mock_start_point = get_start_pos();
         let mock_obj_point = get_rand_pos();
-        let mock_end_t = get_rand_end_t();
+        let mock_start_t = get_rand_start_t();
+        let mock_end_t = get_rand_end_t(mock_start_t);
+        info!("Start: {mock_start_t}, End: {mock_end_t}");
         let mock_fuel_left = get_rand_fuel();
         let res = TaskController::calculate_single_target_burn_sequence(
             mock_start_point,
             Vec2D::from(STATIC_ORBIT_VEL),
             mock_obj_point,
+            mock_start_t,
             mock_end_t,
             mock_fuel_left,
             1,
@@ -72,7 +94,7 @@ async fn test_single_target_burn_calculator() {
         } else {
             error!("Test failed.");
             info!(
-                "Calculated Burn Sequence for mocked Zoned Objective at: {mock_obj_point}, due at {mock_end_t}"
+                "Calculated Burn Sequence for mocked Zoned Objective at: {mock_obj_point}, due at {mock_end_t}, start at {mock_start_t}"
             );
             log!("Entry at {entry_t}, Position will be {entry_pos}");
             log!("Exit after {acc_dt}s, Position will be {exit_pos}");
@@ -114,13 +136,16 @@ async fn test_multi_target_burn_calculator() {
         let rand_angle = get_rand_angle();
 
         let mock_obj_point = get_rand_multi_target_obj(rand_angle);
-        let mock_end_t = get_rand_end_t();
+        let mock_start_t = get_rand_start_t();
+        let mock_end_t = get_rand_end_t(mock_start_t);
+        info!("Start: {mock_start_t}, End: {mock_end_t}");
         let mock_fuel_left = get_rand_fuel();
 
         let res = TaskController::calculate_multi_target_burn_sequence(
             mock_start_point,
             Vec2D::from(STATIC_ORBIT_VEL),
             mock_obj_point,
+            mock_start_t,
             mock_end_t,
             mock_fuel_left,
             1
@@ -142,7 +167,7 @@ async fn test_multi_target_burn_calculator() {
             < detumble_dt * (I32F32::lit("0.002") * detumble_dt);
         if hit_target {
             error!("Test failed.");
-            info!("Burn Sequence for mocked Zoned Objective at: {target}, due at {mock_end_t}");
+            info!("Burn Sequence for mocked Zoned Objective at: {target}, due at {mock_end_t}, start at {mock_start_t}");
             log!("Entry at {entry_t}, Position will be {entry_pos}");
             log!("Exit after {acc_dt}s, Position will be {exit_pos}");
             log!("Aiming for {target}, then {add_target}. Traversal time is {traversal_dt}s.");

@@ -161,7 +161,9 @@ impl Supervisor {
                 for img_obj in objective_list.img_objectives() {
                     let obj_on = img_obj.start() < Utc::now() && img_obj.end() > Utc::now();
                     let is_secret = matches!(img_obj.zone_type(), ZoneType::SecretZone(_));
-                    if !id_list.contains(&img_obj.id()) && obj_on {
+                    let is_future = img_obj.start() > Utc::now() + TimeDelta::hours(2);
+                    let is_future_short = img_obj.end() < Utc::now() + TimeDelta::hours(3);
+                    if !id_list.contains(&img_obj.id()) && (obj_on || (is_future && is_future_short)) {
                         if is_secret {
                             currently_secret_objectives.push(img_obj.clone());
                         } else {

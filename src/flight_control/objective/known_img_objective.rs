@@ -30,12 +30,12 @@ impl KnownImgObjective {
     }
 
     pub fn id(&self) -> usize { self.id }
+    pub fn start(&self) -> DateTime<Utc> { self.start }
     pub fn end(&self) -> DateTime<Utc> { self.end }
     pub fn name(&self) -> &str { &self.name }
     pub fn zone(&self) -> [i32; 4] { self.zone }
     pub fn optic_required(&self) -> CameraAngle { self.optic_required }
     pub fn coverage_required(&self) -> f64 { self.coverage_required }
-
     pub fn width(&self) -> i32 { self.zone[2] - self.zone[0] }
     pub fn height(&self) -> i32 { self.zone[3] - self.zone[1] }
 
@@ -44,9 +44,8 @@ impl KnownImgObjective {
         let y_size = self.zone[3] - self.zone[1];
         let pos = Vec2D::new(self.zone[0] + x_size / 2, self.zone[1] + y_size / 2);
         Vec2D::new(I32F32::from(pos.x()), I32F32::from(pos.y())).wrap_around_map()
-        
     }
-    
+
     pub fn get_corners(&self) -> [(Vec2D<I32F32>, Vec2D<I32F32>); 4] {
         let first = Vec2D::new(I32F32::from(self.zone[0]), I32F32::from(self.zone[1]));
         let second = Vec2D::new(I32F32::from(self.zone[0]), I32F32::from(self.zone[3]));

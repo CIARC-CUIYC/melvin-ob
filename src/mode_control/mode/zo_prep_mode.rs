@@ -65,6 +65,10 @@ impl ZOPrepMode {
             let f_cont = f_cont_lock.read().await;
             (f_cont.current_vel(), f_cont.fuel_left())
         };
+        let start = zo.start();
+        if start > Utc::now() {
+            log!("Objective {} will be calculated as a short objective.", zo.id());
+        }
         let exit_burn = if zo.min_images() == 1 {
             let target = zo.get_single_image_point();
             TaskController::calculate_single_target_burn_sequence(
@@ -72,6 +76,7 @@ impl ZOPrepMode {
                 current_vel,
                 target,
                 due,
+                start,
                 fuel_left,
                 zo.id()
             )
@@ -81,6 +86,7 @@ impl ZOPrepMode {
                 context.o_ch_clone().await.i_entry(),
                 current_vel,
                 entries,
+                start,
                 due,
                 fuel_left,
                 zo.id()

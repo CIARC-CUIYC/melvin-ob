@@ -180,6 +180,7 @@ pub struct BurnSequenceEvaluator<'a> {
     vel: Vec2D<I32F32>,
     targets: &'a [(Vec2D<I32F32>, Vec2D<I32F32>)],
     max_dt: usize,
+    min_dt: usize,
     max_off_orbit_dt: usize,
     max_angle_dev: I32F32,
     turns: TurnsClockCClockTup,
@@ -208,6 +209,7 @@ impl<'a> BurnSequenceEvaluator<'a> {
         i: IndexedOrbitPosition,
         vel: Vec2D<I32F32>,
         targets: &'a [(Vec2D<I32F32>, Vec2D<I32F32>)],
+        min_dt: usize,
         max_dt: usize,
         max_off_orbit_dt: usize,
         turns: TurnsClockCClockTup,
@@ -230,6 +232,7 @@ impl<'a> BurnSequenceEvaluator<'a> {
             vel,
             targets,
             max_dt,
+            min_dt,
             max_off_orbit_dt,
             max_angle_dev,
             turns,
@@ -306,8 +309,9 @@ impl<'a> BurnSequenceEvaluator<'a> {
             let dt = (burn_i.t() - Utc::now()).num_seconds() as usize;
             // Check if the maneuver exceeds the maximum allowed time
             add_dt += 1;
-            if min_dt + dt + add_dt + min_add_target_dt > self.max_dt
-                || min_dt < TaskController::MANEUVER_MIN_DETUMBLE_DT
+            let obj_finish_dt = min_dt + dt + add_dt + min_add_target_dt;
+            let obj_arrival_dt = min_dt + dt + add_dt;
+            if obj_finish_dt > self.max_dt || obj_arrival_dt < self.min_dt || min_dt < TaskController::MANEUVER_MIN_DETUMBLE_DT 
             {
                 return None;
             }
