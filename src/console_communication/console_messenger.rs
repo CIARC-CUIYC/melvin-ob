@@ -94,6 +94,7 @@ impl ConsoleMessenger {
                                 ),
                             );
                         }
+                        Self::send_tasklist_from_endpoint(&endpoint_local, &t_cont_local).await;
                     }
                     ConsoleEvent::Message(melvin_messages::UpstreamContent::SubmitObjective(
                         submit_objective,
@@ -153,9 +154,6 @@ impl ConsoleMessenger {
                                 ),
                             );
                         });
-                    }
-                    ConsoleEvent::Connected => {
-                        Self::send_tasklist_from_endpoint(&endpoint_local, &t_cont_local).await;
                     }
                     _ => {}
                 }
