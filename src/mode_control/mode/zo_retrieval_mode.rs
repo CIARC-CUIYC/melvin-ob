@@ -132,6 +132,7 @@ impl GlobalMode for ZORetrievalMode {
                 self.target.optic_required(),
             )
             .await;
+        context.k().con().send_tasklist().await;
         OpExitSignal::Continue
     }
 

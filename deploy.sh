@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # (Re-)Build locally
-cargo build --release --target x86_64-unknown-linux-gnu --config target.x86_64-unknown-linux-gnu.linker=\"x86_64-linux-gnu-gcc\"
+# cargo build --release --target x86_64-unknown-linux-gnu --config target.x86_64-unknown-linux-gnu.linker=\"x86_64-linux-gnu-gcc\"
 
 # Install tmux dependency
 sshpass -p password ssh -p 50000 root@localhost 'apt-get install -y tmux'

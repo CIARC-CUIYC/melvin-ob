@@ -70,7 +70,7 @@ impl KnownImgObjective {
         let lens_area_size = f64::from(lens_square_side_length.pow(2));
         let min_area_required = total_zone_area_size * self.coverage_required;
 
-        let min_number_of_images_required = (min_area_required / lens_area_size).round();
+        let min_number_of_images_required = (min_area_required / lens_area_size).floor();
         min_number_of_images_required.to_i32().unwrap()
     }
 }

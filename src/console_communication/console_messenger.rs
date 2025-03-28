@@ -58,6 +58,7 @@ impl ConsoleMessenger {
         let endpoint_local = endpoint.clone();
         let camera_controller_local = camera_controller.clone();
         let supervisor_local = supervisor.clone();
+        let t_cont_local = task_controller.clone();
         tokio::spawn(async move {
             while let Ok(event) = receiver.recv().await {
                 match event {
@@ -155,6 +156,9 @@ impl ConsoleMessenger {
                                 ),
                             );
                         });
+                    },
+                    ConsoleEvent::Connected => {
+                        Self::send_tasklist_from_endpoint(&endpoint_local, &t_cont_local).await;
                     }
                     _ => {}
                 }
@@ -241,6 +245,60 @@ impl ConsoleMessenger {
             .collect();
 
         self.endpoint.send_downstream(melvin_messages::DownstreamContent::TaskList(
+            melvin_messages::TaskList { tasks },
+        ));
+    }
+
+    /// Sends the task list to the operator console.
+    ///
+    /// If the console is not connected, this method does nothing.
+    pub(crate) async fn send_tasklist_from_endpoint(endpoint: &Arc<ConsoleEndpoint>, t_cont: &Arc<TaskController>) {
+        if !endpoint.is_console_connected() {
+            return;
+        }
+        let tasks = t_cont
+            .sched_arc()
+            .read()
+            .await
+            .iter()
+            .map(|task| melvin_messages::Task {
+                scheduled_on: task.t().timestamp_millis(),
+                task: Some(match task.task_type() {
+                    BaseTask::TakeImage(take_image) => {
+                        let actual_position = if let ImageTaskStatus::Done { actual_pos, .. } =
+                            take_image.image_status
+                        {
+                            Some(actual_pos)
+                        } else {
+                            None
+                        };
+                        melvin_messages::TaskType::TakeImage(melvin_messages::TakeImage {
+                            planned_position_x: take_image.planned_pos.x(),
+                            planned_position_y: take_image.planned_pos.y(),
+                            actual_position_x: actual_position.map(|p| p.x()),
+                            actual_position_y: actual_position.map(|p| p.y()),
+                        })
+                    }
+                    BaseTask::SwitchState(state) => {
+                        melvin_messages::TaskType::SwitchState(match state.target_state() {
+                            FlightState::Charge => melvin_messages::SatelliteState::Charge,
+                            FlightState::Acquisition => {
+                                melvin_messages::SatelliteState::Acquisition
+                            }
+                            FlightState::Deployment => melvin_messages::SatelliteState::Deployment,
+                            FlightState::Transition => melvin_messages::SatelliteState::Transition,
+                            FlightState::Comms => melvin_messages::SatelliteState::Communication,
+                            FlightState::Safe => melvin_messages::SatelliteState::Safe,
+                        } as i32)
+                    }
+                    BaseTask::ChangeVelocity(_velocity_change_task) => {
+                        melvin_messages::TaskType::VelocityChange(melvin_messages::BurnSequence {})
+                    }
+                }),
+            })
+            .collect();
+
+        endpoint.send_downstream(melvin_messages::DownstreamContent::TaskList(
             melvin_messages::TaskList { tasks },
         ));
     }
