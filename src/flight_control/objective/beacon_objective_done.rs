@@ -33,10 +33,10 @@ impl BeaconObjectiveDone {
     pub fn end(&self) -> DateTime<Utc> { self.end }
     pub fn guesses(&self) -> &Vec<Vec2D<I32F32>> { &self.guesses }
     pub fn submitted(&self) -> bool { self.submitted }
+    pub fn set_submitted(&mut self) { self.submitted = true }
 
     #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
-    pub async fn guess_max(&mut self, client: Arc<HTTPClient>) {
-        self.submitted = true;
+    pub async fn guess_max(&self, client: Arc<HTTPClient>) {
         obj!(
             "Guessing max for {}: {} guesses...",
             self.id,
@@ -56,7 +56,7 @@ impl BeaconObjectiveDone {
     }
 
     #[allow(clippy::cast_possible_truncation)]
-    pub async fn randomize_no_meas_guesses(&mut self, client: Arc<HTTPClient>) {
+    pub async fn randomize_no_meas_guesses(&self, client: Arc<HTTPClient>) {
         if !self.guesses.is_empty() {
             obj!("Guesses are provided already, skipping randomization.");
             return self.guess_max(client).await;
@@ -64,26 +64,29 @@ impl BeaconObjectiveDone {
         obj!("No guesses for {}, randomizing 10 guesses.", self.id);
 
         let random_guesses = Self::generate_random_guesses();
-        self.submitted = true;
         for (i, guess) in random_guesses.iter().enumerate() {
             let guess_req = BeaconPositionRequest {
                 beacon_id: self.id as u16,
                 width: guess.x().abs().to_num::<u32>(),
                 height: guess.y().abs().to_num::<u32>(),
             };
-            if self.submit_guess(guess_req, Arc::clone(&client), guess, i).await.is_err() {
-                return;
+            let res = self.submit_guess(guess_req, Arc::clone(&client), guess, i).await;
+            match res {
+                Ok(done) => {
+                    if done.is_some() { return; };
+                }
+                Err(_) => return,
             }
         }
     }
 
     async fn submit_guess(
-        &mut self,
+        &self,
         req: BeaconPositionRequest,
         client: Arc<HTTPClient>,
         guess: &Vec2D<I32F32>,
         guess_num: usize,
-    ) -> Result<(), Error> {
+    ) -> Result<Option<()>, Error> {
         if let Ok(msg) = req.send_request(&client).await {
             if msg.is_success() {
                 obj!(
@@ -91,18 +94,25 @@ impl BeaconObjectiveDone {
                     req.beacon_id,
                     guess
                 );
-                return Ok(());
+                return Ok(Some(()));
+            } else if msg.is_fail() {
+                obj!(
+                    "What can men do against such reckless hate? Still searching beacon {} after {} tries!",
+                    req.beacon_id,
+                    guess_num
+                );
+                return Ok(None);
             } else if msg.is_last() {
                 obj!(
                     "Where was Gondor when the Westfold fell! Could not find beacon {} after {} tries!",
                     req.beacon_id,
                     guess_num
                 );
-                return Ok(());
+                return Err(Error::new(ErrorKind::Other, "Beacon over!"));
             } else if msg.is_unknown() {
                 obj!("Beacon {} is unknown!", req.beacon_id);
                 return Err(Error::new(ErrorKind::Other, "Beacon unknown!"));
-            } 
+            }
             obj!("Unknown Message: {}! Returning!", msg.msg());
             return Err(Error::new(ErrorKind::Other, "Unknown Message!"));
         }

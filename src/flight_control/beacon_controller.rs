@@ -172,9 +172,10 @@ impl BeaconController {
     }
 
     async fn handle_beacon_submission(&self, handler: &Arc<HTTPClient>) {
-        let mut done_beacons = self.done_bo.write().await.clone();
+        let mut done_beacons = self.done_bo.write().await;
         for beacon in done_beacons.values_mut() {
             if !beacon.submitted() {
+                beacon.set_submitted();
                 if beacon.guesses().is_empty() {
                     beacon.randomize_no_meas_guesses(Arc::clone(handler)).await;
                 } else {
