@@ -11,7 +11,7 @@ use crate::http_handler::{
         objective_list_get::ObjectiveListRequest, request_common::NoBodyHTTPRequestType,
     },
 };
-use crate::{DT_0_STD, error, event, fatal, info, log, warn};
+use crate::{DT_0_STD, error, event, fatal, info, log, warn, obj};
 use chrono::{DateTime, NaiveTime, TimeDelta, TimeZone, Utc};
 use futures::StreamExt;
 use reqwest_eventsource::{Event, EventSource};
@@ -117,8 +117,9 @@ impl Supervisor {
     pub async fn schedule_secret_objective(&self, id: usize, zone: [i32; 4]) {
         let mut secret_obj = self.current_secret_objectives.write().await;
         if let Some(pos) =
-            secret_obj.iter().position(|obj| obj.id() == id && obj.end() > Utc::now())
+            secret_obj.iter().position(|obj| obj.id() == id && obj.end() > Utc::now() && obj.start() < Utc::now() + TimeDelta::hours(4))
         {
+            obj!("Received position instructions for secret objective {id} from console!");
             let obj = secret_obj.remove(pos);
             self.zo_mon.send(KnownImgObjective::try_from((obj, zone)).unwrap()).await.unwrap();
         }
