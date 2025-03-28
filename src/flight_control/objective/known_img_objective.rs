@@ -96,10 +96,10 @@ impl TryFrom<ImageObjective> for KnownImgObjective {
     }
 }
 
-impl TryFrom<(&ImageObjective, [i32; 4])> for KnownImgObjective {
+impl TryFrom<(ImageObjective, [i32; 4])> for KnownImgObjective {
     type Error = std::io::Error;
 
-    fn try_from(obj_with_zone: (&ImageObjective, [i32; 4])) -> Result<Self, Self::Error> {
+    fn try_from(obj_with_zone: (ImageObjective, [i32; 4])) -> Result<Self, Self::Error> {
         let obj = obj_with_zone.0;
         match obj.zone_type() {
             ZoneType::SecretZone(_) => Ok(Self {

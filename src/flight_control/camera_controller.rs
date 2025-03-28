@@ -315,7 +315,7 @@ impl CameraController {
                 .send_request(&self.request_client)
                 .await?;
         }
-        
+        log!("Successfully exported and uploaded objective png.");
         Ok(())
     }
 

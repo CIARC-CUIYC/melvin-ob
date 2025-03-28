@@ -97,7 +97,7 @@ impl Supervisor {
 
     pub async fn run_daily_map_uploader(&self, c_cont: Arc<CameraController>) {
         let now = Utc::now();
-        let end_of_day = NaiveTime::from_hms_opt(23, 55, 0).unwrap();
+        let end_of_day = NaiveTime::from_hms_opt(22, 55, 0).unwrap();
         let upload_t = now.date_naive().and_time(end_of_day);
         let mut next_upload_t = Utc.from_utc_datetime(&upload_t);
         loop {
@@ -114,13 +114,13 @@ impl Supervisor {
         }
     }
 
-    pub async fn schedule_secret_objective(&self, objective_id: usize, zone: [i32; 4]) {
-        let current_secret_objectives = self.current_secret_objectives.read().await;
-        let obj = current_secret_objectives
-            .iter()
-            .find(|obj| obj.id() == objective_id && obj.end() > Utc::now());
-        if let Some(new_obj) = obj {
-            self.zo_mon.send(KnownImgObjective::try_from((new_obj, zone)).unwrap()).await.unwrap();
+    pub async fn schedule_secret_objective(&self, id: usize, zone: [i32; 4]) {
+        let mut secret_obj = self.current_secret_objectives.write().await;
+        if let Some(pos) =
+            secret_obj.iter().position(|obj| obj.id() == id && obj.end() > Utc::now())
+        {
+            let obj = secret_obj.remove(pos);
+            self.zo_mon.send(KnownImgObjective::try_from((obj, zone)).unwrap()).await.unwrap();
         }
     }
 
@@ -163,10 +163,11 @@ impl Supervisor {
                     let is_secret = matches!(img_obj.zone_type(), ZoneType::SecretZone(_));
                     let is_future = img_obj.start() > Utc::now() + TimeDelta::hours(2);
                     let is_future_short = img_obj.end() < Utc::now() + TimeDelta::hours(3);
-                    if !id_list.contains(&img_obj.id()) && (obj_on || (is_future && is_future_short)) {
+                    if !id_list.contains(&img_obj.id()) {
                         if is_secret {
                             currently_secret_objectives.push(img_obj.clone());
-                        } else {
+                            id_list.insert(img_obj.id());
+                        } else if obj_on || (is_future && is_future_short) {
                             send_img_objs
                                 .push(KnownImgObjective::try_from(img_obj.clone()).unwrap());
                         }
@@ -195,7 +196,7 @@ impl Supervisor {
     }
 
     pub fn prefill_id_list(id_list: &mut HashSet<usize>) {
-        let done_ids: Vec<Option<usize>> = env::var("ENV_SKIP_OBJ")
+        let done_ids: Vec<Option<usize>> = env::var(Self::ENV_SKIP_OBJ)
             .unwrap_or_default()
             .split(',')
             .map(str::trim)
