@@ -215,5 +215,42 @@ pub struct TakeImage {
     pub planned_position_y: u32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, prost::Enumeration)]
+#[repr(i32)]
+pub enum VelocityChangeTaskRationale {
+    Correctional = 0,
+    OrbitEscape = 1,
+    OrbitEnter = 2,
+}
+
 #[derive(Clone, PartialEq, prost::Message)]
-pub struct BurnSequence {}
+pub struct BurnSequence {
+    #[prost(enumeration="VelocityChangeTaskRationale", tag = "1")]
+    pub rational: i32,
+    #[prost(uint32, tag = "2")]
+    pub target_x: u32,
+    #[prost(uint32, tag = "3")]
+    pub target_y: u32,
+    #[prost(uint32, optional, tag = "4")]
+    pub add_target_x: Option<u32>,
+    #[prost(uint32, optional, tag = "5")]
+    pub add_target_y: Option<u32>,
+    #[prost(uint32, repeated, tag = "6")]
+    pub position_x: Vec<u32>,
+    #[prost(uint32, repeated, tag = "7")]
+    pub position_y: Vec<u32>,
+    #[prost(float, repeated, tag = "8")]
+    pub velocity_x: Vec<f32>,
+    #[prost(float, repeated, tag = "9")]
+    pub velocity_y: Vec<f32>,
+    #[prost(uint32, tag = "10")]
+    pub acc_dt: u32,
+    #[prost(uint32, tag = "11")]
+    pub detumble_dt: u32,
+    #[prost(float, tag = "12")]
+    pub rem_angle_dev: f32,
+    #[prost(float, tag = "13")]
+    pub min_charge: f32,
+    #[prost(float, tag = "14")]
+    pub min_fuel: f32,
+}

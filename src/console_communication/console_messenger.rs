@@ -3,7 +3,7 @@ use crate::flight_control::{
     camera_state::CameraAngle,
     common::vec2d::Vec2D,
     flight_state::FlightState,
-    task::{TaskController, base_task::BaseTask, image_task::ImageTaskStatus},
+    task::{base_task::BaseTask, image_task::ImageTaskStatus, vel_change_task::VelocityChangeTaskRationale, TaskController},
 };
 use crate::info;
 use crate::{
@@ -129,15 +129,12 @@ impl ConsoleMessenger {
                         melvin_messages::UpstreamContent::ScheduleSecretObjective(objective),
                     ) => {
                         supervisor_local
-                            .schedule_secret_objective(
-                                objective.objective_id as usize,
-                                [
-                                    objective.offset_x as i32,
-                                    objective.offset_y as i32,
-                                    (objective.offset_x + objective.width) as i32,
-                                    (objective.offset_y + objective.height) as i32,
-                                ],
-                            )
+                            .schedule_secret_objective(objective.objective_id as usize, [
+                                objective.offset_x as i32,
+                                objective.offset_y as i32,
+                                (objective.offset_x + objective.width) as i32,
+                                (objective.offset_y + objective.height) as i32,
+                            ])
                             .await;
                     }
                     ConsoleEvent::Message(melvin_messages::UpstreamContent::SubmitDailyMap(_)) => {
@@ -156,7 +153,7 @@ impl ConsoleMessenger {
                                 ),
                             );
                         });
-                    },
+                    }
                     ConsoleEvent::Connected => {
                         Self::send_tasklist_from_endpoint(&endpoint_local, &t_cont_local).await;
                     }
@@ -198,61 +195,16 @@ impl ConsoleMessenger {
     ///
     /// If the console is not connected, this method does nothing.
     pub(crate) async fn send_tasklist(&self) {
-        if !self.endpoint.is_console_connected() {
-            return;
-        }
-        let tasks = self
-            .task_controller
-            .sched_arc()
-            .read()
-            .await
-            .iter()
-            .map(|task| melvin_messages::Task {
-                scheduled_on: task.t().timestamp_millis(),
-                task: Some(match task.task_type() {
-                    BaseTask::TakeImage(take_image) => {
-                        let actual_position = if let ImageTaskStatus::Done { actual_pos, .. } =
-                            take_image.image_status
-                        {
-                            Some(actual_pos)
-                        } else {
-                            None
-                        };
-                        melvin_messages::TaskType::TakeImage(melvin_messages::TakeImage {
-                            planned_position_x: take_image.planned_pos.x(),
-                            planned_position_y: take_image.planned_pos.y(),
-                            actual_position_x: actual_position.map(|p| p.x()),
-                            actual_position_y: actual_position.map(|p| p.y()),
-                        })
-                    }
-                    BaseTask::SwitchState(state) => {
-                        melvin_messages::TaskType::SwitchState(match state.target_state() {
-                            FlightState::Charge => melvin_messages::SatelliteState::Charge,
-                            FlightState::Acquisition => {
-                                melvin_messages::SatelliteState::Acquisition
-                            }
-                            FlightState::Deployment => melvin_messages::SatelliteState::Deployment,
-                            FlightState::Transition => melvin_messages::SatelliteState::Transition,
-                            FlightState::Comms => melvin_messages::SatelliteState::Communication,
-                            FlightState::Safe => melvin_messages::SatelliteState::Safe,
-                        } as i32)
-                    }
-                    BaseTask::ChangeVelocity(_velocity_change_task) => {
-                        melvin_messages::TaskType::VelocityChange(melvin_messages::BurnSequence {})
-                    }
-                }),
-            })
-            .collect();
-
-        self.endpoint.send_downstream(melvin_messages::DownstreamContent::TaskList(
-            melvin_messages::TaskList { tasks },
-        ));
+        ConsoleMessenger::send_tasklist_from_endpoint(&self.endpoint, &self.task_controller).await
     }
 
     /// Sends the task list to the operator console.
     ///
     /// If the console is not connected, this method does nothing.
-    pub(crate) async fn send_tasklist_from_endpoint(endpoint: &Arc<ConsoleEndpoint>, t_cont: &Arc<TaskController>) {
+    pub(crate) async fn send_tasklist_from_endpoint(
+        endpoint: &Arc<ConsoleEndpoint>,
+        t_cont: &Arc<TaskController>,
+    ) {
         if !endpoint.is_console_connected() {
             return;
         }
@@ -291,8 +243,53 @@ impl ConsoleMessenger {
                             FlightState::Safe => melvin_messages::SatelliteState::Safe,
                         } as i32)
                     }
-                    BaseTask::ChangeVelocity(_velocity_change_task) => {
-                        melvin_messages::TaskType::VelocityChange(melvin_messages::BurnSequence {})
+                    BaseTask::ChangeVelocity(velocity_change_task) => {
+                        melvin_messages::TaskType::VelocityChange(melvin_messages::BurnSequence {
+                            rational: match velocity_change_task.rationale() {
+                                VelocityChangeTaskRationale::Correctional => {
+                                    melvin_messages::VelocityChangeTaskRationale::Correctional
+                                }
+                                VelocityChangeTaskRationale::OrbitEscape => {
+                                    melvin_messages::VelocityChangeTaskRationale::OrbitEscape
+                                }
+                                VelocityChangeTaskRationale::OrbitEnter => {
+                                    melvin_messages::VelocityChangeTaskRationale::OrbitEnter
+                                }
+                            } as i32,
+                            target_x: 0,
+                            target_y: 0,
+                            add_target_x: None,
+                            add_target_y: None,
+                            position_x: velocity_change_task
+                                .burn()
+                                .sequence_pos()
+                                .iter()
+                                .map(|pos| pos.x().to_num())
+                                .collect(),
+                            position_y: velocity_change_task
+                                .burn()
+                                .sequence_pos()
+                                .iter()
+                                .map(|pos| pos.y().to_num())
+                                .collect(),
+                            velocity_x: velocity_change_task
+                                .burn()
+                                .sequence_vel()
+                                .iter()
+                                .map(|vel| vel.x().to_num())
+                                .collect(),
+                            velocity_y: velocity_change_task
+                                .burn()
+                                .sequence_vel()
+                                .iter()
+                                .map(|vel| vel.y().to_num())
+                                .collect(),
+                            acc_dt: velocity_change_task.burn().acc_dt() as u32,
+                            detumble_dt: velocity_change_task.burn().detumble_dt() as u32,
+                            rem_angle_dev: velocity_change_task.burn().rem_angle_dev().to_num(),
+                            min_charge: velocity_change_task.burn().min_charge().to_num(),
+                            min_fuel: velocity_change_task.burn().min_fuel().to_num(),
+                        })
                     }
                 }),
             })
