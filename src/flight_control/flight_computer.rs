@@ -524,6 +524,9 @@ impl FlightComputer {
             let f_cont = self_lock.read().await;
             (f_cont.current_battery(), f_cont.current_vel())
         };
+        if vel == orbit_vel {
+            return;
+        }
         let vel_change_dt = Duration::from_secs_f32(
             (orbit_vel.euclid_distance(&vel) / Self::ACC_CONST).to_num::<f32>(),
         );
@@ -709,6 +712,9 @@ impl FlightComputer {
     }
 
     pub async fn or_maneuver(self_lock: Arc<RwLock<Self>>, c_o: Arc<RwLock<ClosedOrbit>>) -> usize {
+        if self_lock.read().await.state() != FlightState::Acquisition {
+            FlightComputer::set_state_wait(Arc::clone(&self_lock), FlightState::Acquisition).await;
+        }
         let o_unlocked = c_o.read().await;
         let (mut pos, vel) = {
             let f_cont = self_lock.read().await;
