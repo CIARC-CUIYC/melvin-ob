@@ -79,7 +79,7 @@ impl BurnSequence {
 
         let poss_charge = (I32F32::from_num(poss_charge_dt)
             * FlightState::Charge.get_charge_rate())
-        .clamp(I32F32::zero(), FlightComputer::MAX_100);
+        .clamp(I32F32::zero(), TaskController::MAX_BATTERY_THRESHOLD);
         let acq_acc_time = I32F32::from_num(acc_dt + TaskController::MANEUVER_MIN_DETUMBLE_DT);
 
         let mut min_fuel = acq_acc_time * FlightComputer::ACC_CONST + Self::ADD_FUEL_CONST;

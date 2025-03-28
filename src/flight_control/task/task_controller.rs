@@ -15,7 +15,7 @@ use crate::flight_control::{
 use crate::{error, info, log};
 use bitvec::prelude::BitRef;
 use chrono::{DateTime, TimeDelta, Utc};
-use fixed::types::I32F32;
+use fixed::types::{I32F32, I96F32};
 use num::Zero;
 use std::{collections::VecDeque, fmt::Debug, sync::Arc};
 use tokio::sync::RwLock;
@@ -50,7 +50,7 @@ impl TaskController {
     const BATTERY_RESOLUTION: I32F32 = I32F32::lit("0.1");
 
     pub const MIN_BATTERY_THRESHOLD: I32F32 = I32F32::lit("10.00");
-    pub const MAX_BATTERY_THRESHOLD: I32F32 = I32F32::lit("100.00");
+    pub const MAX_BATTERY_THRESHOLD: I32F32 = I32F32::lit("90.00");
 
     /// The resolution for time duration calculations, expressed in fixed-point format.
     const TIME_RESOLUTION: I32F32 = I32F32::lit("1.0");
@@ -231,7 +231,8 @@ impl TaskController {
         let orbit_vel_abs = vel.abs();
 
         for dt in (Self::OBJECTIVE_SCHEDULE_MIN_DT..max_dt).rev() {
-            let pos = (i.pos() + *vel * I32F32::from_num(dt)).wrap_around_map();
+            let pos_i96: Vec2D<I96F32> = i.pos().to_num::<I96F32>() + (*vel).to_num::<I96F32>() * I96F32::from_num(dt);
+            let pos = pos_i96.to_num::<I32F32>().wrap_around_map();
             let mut min_dt = usize::MAX;
 
             for target_pos in targets {
@@ -385,7 +386,7 @@ impl TaskController {
             max - Self::OBJECTIVE_MIN_RETRIEVAL_TOL
         };
 
-        let time_to_start = start_time - curr;
+        let time_to_start = (start_time - curr).clamp(TimeDelta::zero(), TimeDelta::hours(3));
         let min_dt = {
             if time_to_start.num_seconds() > 0 {
                 let min = usize::try_from(time_to_start.num_seconds()).unwrap_or(0);

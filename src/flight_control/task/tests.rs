@@ -29,20 +29,21 @@ fn get_rand_end_t(start: DateTime<Utc>) -> DateTime<Utc> {
         const MAX_SECS: i64 = 3600;
         let mut rng = rand::rng();
         let rand_secs = rng.random_range(MIN_SECS..MAX_SECS);
-        start + TimeDelta::minutes(30)
+        start + TimeDelta::hours(24)
         //start + TimeDelta::seconds(rand_secs)
     } else {
         const MIN_SECS: i64 = 4 * 3600;
         const MAX_SECS: i64 = 8 * 3600;
         let mut rng = rand::rng();
         let rand_secs = rng.random_range(MIN_SECS..MAX_SECS);
-        start + TimeDelta::seconds(rand_secs)
+        start + TimeDelta::hours(24)
+        //start + TimeDelta::seconds(rand_secs)
     }    
 }
 
 fn get_rand_start_t() -> DateTime<Utc> {
     let mut rng = rand::rng();
-    let is_future = rng.random_bool(1.0);
+    let is_future = rng.random_bool(0.0);
     if is_future {
         log!("Future short objective decision!");
         Utc::now() + TimeDelta::hours(2)

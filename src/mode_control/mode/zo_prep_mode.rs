@@ -75,8 +75,8 @@ impl ZOPrepMode {
                 context.o_ch_clone().await.i_entry(),
                 current_vel,
                 target,
-                due,
                 start,
+                due,
                 fuel_left,
                 zo.id()
             )
