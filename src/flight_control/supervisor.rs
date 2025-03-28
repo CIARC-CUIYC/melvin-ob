@@ -157,8 +157,8 @@ impl Supervisor {
                 let objective_list = ObjectiveListRequest {}.send_request(&handle).await.unwrap();
                 let mut send_img_objs = vec![];
                 let mut send_beac_objs = vec![];
-
-                let mut currently_secret_objectives = vec![];
+                
+                let mut secret_list = self.current_secret_objectives.write().await;
                 for img_obj in objective_list.img_objectives() {
                     let obj_on = img_obj.start() < Utc::now() && img_obj.end() > Utc::now();
                     let is_secret = matches!(img_obj.zone_type(), ZoneType::SecretZone(_));
@@ -166,7 +166,7 @@ impl Supervisor {
                     let is_future_short = img_obj.end() < Utc::now() + TimeDelta::hours(3);
                     if !id_list.contains(&img_obj.id()) {
                         if is_secret {
-                            currently_secret_objectives.push(img_obj.clone());
+                            secret_list.push(img_obj.clone());
                             id_list.insert(img_obj.id());
                         } else if obj_on || (is_future && is_future_short) {
                             send_img_objs
@@ -174,7 +174,7 @@ impl Supervisor {
                         }
                     }
                 }
-                *self.current_secret_objectives.write().await = currently_secret_objectives;
+                drop(secret_list);
                 for b_o in objective_list.beacon_objectives() {
                     let obj_on = b_o.start() < Utc::now() && b_o.end() > Utc::now();
                     if obj_on && !id_list.contains(&b_o.id()) {
