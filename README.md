@@ -13,7 +13,7 @@ MELVIN-OB is designed to:
 In this README you can find information regarding the building and deployment of this repository 
 as well as some insights into the runtime configuration for our implementation. 
 An alternative to building and running this codebase locally is our containerized integration 
-solution bundling this binary with our self-written Software-in-a-loop Testing framework 'Palantiri'. 
+solution bundling this binary with our self-written Software-in-a-loop Testing framework 'Palantíri'. 
 You can find further instructions on the use of this compound Docker container
 [here](https://github.com/CIARC-CUIYC/cirdan).
 
@@ -77,6 +77,6 @@ docker compose up --build
 ```
 This setup includes:
 * `melvin-ob` in a terminal-accessible tmux session
-* [Palantiri](https://github.com/CIARC-CUIYC/Palantiri) SIL backend (exposes a REST API)
+* [Palantíri](https://github.com/CIARC-CUIYC/Palantiri) SIL backend (exposes a REST API)
 
 See detailed instructions [here](https://github.com/CIARC-CUIYC/cirdan).

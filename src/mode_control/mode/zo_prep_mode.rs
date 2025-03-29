@@ -21,7 +21,7 @@ use crate::mode_control::{
     mode_context::ModeContext,
     signal::{ExecExitSignal, OpExitSignal, WaitExitSignal},
 };
-use crate::{DT_0, error, fatal, info, log, log_burn};
+use crate::{DT_0, error, fatal, info, log, log_burn, obj};
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use std::mem::discriminant;
@@ -236,9 +236,12 @@ impl GlobalMode for ZOPrepMode {
                     c.k().f_cont().read().await.current_pos(),
                     self.new_zo_rationale(),
                 );
+                obj!("Objective {} is prioritized. Stashing current ZO {}!", obj.id(), self.target.id());
+                c.k_buffer().lock().await.push(self.target.clone());
                 return Some(OpExitSignal::ReInit(Box::new(prep_mode)));
             }
         }
+        obj!("Objective {} is not prioritized. Stashing!", obj.id());
         c.k_buffer().lock().await.push(obj);
         None
     }
