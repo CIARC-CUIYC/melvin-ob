@@ -1,4 +1,4 @@
-![CI](https://github.com/CIARC-CUIYC/melvin-ob/workflows/build-deploy.yaml/badge.svg)
+![CI](https://github.com/CIARC-CUIYC/melvin-ob/actions/workflows/build-deploy.yaml/badge.svg)
 # 🛰 MELVIN-OB
 Welcome to the onboard software for **Team 03 — "Cache us if you can"** competing in the **2024/2025 ESA Computer in a Room Challenge**. 
 This repository contains the embedded code running on the simulated MELVIN onboard computer, responsible 
