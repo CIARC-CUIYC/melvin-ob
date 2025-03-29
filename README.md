@@ -76,6 +76,7 @@ cd cirdan
 docker compose up --build
 ```
 This setup includes:
-* melvin-ob in a terminal-accessible tmux session
-* palantiri SIL backend (exposes a REST API)
+* `melvin-ob` in a terminal-accessible tmux session
+* [Palantiri](https://github.com/CIARC-CUIYC/Palantiri) SIL backend (exposes a REST API)
+
 See detailed instructions [here](https://github.com/CIARC-CUIYC/cirdan).
