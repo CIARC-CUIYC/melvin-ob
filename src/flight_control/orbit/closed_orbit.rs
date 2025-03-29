@@ -104,7 +104,7 @@ impl ClosedOrbit {
     const EXPORT_ORBIT_ENV: &'static str = "EXPORT_ORBIT";
     const TRY_IMPORT_ENV: &'static str = "TRY_IMPORT_ORBIT";
     const DEF_FILEPATH: &'static str = "orbit.bin";
-    /// Creates a new `ClosedOrbit` instance using a given `OrbitBase` and `CameraAngle`.
+    /// Creates a new [`ClosedOrbit`] instance using a given [`OrbitBase`] and [`CameraAngle`].
     ///
     /// # Arguments
     /// - `try_orbit`: The base orbit to initialize the closed orbit.
@@ -310,4 +310,10 @@ impl ClosedOrbit {
     }
 
     pub(super) fn segments(&self) -> &Vec<OrbitSegment> { &self.segments }
+    
+    pub fn get_coverage(&self) -> I32F32 {
+        let zeros = I32F32::from_num(self.done.count_zeros());
+        let length = I32F32::from_num(self.done.len());
+        zeros / length
+    }
 }

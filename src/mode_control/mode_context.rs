@@ -1,5 +1,5 @@
-use crate::flight_control::beacon_controller::{BeaconController, BeaconControllerState};
 use crate::flight_control::{
+    beacon_controller::{BeaconController, BeaconControllerState},
     objective::known_img_objective::KnownImgObjective, orbit::OrbitCharacteristics,
     supervisor::Supervisor,
 };
@@ -7,18 +7,51 @@ use crate::keychain::KeychainWithOrbit;
 use std::{collections::BinaryHeap, sync::Arc};
 use tokio::sync::{Mutex, RwLock, mpsc::Receiver, watch};
 
-pub struct ModeContext {
+/// [`ModeContext`] is a central context container used by [`GlobalModes`] in the onboard software.
+/// It provides shared access to key mission-critical resources such as orbit state,
+/// supervisory control, objective channels, and internal buffers.
+///
+/// This structure enables modular FSM behavior by providing thread-safe, concurrent access
+/// to both live and buffered data, allowing [`GlobalModes`] to remain more or less stateless and focused
+/// solely on decision logic.
+/// 
+/// # Fields
+/// - `k`: A shared [`KeychainWithOrbit`] object providing access to the controllers and the orbit.
+/// - `o_ch`: A shared and locked [`OrbitCharacteristics`] object providing orbit related dynamic parameters.
+/// - `super_v`: Shared access to the [`Supervisor`] handling observation updates, ... 
+/// - `zo_mon`: Receiver for events regarding Zoned Objectives.
+/// - `bo_mon`: Watch Receiver broadcasting the current state of the [`BeaconController`].
+/// - `k_buffer`: A locked buffer containing additional [`KnownImgObjectives`].
+/// - `beac_cont`: The beacon controller handling beacon related functionality.
+pub(crate) struct ModeContext {
+    /// Shared keychain containing the various controllers and the orbit configuration.
     k: Arc<KeychainWithOrbit>,
+    /// Orbit characteristics, updated during operation (e.g., after burns).
     o_ch: Arc<RwLock<OrbitCharacteristics>>,
+    /// Supervisor instance providing new observation data, objective data, etc.
     super_v: Arc<Supervisor>,
+    /// Receiver for new Known Image Objectives (Zoned Objectives).
     zo_mon: RwLock<Receiver<KnownImgObjective>>,
+    /// Watch receiver for the current state of the Beacon Controller.
     bo_mon: RwLock<watch::Receiver<BeaconControllerState>>,
+    /// Priority buffer for scheduled image objectives, used by internal planners.
     k_buffer: Mutex<BinaryHeap<KnownImgObjective>>,
+    /// Shared access to the Beacon Controller for retrieval logic and updates.
     beac_cont: Arc<BeaconController>,
 }
 
 impl ModeContext {
-    pub fn new(
+
+    /// Constructs a new [`ModeContext`], initializing all internal references.
+    ///
+    /// # Arguments
+    /// - `key`: The mission keychain, including the basic controllers and the orbit.
+    /// - `o_char`: Initial orbital characteristics.
+    /// - `zo_mon_un`: Receiver for incoming Known Image Objectives.
+    /// - `bo_mon_un`: Watch receiver for beacon controller state updates.
+    /// - `super_v`: Shared [`Supervisor`] handle.
+    /// - `beac_cont`: Shared [`BeaconController`] for beacon objective management.
+    pub(crate) fn new(
         key: KeychainWithOrbit,
         o_char: OrbitCharacteristics,
         zo_mon_un: Receiver<KnownImgObjective>,
@@ -41,12 +74,20 @@ impl ModeContext {
         })
     }
 
-    pub fn k(&self) -> &Arc<KeychainWithOrbit> { &self.k }
-    pub async fn o_ch_clone(&self) -> OrbitCharacteristics { *self.o_ch.read().await }
-    pub fn o_ch_lock(&self) -> &RwLock<OrbitCharacteristics> { &self.o_ch }
-    pub fn zo_mon(&self) -> &RwLock<Receiver<KnownImgObjective>> { &self.zo_mon }
-    pub fn bo_mon(&self) -> &RwLock<watch::Receiver<BeaconControllerState>> { &self.bo_mon }
-    pub fn super_v(&self) -> &Arc<Supervisor> { &self.super_v }
-    pub fn k_buffer(&self) -> &Mutex<BinaryHeap<KnownImgObjective>> { &self.k_buffer }
-    pub fn beac_cont(&self) -> &Arc<BeaconController> { &self.beac_cont }
+    /// Provides a reference to the [`KeychainWithOrbit`].
+    pub(super) fn k(&self) -> &Arc<KeychainWithOrbit> { &self.k }
+    /// Provides a copy of the current [`OrbitCharacteristics`]. 
+    pub(crate) async fn o_ch_clone(&self) -> OrbitCharacteristics { *self.o_ch.read().await }
+    /// Provides a reference to the shared and locked [`OrbitCharacteristics`].
+    pub(super) fn o_ch_lock(&self) -> &RwLock<OrbitCharacteristics> { &self.o_ch }
+    /// Provides a reference to the locked Zoned Objective Event Receiver.
+    pub(super) fn zo_mon(&self) -> &RwLock<Receiver<KnownImgObjective>> { &self.zo_mon }
+    /// Provides a reference to the watch resembling the current state of the Beacon controller.
+    pub(super) fn bo_mon(&self) -> &RwLock<watch::Receiver<BeaconControllerState>> { &self.bo_mon }
+    /// Provides a shared reference to the [`Supervisor`].
+    pub(super) fn super_v(&self) -> &Arc<Supervisor> { &self.super_v }
+    /// Provides a reference to the locked Zoned Objective Buffer implemented as a [`BinaryHeap`].
+    pub(super) fn k_buffer(&self) -> &Mutex<BinaryHeap<KnownImgObjective>> { &self.k_buffer }
+    /// Provides a shared reference to the [`BeaconController`].
+    pub(super) fn beac_cont(&self) -> &Arc<BeaconController> { &self.beac_cont }
 }

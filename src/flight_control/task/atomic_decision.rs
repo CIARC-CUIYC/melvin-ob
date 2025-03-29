@@ -22,7 +22,7 @@ impl AtomicDecision {
     ///   - `1` indicates the acquisition state.
     ///
     /// # Returns
-    /// - An `AtomicDecision` variant corresponding to staying in the current state.
+    /// - An [`AtomicDecision`] variant corresponding to staying in the current state.
     ///
     /// # Panics
     /// - If `state` is not `0` or `1`.

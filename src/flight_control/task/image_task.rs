@@ -28,7 +28,7 @@ pub struct ImageTask {
 }
 
 impl ImageTask {
-    /// Creates a new instance of an `ImageTask`.
+    /// Creates a new instance of an [`ImageTask`].
     ///
     /// # Arguments
     /// - `dt`: The planned time delay before the task execution.
@@ -36,7 +36,7 @@ impl ImageTask {
     /// - `lens`: The lens configuration for the capture.
     ///
     /// # Returns
-    /// - A new `ImageTask` instance with the given parameters.
+    /// - A new [`ImageTask`] instance with the given parameters.
     pub fn new(planned_pos: Vec2D<u32>, lens: CameraAngle) -> Self {
         Self { image_status: ImageTaskStatus::Planned, planned_pos, lens }
     }

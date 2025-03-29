@@ -17,13 +17,13 @@ pub struct VelocityChangeTask {
 }
 
 impl VelocityChangeTask {
-    /// Creates a new `VelocityChangeTask` with the specified burn sequence.
+    /// Creates a new [`VelocityChangeTask`] with the specified burn sequence.
     ///
     /// # Arguments
     /// - `burn`: The burn sequence to be executed as part of this task.
     ///
     /// # Returns
-    /// - A new instance of `VelocityChangeTask`.
+    /// - A new instance of [`VelocityChangeTask`].
     pub fn new(burn: BurnSequence, rationale: VelocityChangeTaskRationale) -> Self {
         Self { burn, rationale }
     }
@@ -31,12 +31,12 @@ impl VelocityChangeTask {
     /// Retrieves a reference to the burn sequence associated with the task.
     ///
     /// # Returns
-    /// - An immutable reference to the `BurnSequence`.
+    /// - An immutable reference to the [`BurnSequence`].
     pub fn burn(&self) -> &BurnSequence { &self.burn }
 
     /// Retrieves the reason for the velocity change
     ///
     /// # Returns
-    /// - A `VelocityChangeTaskRationale`
+    /// - A [`VelocityChangeTaskRationale`]
     pub fn rationale(&self) -> VelocityChangeTaskRationale { self.rationale }
 }

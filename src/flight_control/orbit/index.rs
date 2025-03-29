@@ -16,7 +16,7 @@ pub struct IndexedOrbitPosition {
 }
 
 impl IndexedOrbitPosition {
-    /// Creates a new `IndexedOrbitPosition` instance.
+    /// Creates a new [`IndexedOrbitPosition`] instance.
     ///
     /// # Parameters
     /// - `index`: The index in the orbit.
@@ -24,7 +24,7 @@ impl IndexedOrbitPosition {
     /// - `pos`: The 2D position vector for this point in the orbit.
     ///
     /// # Returns
-    /// A new `IndexedOrbitPosition` instance with the current UTC time.
+    /// A new [`IndexedOrbitPosition`] instance with the current UTC time.
     pub fn new(index: usize, period: usize, pos: Vec2D<I32F32>) -> Self {
         Self { t: Utc::now(), index, pos, period }
     }

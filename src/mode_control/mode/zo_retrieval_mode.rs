@@ -1,13 +1,13 @@
-use crate::flight_control::camera_controller::CameraController;
 use crate::flight_control::{
     common::vec2d::Vec2D,
     flight_computer::FlightComputer,
     flight_state::{FlightState, TRANS_DEL},
     objective::known_img_objective::KnownImgObjective,
     task::base_task::{BaseTask, Task},
+    camera_controller::CameraController
 };
+use super::{global_mode::GlobalMode, orbit_return_mode::OrbitReturnMode};
 use crate::mode_control::{
-    mode::{global_mode::GlobalMode, orbit_return_mode::OrbitReturnMode},
     mode_context::ModeContext,
     signal::{ExecExitSignal, OpExitSignal, OptOpExitSignal, WaitExitSignal},
 };
@@ -19,17 +19,39 @@ use std::{pin::Pin, sync::Arc};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
+/// [`ZORetrievalMode`] is responsible for completing the final phase of a zoned objective
+/// after the spacecraft has exited its original orbit via a [`BurnSequence`]. In this mode,
+/// the spacecraft aligns, captures imagery, and uploads results.
+///
+/// The mode is considered time-sensitive, interruptible (e.g., safe mode), and does not allow
+/// velocity change tasks. It can optionally perform a secondary targeting maneuver if a
+/// secondary objective is provided.
 #[derive(Clone)]
-pub struct ZORetrievalMode {
+pub(super) struct ZORetrievalMode {
+    /// The primary zoned objective this mode attempts to complete.
     target: KnownImgObjective,
+    /// An optional second imaging target (used for dual-image objectives).
     add_target: Option<Vec2D<I32F32>>,
+    /// Unwrapped position of the target objective on the map (absolute), perspective from the burn exit point
     unwrapped_pos: Arc<Mutex<Vec2D<I32F32>>>,
 }
 
 impl ZORetrievalMode {
+    /// The static name for identification/logging.
     const MODE_NAME: &'static str = "ZORetrievalMode";
+    /// Default imaging acquisition duration for a single objective.
     const SINGLE_TARGET_ACQ_DT: TimeDelta = TimeDelta::seconds(10);
-    pub fn new(
+
+    /// Creates a new retrieval mode for the given zoned objective.
+    ///
+    /// # Arguments
+    /// * `target` – The objective to fulfill.
+    /// * `add_target` – Optional second target position for dual-acquisition.
+    /// * `unwrapped_pos` – Global position of the target on the map, perspective from the burn exit point.
+    ///
+    /// # Returns
+    /// * `ZORetrievalMode` – An initialized mode for retrieval.
+    pub(super) fn new(
         target: KnownImgObjective,
         add_target: Option<Vec2D<I32F32>>,
         unwrapped_pos: Vec2D<I32F32>,
@@ -38,6 +60,16 @@ impl ZORetrievalMode {
         Self { target, add_target, unwrapped_pos: unwrapped_lock }
     }
 
+    /// Prepares the async future for imaging, including timing and potential
+    /// turning to a second imaging target.
+    ///
+    /// # Arguments
+    /// * `second_target` – Optional target coordinates.
+    /// * `unwrapped_pos` – Current position.
+    /// * `context` – Shared mode context.
+    ///
+    /// # Returns
+    /// * `(deadline, future)` – Deadline for task completion and associated future.
     async fn get_img_fut(
         second_target: Option<Vec2D<I32F32>>,
         unwrapped_pos: Vec2D<I32F32>,
@@ -66,6 +98,14 @@ impl ZORetrievalMode {
         }
     }
 
+    /// Executes the full retrieval task including imaging and export/upload.
+    ///
+    /// # Arguments
+    /// * `target` – The zoned objective to complete.
+    /// * `unwrapped_target` – Absolute coordinates for targeting.
+    /// * `second_target` – Optional second target for multi-point objectives.
+    /// * `context` – Shared context.
+    /// * `c_tok` – Cancellation token for task coordination.
     async fn exec_img_task(target: KnownImgObjective,  unwrapped_target: Vec2D<I32F32>, second_target: Option<Vec2D<I32F32>>, context: Arc<ModeContext>, c_tok: CancellationToken) {
         let offset = Vec2D::new(target.zone()[0], target.zone()[1]).to_unsigned();
         let dim = Vec2D::new(target.width(), target.height()).to_unsigned();
@@ -97,8 +137,16 @@ impl ZORetrievalMode {
 
 #[async_trait]
 impl GlobalMode for ZORetrievalMode {
+    /// Returns the static name of the mode.
     fn type_name(&self) -> &'static str { Self::MODE_NAME }
 
+    /// Initializes the mode by performing detumbling, scheduling, and target alignment.
+    ///
+    /// # Arguments
+    /// * `context` – Shared context for access to controllers and state.
+    ///
+    /// # Returns
+    /// * `OpExitSignal` – Whether to continue or reinitialize the mode.
     async fn init_mode(&self, context: Arc<ModeContext>) -> OpExitSignal {
         let mut unwrapped_pos = self.unwrapped_pos.lock().await;
         let fut = FlightComputer::detumble_to(
@@ -136,6 +184,14 @@ impl GlobalMode for ZORetrievalMode {
         OpExitSignal::Continue
     }
 
+    /// Waits until the due time of the next task or exits early on a Safe Mode event.
+    ///
+    /// # Arguments
+    /// * `context` – Mode context.
+    /// * `due` – Scheduled execution time.
+    ///
+    /// # Returns
+    /// * `WaitExitSignal` – Indicates continuation or interruption.
     async fn exec_task_wait(
         &self,
         context: Arc<ModeContext>,
@@ -153,6 +209,15 @@ impl GlobalMode for ZORetrievalMode {
         }
     }
 
+    /// Executes a given task: imaging or state transition.
+    /// Velocity change tasks are not allowed and result in a logged error.
+    ///
+    /// # Arguments
+    /// * `context` – Shared context.
+    /// * `task` – Task to be executed.
+    ///
+    /// # Returns
+    /// * `ExecExitSignal` – Indicates result of execution.
     async fn exec_task(&self, context: Arc<ModeContext>, task: Task) -> ExecExitSignal {
         match task.task_type() {
             BaseTask::TakeImage(_) => {
@@ -196,6 +261,14 @@ impl GlobalMode for ZORetrievalMode {
         ExecExitSignal::Continue
     }
 
+    /// Handles a safe-mode event, evaluating whether the current objective is still reachable.
+    /// If reachable, reinitializes in the same mode. Otherwise, exits to `OrbitReturnMode`.
+    ///
+    /// # Arguments
+    /// * `context` – Shared context.
+    ///
+    /// # Returns
+    /// * `OpExitSignal` – ReInit or transition to fallback.
     async fn safe_handler(&self, context: Arc<ModeContext>) -> OpExitSignal {
         FlightComputer::escape_safe(context.k().f_cont(), false).await;
         let (vel, pos) = {
@@ -232,12 +305,21 @@ impl GlobalMode for ZORetrievalMode {
         OpExitSignal::ReInit(Box::new(OrbitReturnMode::new()))
     }
 
+    /// Not implemented – ZO handoffs do not apply during retrieval phase.
     async fn zo_handler(&self, _: &Arc<ModeContext>, _: KnownImgObjective) -> OptOpExitSignal {
         unimplemented!()
     }
 
+    /// Not implemented – Beacon Objective events are ignored in this mode.
     async fn bo_event_handler(&self, _: &Arc<ModeContext>) -> OptOpExitSignal { unimplemented!() }
 
+    /// Finalizes the retrieval mode and transitions to `OrbitReturnMode`.
+    ///
+    /// # Arguments
+    /// * `context` – Shared context.
+    ///
+    /// # Returns
+    /// * `Box<dyn GlobalMode>` – Next mode to execute.
     async fn exit_mode(&self, context: Arc<ModeContext>) -> Box<dyn GlobalMode> {
         context.o_ch_lock().write().await.finish(
             context.k().f_cont().read().await.current_pos(),

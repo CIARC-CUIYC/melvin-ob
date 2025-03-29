@@ -1,22 +1,35 @@
+use chrono::{DateTime, Utc};
+use tokio::task::JoinHandle;
 use crate::flight_control::objective::known_img_objective::KnownImgObjective;
-use crate::mode_control::mode::global_mode::GlobalMode;
+use super::mode::global_mode::GlobalMode;
 
-pub enum OpExitSignal {
+pub(super) enum TaskEndSignal {
+    Timestamp(DateTime<Utc>),
+    Join(JoinHandle<()>),
+}
+
+#[derive(Debug)]
+pub(crate) enum PeriodicImagingEndSignal {
+    KillNow,
+    KillLastImage,
+}
+
+pub(crate) enum OpExitSignal {
     ReInit(Box<dyn GlobalMode>),
     Continue,
 }
 
-pub enum ExecExitSignal {
+pub(crate) enum ExecExitSignal {
     Continue,
     SafeEvent,
     NewZOEvent(KnownImgObjective),
 }
 
-pub enum WaitExitSignal {
+pub(crate) enum WaitExitSignal {
     Continue,
     SafeEvent,
     NewZOEvent(KnownImgObjective),
     BOEvent,
 }
 
-pub type OptOpExitSignal = Option<OpExitSignal>;
+pub(super) type OptOpExitSignal = Option<OpExitSignal>;

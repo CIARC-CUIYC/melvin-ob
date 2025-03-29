@@ -13,7 +13,7 @@ pub struct AtomicDecisionCube {
 }
 
 impl AtomicDecisionCube {
-    /// Creates a new `AtomicDecisionCube` with the specified dimensions and initializes all decisions to `StayInCharge`.
+    /// Creates a new [`AtomicDecisionCube`] with the specified dimensions and initializes all decisions to `StayInCharge`.
     ///
     /// # Arguments
     /// * `dt_len` - The length of the time dimension.
@@ -21,7 +21,7 @@ impl AtomicDecisionCube {
     /// * `s_len` - The length of the state dimension.
     ///
     /// # Returns
-    /// A new instance of `AtomicDecisionCube`.
+    /// A new instance of [`AtomicDecisionCube`].
     pub fn new(dt_len: usize, e_len: usize, s_len: usize) -> Self {
         Self {
             dt_len,

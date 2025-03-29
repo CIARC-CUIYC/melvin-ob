@@ -3,46 +3,44 @@ use crate::flight_control::{
     flight_computer::FlightComputer,
     flight_state::FlightState,
     orbit::IndexedOrbitPosition,
-    task::{TaskController, switch_state_task::SwitchStateTask},
+    task::{TaskController, switch_state_task::SwitchStateTask, end_condition::EndCondition},
+    beacon_controller::BeaconControllerState
 };
-use crate::{error, fatal, info, log};
-
-use crate::flight_control::beacon_controller::BeaconControllerState;
-use crate::flight_control::task::end_condition::EndCondition;
-use crate::mode_control::base_mode::TaskEndSignal::{Join, Timestamp};
-use crate::mode_control::mode_context::ModeContext;
+use crate::{error, fatal, info, log, DT_0_STD};
+use super::signal::{PeriodicImagingEndSignal, TaskEndSignal::{self, Join, Timestamp}};
+use super::mode_context::ModeContext;
 use chrono::{DateTime, TimeDelta, Utc};
-use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
+use std::{future::Future, pin::Pin, sync::Arc};
 use strum_macros::Display;
 use tokio::{sync::oneshot, task::JoinHandle, time::Instant};
 use tokio_util::sync::CancellationToken;
 
-pub(crate) enum TaskEndSignal {
-    Timestamp(DateTime<Utc>),
-    Join(JoinHandle<()>),
-}
-
-#[derive(Debug)]
-pub enum PeriodicImagingEndSignal {
-    KillNow,
-    KillLastImage,
-}
-
+/// Represents high-level operational modes of the onboard software when in orbit.
+/// Each variant encodes different scheduling logic and task handling behavior.
 #[derive(Display, Clone, Copy)]
-pub enum BaseMode {
+pub(super) enum BaseMode {
+    /// Regular mapping mode focused on maximizing imaging coverage.
     MappingMode,
+    /// Mode dedicated to get full communications mode coverage while still mapping when possible.
     BeaconObjectiveScanningMode,
 }
 
 impl BaseMode {
-    const DT_0_STD: Duration = Duration::from_secs(0);
+    /// Default camera angle used during mapping operations.
     const DEF_MAPPING_ANGLE: CameraAngle = CameraAngle::Narrow;
-    const BO_MSG_COMM_PROLONG_STD: Duration = Duration::from_secs(60);
-    const MAX_COMM_PROLONG_RESCHEDULE: TimeDelta = TimeDelta::seconds(2);
-    const BEACON_OBJ_RETURN_MIN_DELAY: TimeDelta = TimeDelta::minutes(10);
 
+    /// Executes a full mapping acquisition cycle, listening until either a signal or cancellation occurs.
+    ///
+    /// This function initializes an image acquisition cycle using the default mapping camera angle
+    /// and coordinates between the camera controller and various signal channels.
+    /// It finalizes by marking orbit coverage and exporting updated coverage data.
+    /// 
+    /// # Arguments
+    /// - `context`: A shared reference to a [`ModeContext`] object.
+    /// - `end`: A [`TaskEndSignal`]-enum type indicating how the task end condition should be defined.
+    /// - `c_tok`: A [`CancellationToken`] that is able to cancel this task with proper cleanup.
     #[allow(clippy::cast_possible_wrap)]
-    pub async fn exec_map(context: Arc<ModeContext>, end: TaskEndSignal, c_tok: CancellationToken) {
+    async fn exec_map(context: Arc<ModeContext>, end: TaskEndSignal, c_tok: CancellationToken) {
         let end_t = {
             match end {
                 Timestamp(dt) => dt,
@@ -119,15 +117,25 @@ impl BaseMode {
                 c_orbit.mark_done(*start, *end);
             }
         }
+        log!("Current discrete Orbit Coverage is {}%.", c_orbit.get_coverage() * 100);
         c_orbit.try_export_default();
     }
-
-    async fn exec_comms(context: Arc<ModeContext>, due: TaskEndSignal, c_tok: CancellationToken) {
+    
+    /// Listens for Beacon Objective communication pings until a timeout or cancellation.
+    ///
+    /// Uses an event-based listener to process incoming beacon messages.
+    /// Automatically terminates based on task completion or shutdown signals.
+    /// 
+    /// # Arguments
+    /// - `context`: A shared reference to a `ModeContext` object.
+    /// - `end`: A `TaskEndSignal`-enum type indicating how the task end condition should be defined.
+    /// - `c_tok`: A `CancellationToken` that is able to cancel this task with proper cleanup.
+    async fn exec_comms(context: Arc<ModeContext>, end: TaskEndSignal, c_tok: CancellationToken) {
         let mut event_rx = context.super_v().subscribe_event_hub();
 
-        let mut fut: Pin<Box<dyn Future<Output = ()> + Send>> = match due {
+        let mut fut: Pin<Box<dyn Future<Output = ()> + Send>> = match end {
             Timestamp(t) => {
-                let due_secs = (t - Utc::now()).to_std().unwrap_or(Self::DT_0_STD);
+                let due_secs = (t - Utc::now()).to_std().unwrap_or(DT_0_STD);
                 Box::pin(tokio::time::sleep_until(Instant::now() + due_secs))
             }
             Join(join_handle) => Box::pin(async { join_handle.await.ok().unwrap() }),
@@ -157,7 +165,14 @@ impl BaseMode {
         }
     }
 
-    pub async fn handle_sched_preconditions(&self, context: Arc<ModeContext>) -> DateTime<Utc> {
+    /// Ensures any required preconditions for the current mode are satisfied before scheduling begins.
+    ///
+    /// # Arguments
+    /// - `context`: A shared reference to a `ModeContext` object.
+    /// 
+    /// # Returns
+    /// A `DateTime<Utc>` indicating the time when scheduled tasks should start.
+    pub(super) async fn handle_sched_preconditions(&self, context: Arc<ModeContext>) -> DateTime<Utc> {
         match self {
             BaseMode::MappingMode => FlightComputer::escape_if_comms(context.k().f_cont()).await,
             BaseMode::BeaconObjectiveScanningMode => {
@@ -166,8 +181,24 @@ impl BaseMode {
         }
     }
 
+    /// Returns a handle to the scheduling task corresponding to the current operational `BaseMode`-variant.
+    ///
+    /// - For `MappingMode`, a standard optimal orbit scheduler is used.
+    /// - For `BeaconObjectiveScanningMode`, a communications-aware scheduler is launched.
+    ///
+    /// Depending on the current flight state, this will also launch a mapping or 
+    /// beacon listening task to run concurrently.
+    /// 
+    /// # Arguments
+    /// - `context`: A shared reference to a `ModeContext` object.
+    /// - `c_tok`: A `CancellationToken` that is able to cancel this task with proper cleanup.
+    /// - `comms_end`: A `DateTime<Utc>` indicating the end of the current comms cycle when in `BeaconObjectiveScanningMode`.
+    /// - `end`: An optional `EndCondition` type if i.e. a burn sequence follows to this task list.
+    /// 
+    /// # Returns
+    /// A `JoinHandle<()` to join with the scheduling task
     #[must_use]
-    pub async fn get_schedule_handle(
+    pub(super) async fn get_schedule_handle(
         &self,
         context: Arc<ModeContext>,
         c_tok: CancellationToken,
@@ -186,8 +217,7 @@ impl BaseMode {
             )),
             BaseMode::BeaconObjectiveScanningMode => {
                 let last_obj_end =
-                    context.beac_cont().last_active_beac_end().await.unwrap_or(Utc::now())
-                        + Self::BEACON_OBJ_RETURN_MIN_DELAY;
+                    context.beac_cont().last_active_beac_end().await.unwrap_or(Utc::now());
                 tokio::spawn(TaskController::sched_opt_orbit_w_comms(
                     k.t_cont(),
                     k.c_orbit(),
@@ -214,8 +244,24 @@ impl BaseMode {
         }
     }
 
+    /// Spawns the corresponding primitive for the task wait time.
+    ///
+    /// The returned handle either:
+    /// - `FlightState::Charge`: Waits for the task timeout and exports a full image snapshot.
+    /// - `FlightState::Acquisition`: Executes a mapping task.
+    /// - `FlightState::Comms`: Executes a beacon listening task.
+    ///
+    /// This is useful for blocking execution while ensuring mode-specific behavior continues.
+    ///
+    /// # Arguments
+    /// - `context`: A shared reference to a `ModeContext` object.
+    /// - `due`: A `DateTime<Utc>` indicating the task wait timeout time.
+    /// - `c_tok`: A `CancellationToken` that is able to cancel the spawned task with proper cleanup.
+    ///
+    /// # Returns
+    /// A `JoinHandle<()` to join with the state specific primitive.
     #[must_use]
-    pub async fn get_wait(
+    pub(super) async fn get_wait(
         &self,
         context: Arc<ModeContext>,
         due: DateTime<Utc>,
@@ -228,7 +274,7 @@ impl BaseMode {
         };
         let c_tok_clone = c_tok.clone();
         let def = Box::pin(async move {
-            let sleep = (due - Utc::now()).to_std().unwrap_or(Self::DT_0_STD);
+            let sleep = (due - Utc::now()).to_std().unwrap_or(DT_0_STD);
             tokio::time::timeout(sleep, c_tok_clone.cancelled()).await.ok().unwrap_or(());
         });
         let task_fut: Pin<Box<dyn Future<Output = _> + Send>> = match current_state {
@@ -253,7 +299,14 @@ impl BaseMode {
         tokio::spawn(task_fut)
     }
 
-    pub async fn get_task(&self, context: Arc<ModeContext>, task: SwitchStateTask) {
+    /// Executes the corresponding primitive for task execution.
+    ///
+    /// In `GlobalModes` with a corresponding `BaseMode` this handles the logic for `SwitchStateTasks`.
+    ///
+    /// # Arguments
+    /// - `context`: A shared reference to a `ModeContext` object.
+    /// - `task`: The corresponding `SwitchStateTask` object.
+    pub(super) async fn get_task(&self, context: Arc<ModeContext>, task: SwitchStateTask) {
         let f_cont = context.k().f_cont();
         match task.target_state() {
             FlightState::Acquisition => {
@@ -294,14 +347,20 @@ impl BaseMode {
         }
     }
 
-    pub fn get_rel_bo_event(self) -> BeaconControllerState {
+    /// Returns the relevant `BeaconControllerState` associated with this mode.
+    ///
+    /// Used to inform beacon-handling logic of the signal that would indicate switching.
+    pub(super) fn get_rel_bo_event(self) -> BeaconControllerState {
         match self {
             BaseMode::MappingMode => BeaconControllerState::ActiveBeacons,
             BaseMode::BeaconObjectiveScanningMode => BeaconControllerState::NoActiveBeacons,
         }
     }
 
-    pub fn bo_event(self) -> Self {
+    /// Returns the new `BaseMode` following a Beacon Objective Event.
+    ///
+    /// Used to inform beacon-handling logic of the new state after a signal.
+    pub(super) fn bo_event(self) -> Self {
         match self {
             BaseMode::MappingMode => Self::BeaconObjectiveScanningMode,
             BaseMode::BeaconObjectiveScanningMode => Self::MappingMode,

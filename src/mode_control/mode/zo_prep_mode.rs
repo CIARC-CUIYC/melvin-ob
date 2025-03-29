@@ -1,8 +1,13 @@
-use crate::flight_control::flight_state::{FlightState, TRANS_DEL};
-use crate::flight_control::orbit::{BurnSequence, ExitBurnResult};
+use super::{
+    global_mode::{GlobalMode, OrbitalMode},
+    in_orbit_mode::InOrbitMode,
+    zo_retrieval_mode::ZORetrievalMode,
+};
 use crate::flight_control::{
     flight_computer::FlightComputer,
+    flight_state::{FlightState, TRANS_DEL},
     objective::known_img_objective::KnownImgObjective,
+    orbit::{BurnSequence, ExitBurnResult},
     task::{
         TaskController,
         base_task::{BaseTask, Task},
@@ -10,30 +15,37 @@ use crate::flight_control::{
         vel_change_task::VelocityChangeTaskRationale::OrbitEscape,
     },
 };
-use crate::mode_control::mode::zo_retrieval_mode::ZORetrievalMode;
-use crate::mode_control::signal::OptOpExitSignal;
 use crate::mode_control::{
     base_mode::BaseMode,
-    mode::{
-        global_mode::{GlobalMode, OrbitalMode},
-        in_orbit_mode::InOrbitMode,
-    },
     mode_context::ModeContext,
-    signal::{ExecExitSignal, OpExitSignal, WaitExitSignal},
+    signal::{ExecExitSignal, OpExitSignal, OptOpExitSignal, WaitExitSignal},
 };
-use crate::{DT_0, error, fatal, info, log, log_burn, obj};
+use crate::{DT_0, error, fatal, info, log, log_burn, logger::JsonDump, obj};
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
-use std::mem::discriminant;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::{
+    mem::discriminant,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 use tokio_util::sync::CancellationToken;
-use crate::logger::JsonDump;
 
-pub struct ZOPrepMode {
+/// [`ZOPrepMode`] is a mission-critical mode responsible for preparing and scheduling
+/// orbital exit maneuvers to complete a given [`KnownImgObjective`]. It calculates optimal
+/// burn sequences, evaluates feasibility, and executes scheduled preparatory tasks.
+///
+/// This mode can re-prioritize based on new objectives, dynamically adapt to changing beacon
+/// conditions, and transition into a [`ZORetrievalMode`] once the exit burn is executed.
+pub(super) struct ZOPrepMode {
+    /// Underlying pre-exit behavior context (Mapping or Beacon Scanning).
     base: BaseMode,
+    /// The precomputed exit burn sequence to leave the current orbit.
     exit_burn: ExitBurnResult,
+    /// The currently targeted zoned objective.
     target: KnownImgObjective,
+    /// Indicates whether the satellite has already left its orbit.
     left_orbit: AtomicBool,
 }
 
@@ -49,11 +61,23 @@ impl Clone for ZOPrepMode {
 }
 
 impl ZOPrepMode {
+    /// Internal name used for logging and identification.
     const MODE_NAME: &'static str = "ZOPrepMode";
+    /// Minimum time before scheduled burn start during which re-planning is allowed.
     const MIN_REPLANNING_DT: TimeDelta = TimeDelta::seconds(500);
 
+    /// Constructs a [`ZOPrepMode`] from a known zoned objective if a valid maneuver is found.
+    ///
+    /// # Arguments
+    /// * `context` – Shared mode context   .
+    /// * `zo` – The target zoned objective.
+    /// * `curr_base` – The current base mode (Mapping or Beacon).
+    ///
+    /// # Returns
+    /// * `Some(ZOPrepMode)` if a valid burn sequence can be computed.
+    /// * `None` if the objective is unreachable.
     #[allow(clippy::cast_possible_wrap)]
-    pub async fn from_obj(
+    pub(super) async fn from_obj(
         context: &Arc<ModeContext>,
         zo: KnownImgObjective,
         curr_base: BaseMode,
@@ -67,7 +91,10 @@ impl ZOPrepMode {
         };
         let start = zo.start();
         if start > Utc::now() {
-            log!("Objective {} will be calculated as a short objective.", zo.id());
+            log!(
+                "Objective {} will be calculated as a short objective.",
+                zo.id()
+            );
         }
         let exit_burn = if zo.min_images() == 1 {
             let target = zo.get_single_image_point();
@@ -78,7 +105,7 @@ impl ZOPrepMode {
                 start,
                 due,
                 fuel_left,
-                zo.id()
+                zo.id(),
             )
         } else {
             let entries = zo.get_corners();
@@ -89,7 +116,7 @@ impl ZOPrepMode {
                 start,
                 due,
                 fuel_left,
-                zo.id()
+                zo.id(),
             )
         }?;
         Self::log_burn(&exit_burn, &zo);
@@ -98,6 +125,11 @@ impl ZOPrepMode {
         Some(ZOPrepMode { base, exit_burn, target: zo, left_orbit: AtomicBool::new(false) })
     }
 
+    /// Logs key information about the generated burn sequence.
+    ///
+    /// # Arguments
+    /// * `exit_burn` – The calculated burn data.
+    /// * `target` – The objective the burn aims to reach.
     fn log_burn(exit_burn: &ExitBurnResult, target: &KnownImgObjective) {
         let exit_burn_seq = exit_burn.sequence();
         let entry_pos = exit_burn_seq.sequence_pos().first().unwrap();
@@ -115,12 +147,21 @@ impl ZOPrepMode {
         );
         log_burn!("Entry at {entry_t}, Position will be {entry_pos}");
         log_burn!("Exit after {acq_dt}s, Position will be {exit_pos}. Detumble time is {det_dt}s.");
-        log_burn!("Exit Velocity will be {vel} aiming for target at {tar} unwrapped to {tar_unwrap}.");
+        log_burn!(
+            "Exit Velocity will be {vel} aiming for target at {tar} unwrapped to {tar_unwrap}."
+        );
         if let Some(tar2) = add_tar {
             log_burn!("Additional Target will be {tar2}");
         }
     }
 
+    /// Clones the current `ZOPrepMode` but with an updated base mode.
+    ///
+    /// # Arguments
+    /// * `base` – The new base mode.
+    ///
+    /// # Returns
+    /// * `Self` – A modified copy of the current mode.
     fn new_base(&self, base: BaseMode) -> Self {
         Self {
             base,
@@ -130,6 +171,16 @@ impl ZOPrepMode {
         }
     }
 
+    /// Determines whether the current base mode should change based on the burn timing
+    /// and worst-case beacon communication schedules.
+    ///
+    /// # Arguments
+    /// * `c` – Shared context.
+    /// * `base` – Proposed base mode.
+    /// * `burn` – Calculated burn sequence.
+    ///
+    /// # Returns
+    /// * `BaseMode` – The chosen base mode to continue with.
     #[allow(clippy::cast_possible_wrap)]
     async fn overthink_base(c: &Arc<ModeContext>, base: BaseMode, burn: &BurnSequence) -> BaseMode {
         if matches!(base, BaseMode::MappingMode) {
@@ -153,13 +204,25 @@ impl ZOPrepMode {
 }
 
 impl OrbitalMode for ZOPrepMode {
+    /// Returns the current base mode for delegation.
     fn base(&self) -> &BaseMode { &self.base }
 }
 
 #[async_trait]
 impl GlobalMode for ZOPrepMode {
+    /// Returns the internal name of this mode.
     fn type_name(&self) -> &'static str { Self::MODE_NAME }
 
+    /// Initializes scheduling and preparatory logic for the exit burn.
+    ///
+    /// If a base mode change is required due to beacon conflicts, the mode reinitializes.
+    /// Otherwise, a scheduler is launched and the burn is queued for execution.
+    ///
+    /// # Arguments
+    /// * `context` – Shared mode context.
+    ///
+    /// # Returns
+    /// * `OpExitSignal` – Indicates whether to continue or reinitialize.
     async fn init_mode(&self, context: Arc<ModeContext>) -> OpExitSignal {
         let cancel_task = CancellationToken::new();
         let new_base = Self::overthink_base(&context, self.base, self.exit_burn.sequence()).await;
@@ -191,10 +254,19 @@ impl GlobalMode for ZOPrepMode {
         OpExitSignal::Continue
     }
 
+    /// Waits until the next scheduled task using a default primitive, while monitoring safe mode and events.
     async fn exec_task_wait(&self, c: Arc<ModeContext>, due: DateTime<Utc>) -> WaitExitSignal {
         <Self as OrbitalMode>::exec_task_wait(self, c, due).await
     }
 
+    /// Executes a scheduled task (only [`SwitchState`] or [`VelocityChange`] tasks are allowed).
+    ///
+    /// # Arguments
+    /// * `context` – Shared mode context.
+    /// * `task` – The task to execute.
+    ///
+    /// # Returns
+    /// * `ExecExitSignal::Continue` – Always continues unless an illegal task is found.
     async fn exec_task(&self, context: Arc<ModeContext>, task: Task) -> ExecExitSignal {
         match task.task_type() {
             BaseTask::SwitchState(switch) => self.base.get_task(context, *switch).await,
@@ -216,6 +288,7 @@ impl GlobalMode for ZOPrepMode {
         ExecExitSignal::Continue
     }
 
+    /// Responds to a safe mode interrupt by escaping and attempting to reinitiate the mode.
     async fn safe_handler(&self, context: Arc<ModeContext>) -> OpExitSignal {
         FlightComputer::escape_safe(context.k().f_cont(), false).await;
         context.o_ch_lock().write().await.finish(
@@ -226,6 +299,16 @@ impl GlobalMode for ZOPrepMode {
         OpExitSignal::ReInit(new.map_or(Box::new(InOrbitMode::new(self.base)), |b| Box::new(b)))
     }
 
+    /// Handles a newly received zoned objective.
+    /// Replaces the current target if the new one ends earlier and sufficient time remains.
+    ///
+    /// # Arguments
+    /// * `c` – Shared context.
+    /// * `obj` – The new zoned objective.
+    ///
+    /// # Returns
+    /// * `Some(OpExitSignal::ReInit)` if reprioritization occurs.
+    /// * `None` otherwise.
     async fn zo_handler(&self, c: &Arc<ModeContext>, obj: KnownImgObjective) -> OptOpExitSignal {
         let burn_dt_cond =
             self.exit_burn.sequence().start_i().t() - Utc::now() > Self::MIN_REPLANNING_DT;
@@ -236,7 +319,11 @@ impl GlobalMode for ZOPrepMode {
                     c.k().f_cont().read().await.current_pos(),
                     self.new_zo_rationale(),
                 );
-                obj!("Objective {} is prioritized. Stashing current ZO {}!", obj.id(), self.target.id());
+                obj!(
+                    "Objective {} is prioritized. Stashing current ZO {}!",
+                    obj.id(),
+                    self.target.id()
+                );
                 c.k_buffer().lock().await.push(self.target.clone());
                 return Some(OpExitSignal::ReInit(Box::new(prep_mode)));
             }
@@ -246,18 +333,38 @@ impl GlobalMode for ZOPrepMode {
         None
     }
 
+    /// Reacts to a Beacon Objective state change by potentially switching the base mode.
+    ///
+    /// # Arguments
+    /// * `context` – Shared mode context.
+    ///
+    /// # Returns
+    /// * `Some(OpExitSignal::ReInit)` if a base mode change is needed.
+    /// * `None` if the current base mode is still valid.
     async fn bo_event_handler(&self, context: &Arc<ModeContext>) -> OptOpExitSignal {
         let prop_new_base = self.base.bo_event();
-        let new_base = Self::overthink_base(context, prop_new_base, self.exit_burn.sequence()).await;
+        let new_base =
+            Self::overthink_base(context, prop_new_base, self.exit_burn.sequence()).await;
         if discriminant(&self.base) == discriminant(&new_base) {
             None
         } else {
             self.log_bo_event(context, new_base).await;
-            log!("Trying to change base mode from {} to {} due to BO Event!", self.base, new_base);
+            log!(
+                "Trying to change base mode from {} to {} due to BO Event!",
+                self.base,
+                new_base
+            );
             Some(OpExitSignal::ReInit(Box::new(self.new_base(new_base))))
         }
     }
 
+    /// Finalizes the mode and transitions into a `ZORetrievalMode` if the satellite has left orbit.
+    ///
+    /// # Arguments
+    /// * `context` – Shared mode context.
+    ///
+    /// # Returns
+    /// * `Box<dyn GlobalMode>` – The next mode (retrieval or fallback).
     async fn exit_mode(&self, context: Arc<ModeContext>) -> Box<dyn GlobalMode> {
         context.o_ch_lock().write().await.finish(
             context.k().f_cont().read().await.current_pos(),

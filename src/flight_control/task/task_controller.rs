@@ -20,13 +20,13 @@ use num::Zero;
 use std::{collections::VecDeque, fmt::Debug, sync::Arc};
 use tokio::sync::RwLock;
 
-/// `TaskController` manages and schedules tasks for MELVIN.
+/// [`TaskController`] manages and schedules tasks for MELVIN.
 /// It leverages a thread-safe task queue and notifies waiting threads when
 /// new tasks are added or processed.
 ///
 /// # Fields
-/// - `image_schedule`: An `Arc` Reference to a `LockedTaskQueue`.
-/// - `next_image_notify`: An `Arc` Reference to a `Condvar` indicating changes to the first element
+/// - `image_schedule`: A shared Reference to a [`VecDeque`] holding [`Task`].
+/// - `next_image_notify`: A shared Reference to a [`Condvar`] indicating changes to the first element
 ///   in `image_schedule`
 #[derive(Debug)]
 pub struct TaskController {

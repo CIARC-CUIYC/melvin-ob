@@ -13,19 +13,19 @@ pub struct ScoreGrid {
 
 impl ScoreGrid {
     pub const MIN_SCORE: i32 = i32::MIN + 2;
-    /// Creates a new `ScoreGrid` with specified dimensions, initializing all values to `0`.
+    /// Creates a new [`ScoreGrid`] with specified dimensions, initializing all values to `0`.
     ///
     /// # Arguments
     /// * `e_len` - The length of the energy dimension (number of rows).
     /// * `s_len` - The length of the state dimension (number of columns).
     ///
     /// # Returns
-    /// A `ScoreGrid` instance with all scores initialized to `0`.
+    /// A [`ScoreGrid`] instance with all scores initialized to `0`.
     pub fn new(e_len: usize, s_len: usize) -> Self {
         Self { e_len, s_len, score: vec![0i32; e_len * s_len].into_boxed_slice() }
     }
 
-    /// Creates a `ScoreGrid` and initializes scores based on the specified condition.
+    /// Creates a [`ScoreGrid`] and initializes scores based on the specified condition.
     ///
     /// # Arguments
     /// * `e_len` - The length of the energy dimension (number of rows).

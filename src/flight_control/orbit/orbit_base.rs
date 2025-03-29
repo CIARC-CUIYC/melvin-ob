@@ -24,13 +24,13 @@ impl OrbitBase {
     /// Simulation time step used for calculations.
     const SIM_TIMESTEP: I32F32 = I32F32::lit("0.5");
 
-    /// Creates a new `OrbitBase` instance based on the current state of the flight computer.
+    /// Creates a new [`OrbitBase`] instance based on the current state of the flight computer.
     ///
     /// # Arguments
-    /// - `cont`: Reference to the `FlightComputer` to initialize the orbit data.
+    /// - `cont`: Reference to the [`FlightComputer`] to initialize the orbit data.
     ///
     /// # Returns
-    /// - A new `OrbitBase` instance.
+    /// - A new [`OrbitBase`] instance.
     #[allow(clippy::cast_possible_truncation)]
     pub fn new(cont: &FlightComputer) -> Self {
         let vel = cont.current_vel();

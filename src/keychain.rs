@@ -1,23 +1,30 @@
 use crate::console_communication::ConsoleMessenger;
-use crate::flight_control::objective::beacon_objective::BeaconObjective;
-use crate::flight_control::objective::known_img_objective::KnownImgObjective;
-use crate::flight_control::supervisor::Supervisor;
 use crate::flight_control::{
+    supervisor::Supervisor,
+    objective::{beacon_objective::BeaconObjective, known_img_objective::KnownImgObjective},
     camera_controller::CameraController, flight_computer::FlightComputer, orbit::ClosedOrbit,
     task::TaskController,
 };
 use crate::http_handler::http_client::HTTPClient;
 use std::sync::Arc;
-use tokio::sync::mpsc::Receiver;
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc::Receiver, RwLock};
 
 /// Struct representing the key components of the application, providing access
 /// to various subsystems such as the HTTP client, camera controller, flight computer,
 /// task controller, and console messenger.
+/// 
+/// # Fields
+/// - `client`: The http client connected with the DRS API endpoint.
+/// - `supervisor`: The supervisor running the observation/objective updater.
+/// - `con`: The console messenger communicating with the user console.
+/// - `f_cont`: The flight controller handling state transitions, velocity changes, etc.
+/// - `t_cont`: The task controller planning the task sequence and exit burn maneuvers.
+/// - `c_cont`: The camera controller handling imaging related functionality
 #[derive(Clone)]
 pub struct Keychain {
     /// The HTTP client for performing network requests.
     client: Arc<HTTPClient>,
+    /// The supervisor listening for new objectives, refreshing observation, ...
     supervisor: Arc<Supervisor>,
     /// The console messenger for handling console-related operations.
     con: Arc<ConsoleMessenger>,
@@ -65,6 +72,7 @@ impl Keychain {
     /// Provides a cloned reference to the HTTP client.
     pub fn client(&self) -> Arc<HTTPClient> { Arc::clone(&self.client) }
 
+    /// Provides a cloned reference to the supervisor
     pub fn supervisor(&self) -> Arc<Supervisor> { Arc::clone(&self.supervisor)}
 
     /// Provides a cloned reference to the flight computer.
@@ -83,6 +91,14 @@ impl Keychain {
 /// Struct representing an enhanced `Keychain` that includes a `ClosedOrbit`.
 /// This struct offers access to various subsystems in addition to holding the orbit
 /// and its related operations.
+/// 
+/// # Fields
+/// - `client`: The http client connected with the DRS API endpoint.
+/// - `con`: The console messenger communicating with the user console.
+/// - `f_cont`: The flight controller handling state transitions, velocity changes, etc.
+/// - `t_cont`: The task controller planning the task sequence and exit burn maneuvers.
+/// - `c_cont`: The camera controller handling imaging related functionality
+/// - `c_orbit`: The closed orbit object providing insight into orbit configuration
 #[derive(Clone)]
 pub struct KeychainWithOrbit {
     /// The HTTP client for performing network requests.
@@ -122,38 +138,20 @@ impl KeychainWithOrbit {
     }
 
     /// Provides a cloned reference to the HTTP client.
-    ///
-    /// # Returns
-    /// A thread-safe reference to the `HTTPClient`.
     pub fn client(&self) -> Arc<HTTPClient> { Arc::clone(&self.client) }
 
     /// Provides a cloned reference to the flight computer.
-    ///
-    /// # Returns
-    /// A thread-safe reference to the `FlightComputer`.
     pub fn f_cont(&self) -> Arc<RwLock<FlightComputer>> { Arc::clone(&self.f_cont) }
 
     /// Provides a cloned reference to the task controller.
-    ///
-    /// # Returns
-    /// A thread-safe reference to the `TaskController`.
     pub fn t_cont(&self) -> Arc<TaskController> { Arc::clone(&self.t_cont) }
 
     /// Provides a cloned reference to the camera controller.
-    ///
-    /// # Returns
-    /// A thread-safe reference to the `CameraController`.
     pub fn c_cont(&self) -> Arc<CameraController> { Arc::clone(&self.c_cont) }
 
     /// Provides a cloned reference to the closed orbit.
-    ///
-    /// # Returns
-    /// A thread-safe reference to the `ClosedOrbit`.
     pub fn c_orbit(&self) -> Arc<RwLock<ClosedOrbit>> { Arc::clone(&self.c_orbit) }
 
     /// Provides a cloned reference to the console messenger.
-    ///
-    /// # Returns
-    /// A thread-safe reference to the `ConsoleMessenger`.
     pub fn con(&self) -> Arc<ConsoleMessenger> { Arc::clone(&self.con) }
 }

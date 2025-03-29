@@ -11,7 +11,7 @@ pub struct SwitchStateTask {
 }
 
 impl SwitchStateTask {
-    /// Creates a new `SwitchStateTask` for a given target state.
+    /// Creates a new [`SwitchStateTask`] for a given target state.
     ///
     /// # Arguments
     /// - `target_state`: The desired flight state to switch to.
@@ -21,9 +21,9 @@ impl SwitchStateTask {
     /// - `None`: If the target state is not valid for switching.
     ///
     /// # Valid States
-    /// - `FlightState::Charge`: The state where the system is charging its batteries.
-    /// - `FlightState::Comms`: The state where the system is communicating via high-gain antenna.
-    /// - `FlightState::Acquisition`: The state where the system is actively acquiring images.
+    /// - [`FlightState::Charge`]: The state where the system is charging its batteries.
+    /// - [`FlightState::Comms`]: The state where the system is communicating via high-gain antenna.
+    /// - [`FlightState::Acquisition`]: The state where the system is actively acquiring images.
     pub fn new(target_state: FlightState) -> Option<Self> {
         match target_state {
             FlightState::Charge | FlightState::Comms | FlightState::Acquisition => {

@@ -15,8 +15,7 @@ use crate::http_handler::{
         shoot_image_get::ShootImageRequest,
     },
 };
-use crate::mode_control::base_mode::PeriodicImagingEndSignal;
-use crate::mode_control::base_mode::PeriodicImagingEndSignal::{KillLastImage, KillNow};
+use crate::mode_control::PeriodicImagingEndSignal::{self, KillLastImage, KillNow};
 use crate::{DT_0_STD, error, fatal, info, log, obj};
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;

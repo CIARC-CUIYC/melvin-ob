@@ -14,23 +14,18 @@ use tikv_jemallocator::Jemalloc;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
-use crate::flight_control::beacon_controller::BeaconController;
 use crate::flight_control::{
+    beacon_controller::BeaconController,
     camera_state::CameraAngle,
     flight_computer::FlightComputer,
     flight_state::FlightState,
     orbit::{ClosedOrbit, OrbitBase, OrbitCharacteristics, OrbitUsabilityError},
 };
 use crate::keychain::{Keychain, KeychainWithOrbit};
-use crate::mode_control::{
-    mode::{global_mode::GlobalMode},
-    mode_context::ModeContext,
-    signal::OpExitSignal,
-};
+use crate::mode_control::{mode::{GlobalMode, OrbitReturnMode}, ModeContext, OpExitSignal, };
 use chrono::TimeDelta;
 use fixed::types::I32F32;
 use std::{env, sync::Arc, time::Duration};
-use crate::mode_control::mode::orbit_return_mode::OrbitReturnMode;
 
 const DT_MIN: TimeDelta = TimeDelta::seconds(5);
 const DT_0: TimeDelta = TimeDelta::seconds(0);
@@ -75,25 +70,25 @@ async fn main() {
 
 #[allow(clippy::cast_precision_loss)]
 async fn init(url: &str) -> (Arc<ModeContext>, Box<dyn GlobalMode>) {
-    let (init_k,  obj_rx, beac_rx) = Keychain::new(url).await;
+    let (init_k, obj_rx, beac_rx) = Keychain::new(url).await;
 
     let supervisor_clone = init_k.supervisor();
     tokio::spawn(async move {
         supervisor_clone.run_obs_obj_mon().await;
     });
-    
+
     if env::var(ENV_SKIP_RESET).is_ok_and(|s| s == "1") {
         warn!("Skipping reset!");
         FlightComputer::avoid_transition(&init_k.f_cont()).await;
     } else {
-        init_k.f_cont().write().await.reset().await; 
+        init_k.f_cont().write().await.reset().await;
     }
-    
+
     let (beac_cont, beac_state_rx) = {
         let res = BeaconController::new(beac_rx);
         (Arc::new(res.0), res.1)
     };
-    
+
     let supervisor_clone = init_k.supervisor();
     tokio::spawn(async move {
         supervisor_clone.run_announcement_hub().await;
@@ -101,7 +96,7 @@ async fn init(url: &str) -> (Arc<ModeContext>, Box<dyn GlobalMode>) {
     let supervisor_clone = init_k.supervisor();
     let init_k_c_cont = init_k.c_cont();
     tokio::spawn(async move {
-       supervisor_clone.run_daily_map_uploader(init_k_c_cont).await; 
+        supervisor_clone.run_daily_map_uploader(init_k_c_cont).await;
     });
     let beac_cont_clone = Arc::clone(&beac_cont);
     let handler = Arc::clone(&init_k.client());
@@ -110,9 +105,12 @@ async fn init(url: &str) -> (Arc<ModeContext>, Box<dyn GlobalMode>) {
     });
 
     tokio::time::sleep(DT_MIN.to_std().unwrap()).await;
-    
+
     if let Some(c_orbit) = ClosedOrbit::try_from_env() {
-        info!("Imported existing Orbit!");
+        info!(
+            "Imported existing Orbit with {}% coverage!",
+            c_orbit.get_coverage() * 100
+        );
         let orbit_char = OrbitCharacteristics::new(&c_orbit, &init_k.f_cont()).await;
         let supervisor = init_k.supervisor();
         let mode_context = ModeContext::new(
@@ -125,7 +123,7 @@ async fn init(url: &str) -> (Arc<ModeContext>, Box<dyn GlobalMode>) {
         );
         return (mode_context, Box::new(OrbitReturnMode::new()));
     }
-    
+
     let c_orbit: ClosedOrbit = {
         info!("Creating new Static Orbit!");
         if init_k.f_cont().read().await.current_battery() < I32F32::lit("50") {
@@ -157,4 +155,3 @@ async fn init(url: &str) -> (Arc<ModeContext>, Box<dyn GlobalMode>) {
     let mode = OrbitReturnMode::get_next_mode(&mode_context).await;
     (mode_context, mode)
 }
-

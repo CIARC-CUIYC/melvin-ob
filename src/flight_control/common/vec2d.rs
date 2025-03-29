@@ -658,7 +658,7 @@ where
 {
     type Output = Vec2D<T>;
 
-    /// Implements the `*` operator for a `Vec2D` and a scalar.
+    /// Implements the `*` operator for a [`Vec2D`] and a scalar.
     ///
     /// # Arguments
     /// * `rhs` - The scalar value to multiply by.
