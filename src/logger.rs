@@ -47,7 +47,7 @@ macro_rules! obj {
 #[macro_export]
 macro_rules! event {
     ($($arg:tt)*) => {
-        if std::env::var("LOG_MELVIN_EVENTS").is_ok() {
+        if std::env::var("LOG_MELVIN_EVENTS").is_ok_and(|s| s == "1") {
             println!("\x1b[36m[EVENT][{}]\x1b[0m {}", chrono::Utc::now().format("%H:%M:%S"), format!($($arg)*))
         }
     };

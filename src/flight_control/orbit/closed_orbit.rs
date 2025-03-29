@@ -133,7 +133,7 @@ impl ClosedOrbit {
     }
 
     pub fn try_from_env() -> Option<Self> {
-        if env::var(Self::TRY_IMPORT_ENV).is_ok() {
+        if env::var(Self::TRY_IMPORT_ENV).is_ok_and(|s| s == "1") {
             Self::import_from(Self::DEF_FILEPATH).ok()
         } else {
             None
@@ -141,7 +141,7 @@ impl ClosedOrbit {
     }
 
     pub fn try_export_default(&self) {
-        if env::var(Self::EXPORT_ORBIT_ENV).is_ok() {
+        if env::var(Self::EXPORT_ORBIT_ENV).is_ok_and(|s| s == "1") {
             self.export_to(Self::DEF_FILEPATH).unwrap_or_else(|e| {
                 warn!("Failed to export orbit: {}", e);
             });

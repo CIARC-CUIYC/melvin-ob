@@ -39,10 +39,12 @@ const DETUMBLE_TOL: TimeDelta = DT_MIN;
 
 const STATIC_ORBIT_VEL: (I32F32, I32F32) = (I32F32::lit("6.40"), I32F32::lit("7.40"));
 const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
+const ENV_BASE_URL: &str = "DRS_BASE_URL";
+const ENV_SKIP_RESET: &str = "SKIP_RESET";
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
-    let base_url_var = env::var("DRS_BASE_URL");
+    let base_url_var = env::var(ENV_BASE_URL);
     let base_url = base_url_var.as_ref().map_or("http://localhost:33000", |v| v.as_str());
     let (context, start_mode) = init(base_url).await;
 
@@ -80,7 +82,7 @@ async fn init(url: &str) -> (Arc<ModeContext>, Box<dyn GlobalMode>) {
         supervisor_clone.run_obs_obj_mon().await;
     });
     
-    if env::var("SKIP_RESET").is_ok() {
+    if env::var(ENV_SKIP_RESET).is_ok_and(|s| s == "1") {
         warn!("Skipping reset!");
         FlightComputer::avoid_transition(&init_k.f_cont()).await;
     } else {
