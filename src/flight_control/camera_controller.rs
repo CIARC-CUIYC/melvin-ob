@@ -1,11 +1,12 @@
 use super::imaging::{
     cycle_state::CycleState,
-    map_image::{EncodedImageExtract, FullsizeMapImage, MapImage, OffsetZonedObjectiveImage, ThumbnailMapImage},
+    map_image::{
+        EncodedImageExtract, FullsizeMapImage, MapImage, OffsetZonedObjectiveImage,
+        ThumbnailMapImage,
+    },
 };
+use super::{camera_state::CameraAngle, common::vec2d::Vec2D, flight_computer::FlightComputer};
 use crate::console_communication::ConsoleMessenger;
-use crate::flight_control::{
-    camera_state::CameraAngle, common::vec2d::Vec2D, flight_computer::FlightComputer,
-};
 use crate::http_handler::{
     http_client::HTTPClient,
     http_request::{
@@ -21,15 +22,16 @@ use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use futures::StreamExt;
 use image::{GenericImageView, ImageReader, Pixel, RgbImage, imageops::Lanczos3};
-use std::path::PathBuf;
 use std::{
     fs,
-    path::Path,
+    path::{Path, PathBuf},
     {io::Cursor, sync::Arc},
 };
-use tokio::fs::File;
-use tokio::io::AsyncWriteExt;
-use tokio::sync::{Mutex, RwLock, oneshot};
+use tokio::{
+    fs::File,
+    io::AsyncWriteExt,
+    sync::{Mutex, RwLock, oneshot},
+};
 
 /// A struct for managing camera-related operations and map snapshots.
 pub struct CameraController {
@@ -51,8 +53,11 @@ const SNAPSHOT_FULL_PATH: &str = "snapshot_full.png";
 const SNAPSHOT_THUMBNAIL_PATH: &str = "snapshot_thumb.png";
 
 impl CameraController {
+    /// Constant minimum delay to perform another image.
     const LAST_IMG_END_DELAY: TimeDelta = TimeDelta::milliseconds(500);
+    /// Directory where zoned objective images should be stored.
     const ZO_IMG_FOLDER: &'static str = "zo_img/";
+    /// Constant `TimeDelta` between images when in zoned objective acquisition.
     const ZO_IMG_ACQ_DELAY: TimeDelta = TimeDelta::seconds(2);
 
     /// Initializes the `CameraController` with the given base path and HTTP client.
@@ -132,6 +137,18 @@ impl CameraController {
         best_additional_offset
     }
 
+    /// Performs the HTTP request to retrieve an image from the DRS backend. Then calculates the position and image offset.
+    ///
+    /// # Arguments
+    /// `f_cont_locked`: A shared `RwLock` containing the [`FlightComputer`] instance
+    /// `angle`: The current [`CameraAngle`]
+    ///
+    /// # Returns
+    /// A Result containing a tuple with:
+    ///   - The `Vec2D<I32F32>` position where the image was taken
+    ///   - The `Vec2D<i32>` offset in the map image buffer
+    ///   - The decoded `RgbImage`
+    /// or an Error
     pub async fn get_image(
         &self,
         f_cont_locked: Arc<RwLock<FlightComputer>>,
@@ -157,13 +174,11 @@ impl CameraController {
     /// Captures an image, processes it, and stores it in the map buffer.
     ///
     /// # Arguments
-    ///
     /// * `f_cont_locked` - The lock-protected flight computer.
     /// * `angle` - The camera angle and field of view.
     ///
     /// # Returns
-    ///
-    /// The updated offset as `Vec2D<u32>` or an error.
+    /// The position of the image as `Vec2D<I32F32>` or an error.
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
     pub async fn shoot_image_to_map_buffer(
         &self,
@@ -189,6 +204,15 @@ impl CameraController {
         Ok((pos, tot_offset_u32))
     }
 
+    /// Captures an image, processes it, and stores it in a custom zoned objective buffer.
+    ///
+    /// # Arguments
+    /// * `f_cont_locked` - The lock-protected flight computer.
+    /// * `angle` - The camera angle and field of view.
+    /// * `zoned_objective_map_image`: An optional mutable reference to an `OffsetZonedObjectiveImage`
+    ///
+    /// # Returns
+    /// The imaging position as `Vec2D<I32F32>` or an error.
     pub async fn shoot_image_to_zo_buffer(
         &self,
         f_cont_locked: Arc<RwLock<FlightComputer>>,
@@ -200,10 +224,10 @@ impl CameraController {
         if let Some(image) = zoned_objective_map_image {
             image.update_area(offset_u32, &decoded_image);
         }
-        
+
         Ok(pos)
     }
-    
+
     /// Updates the thumbnail area of the map based on the full-size map data.
     ///
     /// # Arguments
@@ -298,7 +322,7 @@ impl CameraController {
         offset: Vec2D<u32>,
         size: Vec2D<u32>,
         export_path: Option<PathBuf>,
-        zoned_objective_map_image: Option<&OffsetZonedObjectiveImage>
+        zoned_objective_map_image: Option<&OffsetZonedObjectiveImage>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let encoded_image = if let Some(zo_image) = zoned_objective_map_image {
             zo_image.export_as_png()?
@@ -318,6 +342,13 @@ impl CameraController {
         Ok(())
     }
 
+    /// Helper method generating the export path for a given zoned objective id.
+    ///
+    /// # Arguments
+    /// `id`: The objective id
+    ///
+    /// # Returns
+    /// The path to the zoned objective image file as a `PathBuf`
     pub(crate) fn generate_zo_img_path(id: usize) -> PathBuf {
         let dir = Path::new(Self::ZO_IMG_FOLDER);
         let mut path = dir.join(format!("zo_{id}.png"));
@@ -491,14 +522,26 @@ impl CameraController {
         }
     }
 
+    /// Executes a series of image acquisitions, processes them, and updates an associated zoned objective buffer.
+    ///
+    /// # Arguments
+    /// * `f_cont_lock` - Lock-protected flight computer controlling the acquisition cycle.
+    /// * `deadline` - The end time for the cycle.
+    /// * `zoned_objective_image_buffer` - An optional mutable reference to an `OffsetZonedObjectiveImage`
+    /// * `offset` - The offset of the buffer in the global map buffer.
+    /// * `dimensions` - The dimensions of the zoned objective.
     pub async fn execute_zo_target_cycle(
         self: Arc<Self>,
         f_cont_lock: Arc<RwLock<FlightComputer>>,
         deadline: DateTime<Utc>,
         zoned_objective_image_buffer: &mut Option<OffsetZonedObjectiveImage>,
-        offset: Vec2D<u32>, dimensions: Vec2D<u32>
+        offset: Vec2D<u32>,
+        dimensions: Vec2D<u32>,
     ) {
-        obj!("Starting acquisition cycle for objective. Deadline {}!", deadline.format("%H:%M:%S"));
+        obj!(
+            "Starting acquisition cycle for objective. Deadline {}!",
+            deadline.format("%H:%M:%S")
+        );
         zoned_objective_image_buffer.replace(OffsetZonedObjectiveImage::new(offset, dimensions));
         let lens = f_cont_lock.read().await.current_angle();
         let mut pics = 0;
@@ -507,7 +550,14 @@ impl CameraController {
         loop {
             let next_img_due = Utc::now() + Self::ZO_IMG_ACQ_DELAY;
             let img_init_timestamp = Utc::now();
-            match self.shoot_image_to_zo_buffer(Arc::clone(&f_cont_lock), lens, zoned_objective_image_buffer.as_mut()).await {
+            match self
+                .shoot_image_to_zo_buffer(
+                    Arc::clone(&f_cont_lock),
+                    lens,
+                    zoned_objective_image_buffer.as_mut(),
+                )
+                .await
+            {
                 Ok(pos) => {
                     pics += 1;
                     let s = (Utc::now() - img_init_timestamp).num_seconds();
@@ -526,11 +576,30 @@ impl CameraController {
         }
     }
 
+    /// Helper method returning the timestamp of the next image
+    /// 
+    /// # Arguments
+    /// * `img_max_dt`: An `I32F32` resembling the maximum number of seconds between consecutive images in mapping.
+    /// * `end_time`: The deadline as a `DateTime<Utc>`
+    /// 
+    /// # Returns
+    /// The next image timestamp as an `DateTime<Utc>`
     fn get_next_map_img(img_max_dt: I32F32, end_time: DateTime<Utc>) -> DateTime<Utc> {
         let next_max_dt = Utc::now() + TimeDelta::seconds(img_max_dt.to_num::<i64>());
         if next_max_dt > end_time { end_time - Self::LAST_IMG_END_DELAY } else { next_max_dt }
     }
 
+    /// Captures a single image during mapping operation.
+    /// 
+    /// # Arguments
+    /// * `f_cont_lock` - Lock-protected flight computer controlling the acquisition cycle.
+    /// * `p_c` - A shared, locked reference to the number of pictures in the current cycle.
+    /// * `lens` - The desired `CameraAngle` for this picture
+    /// 
+    /// # Returns
+    /// A tuple containing:
+    ///   - The UTC timestamp when the image was taken
+    ///   - The `Vec2D<i32>` offset in the global map image buffer
     async fn exec_map_capture(
         self: &Arc<Self>,
         f_cont: &Arc<RwLock<FlightComputer>>,

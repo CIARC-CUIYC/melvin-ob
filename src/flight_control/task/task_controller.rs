@@ -3,7 +3,6 @@ use super::{
     score_grid::ScoreGrid, vel_change_task::VelocityChangeTaskRationale,
 };
 use crate::flight_control::camera_state::CameraAngle;
-use crate::flight_control::flight_state::TRANS_DEL;
 use crate::flight_control::orbit::{BurnSequenceEvaluator, ExitBurnResult};
 use crate::flight_control::task::end_condition::EndCondition;
 use crate::flight_control::{
@@ -75,12 +74,12 @@ impl TaskController {
     /// Maximum allowable absolute deviation after a correction burn.
     const MAX_AFTER_CB_DEV: I32F32 = I32F32::lit("5.0");
 
-    pub const IN_COMMS_SCHED_SECS: usize = 585;
-    const COMMS_SCHED_PERIOD: usize = 1025;
+    pub const IN_COMMS_SCHED_SECS: usize = 1100;
+    const COMMS_SCHED_PERIOD: usize = 800;
     #[allow(clippy::cast_possible_wrap)]
     const COMMS_SCHED_USABLE_TIME: TimeDelta =
         TimeDelta::seconds((Self::COMMS_SCHED_PERIOD - 2 * 180) as i64);
-    pub const COMMS_CHARGE_USAGE: I32F32 = I32F32::lit("4.68");
+    pub const COMMS_CHARGE_USAGE: I32F32 = I32F32::lit("9.00");
     pub const MIN_COMMS_START_CHARGE: I32F32 = I32F32::lit("20.0");
 
     /// Creates a new instance of the `TaskController` struct.
@@ -457,17 +456,16 @@ impl TaskController {
         let computation_start = Utc::now();
         // TODO: later maybe this shouldnt be cleared here anymore
         self.clear_schedule().await;
-        let t_time = FlightState::Charge.dt_to(FlightState::Comms);
-        let t_time_ch = TimeDelta::from_std(t_time).unwrap();
+        let t_time = FlightState::Charge.td_dt_to(FlightState::Comms);
         let strict_end = (last_bo_end_t, scheduling_start_i.index_then(last_bo_end_t));
 
         let is_next_possible: Box<dyn Fn(DateTime<Utc>) -> bool + Send> =
             if let Some(end) = &end_cond {
-                let dt = end.abs_charge_dt() + t_time_ch * 2;
+                let dt = end.abs_charge_dt() + t_time * 2;
                 Box::new(move |comms_end: DateTime<Utc>| -> bool {
                     let n_end = comms_end
                         + TaskController::COMMS_SCHED_USABLE_TIME
-                        + t_time_ch * 2
+                        + t_time * 2
                         + TimeDelta::seconds(TaskController::IN_COMMS_SCHED_SECS as i64);
                     n_end + dt <= end.time()
                 })
@@ -487,7 +485,7 @@ impl TaskController {
         let orbit = orbit_lock.read().await;
         while let Some(end) = curr_comms_end {
             (next_start, next_start_e) = {
-                let t = end.0 + TimeDelta::from_std(t_time).unwrap();
+                let t = end.0 + t_time;
                 let i = scheduling_start_i.index_then(t);
                 ((t, i), end.1)
             };
@@ -515,7 +513,7 @@ impl TaskController {
             };
             self.schedule_switch(
                 FlightState::from_dp_usize(target.1),
-                next_start.0 - t_time_ch,
+                next_start.0 - t_time,
             )
             .await;
             self.sched_opt_orbit_res(next_start.0, result, 0, false, target).await;
@@ -729,10 +727,10 @@ impl TaskController {
         lens: CameraAngle,
     ) {
         let t_first = t - Self::ZO_IMAGE_FIRST_DEL;
-        let trans_time = TRANS_DEL.get(&(FlightState::Acquisition, FlightState::Charge)).unwrap();
-        if Utc::now() + TimeDelta::from_std(*trans_time).unwrap() * 2 < t_first {
+        let trans_time = FlightState::Acquisition.td_dt_to(FlightState::Charge);
+        if Utc::now() + trans_time * 2 < t_first {
             self.schedule_switch(FlightState::Charge, Utc::now()).await;
-            let last_charge_leave = t_first - TimeDelta::from_std(*trans_time).unwrap();
+            let last_charge_leave = t_first - trans_time;
             self.schedule_switch(FlightState::Acquisition, last_charge_leave).await;
         }
         self.schedule_zo_image(t_first, pos, lens).await;        

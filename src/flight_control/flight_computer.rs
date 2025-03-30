@@ -1,7 +1,7 @@
 use super::{
     camera_state::CameraAngle,
     common::{math::MAX_DEC, vec2d::Vec2D},
-    flight_state::{FlightState, TRANS_DEL},
+    flight_state::FlightState,
 };
 use crate::flight_control::common::vec2d::WrapDirection;
 use crate::flight_control::orbit::ClosedOrbit;
@@ -110,8 +110,11 @@ impl FlightComputer {
     const MAX_OR_ACQ_TIME: I32F32 = I32F32::lit("156");
     /// Minimum battery used in decision-making for after safe transition
     const AFTER_SAFE_MIN_BATT: I32F32 = I32F32::lit("50");
+    /// Minimum battery needed to exit safe mode
     const EXIT_SAFE_MIN_BATT: I32F32 = I32F32::lit("10.0");
+    /// Maximum absolute break velocity change
     const DEF_BRAKE_ABS: I32F32 = I32F32::lit("1.0");
+    /// Maximum burn time for detumbling
     const MAX_DETUMBLE_DT: TimeDelta = TimeDelta::seconds(20);
     /// Legal Target States for State Change
     const LEGAL_TARGET_STATES: [FlightState; 3] = [
@@ -120,6 +123,8 @@ impl FlightComputer {
         FlightState::Comms,
     ];
 
+    /// Debug method used to emulate a safe mode event
+    #[cfg(debug_assertions)]
     pub fn one_time_safe(&mut self) {
         self.current_state = FlightState::Transition;
         self.target_state = None;
@@ -171,13 +176,28 @@ impl FlightComputer {
         let dev_y = (I64F64::from_num(vel.y()) * factor_f64).frac() / factor_f64;
         (Vec2D::new(trunc_x, trunc_y), Vec2D::new(dev_x, dev_y))
     }
-
+    
+    /// Rounds velocity by multiplying with `10^Self::VEL_BE_MAX_DECIMAL` and rounding afterward
+    /// 
+    /// # Arguments
+    /// * vel: A `Vec2D<I32F32>` representing the velocity to be rounded
+    /// 
+    /// # Returns
+    /// * A `Vec2D<I32F32>` representing the rounded, expanded velocity
     pub fn round_vel_expand(vel: Vec2D<I32F32>) -> Vec2D<I32F32> {
         let factor = I32F32::from_num(10f32.powi(i32::from(Self::VEL_BE_MAX_DECIMAL)));
         let trunc_x = (vel.x() * factor).round();
         let trunc_y = (vel.y() * factor).round();
         Vec2D::new(trunc_x, trunc_y)
     }
+
+    /// Rounds velocity by multiplying with `10^Self::VEL_BE_MAX_DECIMAL`, rounding and dividing back.
+    ///
+    /// # Arguments
+    /// * vel: A `Vec2D<I32F32>` representing the velocity to be rounded
+    ///
+    /// # Returns
+    /// * A `Vec2D<I32F32>` representing the rounded velocity
     pub fn round_vel(vel: Vec2D<I32F32>) -> (Vec2D<I32F32>, Vec2D<I64F64>) {
         let factor = I32F32::from_num(10f32.powi(i32::from(Self::VEL_BE_MAX_DECIMAL)));
         let factor_f64 = I64F64::from_num(10f64.powi(i32::from(Self::VEL_BE_MAX_DECIMAL)));
@@ -402,6 +422,12 @@ impl FlightComputer {
         }
     }
 
+    /// This method is used to escape a safe mode event by first waiting for the minimum charge 
+    /// and then transitioning back to an operational state.
+    /// 
+    /// # Arguments
+    /// * `self_lock`: A shared `RwLock` containing the `FlightComputer` instance
+    /// * `force_charge`: A variable indicating whether the `FlightState` after escaping should be forced to `FlightState::Charge`
     pub async fn escape_safe(self_lock: Arc<RwLock<Self>>, force_charge: bool) {
         let target_state = {
             let init_batt = self_lock.read().await.current_battery();
@@ -440,12 +466,16 @@ impl FlightComputer {
         Self::set_state_wait(self_lock, target_state).await;
     }
 
+    /// A small helper method which waits for the current transition phase to end.
+    /// 
+    /// # Arguments
+    /// * `self_lock`: A shared `RwLock` containing the `FlightComputer` instance
     pub async fn avoid_transition(self_lock: &Arc<RwLock<Self>>) {
         let not_trans = (
             |cont: &FlightComputer| cont.state() != FlightState::Transition,
             format!("State is not {}", FlightState::Transition),
         );
-        let max_dt = TRANS_DEL[&(FlightState::Safe, FlightState::Acquisition)];
+        let max_dt = FlightState::Safe.dt_to(FlightState::Acquisition);
         Self::wait_for_condition(
             self_lock,
             not_trans,
@@ -457,6 +487,10 @@ impl FlightComputer {
         self_lock.write().await.target_state = None;
     }
 
+    /// A helper method which transitions state-aware to [`FlightState::Comms`].
+    /// 
+    /// # Arguments
+    /// * `self_lock`: A shared `RwLock` containing the [`FlightComputer`] instance
     #[allow(clippy::cast_possible_wrap)]
     pub async fn get_to_comms(self_lock: Arc<RwLock<Self>>) -> DateTime<Utc> {
         if self_lock.read().await.state() == FlightState::Comms {
@@ -481,6 +515,10 @@ impl FlightComputer {
         Utc::now() + TimeDelta::seconds(TaskController::IN_COMMS_SCHED_SECS as i64)
     }
 
+    /// A helper method used to get out of [`FlightState::Comms`] and back to an operational [`FlightState`].
+    /// 
+    /// # Arguments
+    /// * `self_lock`: A shared `RwLock` containing the [`FlightComputer`] instance
     #[allow(clippy::cast_possible_wrap)]
     pub async fn escape_if_comms(self_lock: Arc<RwLock<Self>>) -> DateTime<Utc> {
         let (state, batt) = {
@@ -500,8 +538,12 @@ impl FlightComputer {
         Utc::now()
     }
 
+    /// A helper method estimating the `DateTime<Utc>` when a transition to [`FlightState::Comms`] could be finished.
+    /// 
+    /// # Arguments
+    /// * `self_lock`: A shared `RwLock` containing the [`FlightComputer`] instance
     #[allow(clippy::cast_possible_wrap)]
-    pub async fn get_to_comms_dt_est(self_lock: Arc<RwLock<Self>>) -> DateTime<Utc> {
+    pub async fn get_to_comms_t_est(self_lock: Arc<RwLock<Self>>) -> DateTime<Utc> {
         let t_time = FlightState::Charge.td_dt_to(FlightState::Comms);
         if self_lock.read().await.state() == FlightState::Comms {
             let batt_diff =
@@ -518,6 +560,10 @@ impl FlightComputer {
         }
     }
 
+    /// A helper method used to perform an acceleration maneuver to get to `STATIC_ORBIT_VEL`.
+    /// 
+    /// # Arguments
+    /// * `self_lock`: A shared `RwLock` containing the [`FlightComputer`] instance
     pub async fn get_to_static_orbit_vel(self_lock: &Arc<RwLock<Self>>) {
         let orbit_vel = Vec2D::from(STATIC_ORBIT_VEL);
         let (batt, vel) = {
@@ -547,6 +593,13 @@ impl FlightComputer {
         FlightComputer::set_vel_wait(Arc::clone(self_lock), orbit_vel, true).await;
     }
 
+    /// A helper method calculating the charge difference for a transition to `FlightState::Comms`.
+    /// 
+    /// # Arguments
+    /// * `self_lock`: A shared `RwLock` containing the [`FlightComputer`] instance
+    /// 
+    /// # Returns
+    /// A `u64` resembling the necessary number of charging seconds 
     async fn get_charge_dt_comms(self_lock: &Arc<RwLock<Self>>) -> u64 {
         let batt_diff = (self_lock.read().await.current_battery()
             - TaskController::MIN_COMMS_START_CHARGE)
@@ -554,11 +607,20 @@ impl FlightComputer {
         (-batt_diff / FlightState::Charge.get_charge_rate()).ceil().to_num::<u64>()
     }
 
+    /// A helper method used to charge to the maximum battery threshold.
+    /// 
+    /// # Arguments
+    /// * `self_lock`: A shared `RwLock` containing the [`FlightComputer`] instance
     pub async fn charge_full_wait(self_lock: &Arc<RwLock<Self>>) {
         let max_batt = self_lock.read().await.max_battery;
         Self::charge_to_wait(self_lock, max_batt).await;
     }
 
+    /// A helper method used to charge to a given threshold.
+    /// 
+    /// # Arguments
+    /// * `self_lock`: A shared `RwLock` containing the [`FlightComputer`] instance
+    /// * `target_batt`: An `I32F32` resembling the desired target battery level
     pub async fn charge_to_wait(self_lock: &Arc<RwLock<Self>>, target_batt: I32F32) {
         let (state, battery) = {
             let f_cont = self_lock.read().await;
@@ -595,11 +657,9 @@ impl FlightComputer {
         self_lock.write().await.target_state = Some(new_state);
         self_lock.read().await.set_state(new_state).await;
 
-        let transition_t = TRANS_DEL.get(&(init_state, new_state)).unwrap_or_else(|| {
-            fatal!("({init_state}, {new_state}) not in TRANSITION_DELAY_LOOKUP")
-        });
-
-        Self::wait_for_duration(*transition_t, false).await;
+        let transition_t = init_state.dt_to(new_state);
+        
+        Self::wait_for_duration(transition_t, false).await;
         let cond = (
             |cont: &FlightComputer| cont.state() == new_state,
             format!("State equals {new_state}"),
@@ -711,6 +771,11 @@ impl FlightComputer {
         );
     }
 
+    /// Executes an orbit return maneuver in a loop until the current position is recognized and assigned an orbit index.
+    /// 
+    /// # Arguments
+    /// * `self_lock`: A shared `RwLock` containing the [`FlightComputer`] instance
+    /// * `c_o`: A shared `RwLock` containing the [`ClosedOrbit`] instance
     pub async fn or_maneuver(self_lock: Arc<RwLock<Self>>, c_o: Arc<RwLock<ClosedOrbit>>) -> usize {
         if self_lock.read().await.state() != FlightState::Acquisition {
             FlightComputer::set_state_wait(Arc::clone(&self_lock), FlightState::Acquisition).await;
@@ -743,12 +808,25 @@ impl FlightComputer {
         entry_i
     }
 
+    /// Helper method calculating the maximum charge needed for an orbit return maneuver.
+    /// 
+    /// # Returns
+    /// * An `I32F32`, the maximum battery level 
     pub fn max_or_maneuver_charge() -> I32F32 {
         let acq_db = FlightState::Acquisition.get_charge_rate();
         let acq_acc_db = acq_db + FlightState::ACQ_ACC_ADDITION;
         Self::MAX_OR_ACQ_ACC_TIME * acq_acc_db + Self::MAX_OR_ACQ_TIME * acq_db
     }
 
+    /// Helper method computing the maximum orbit return maneuver velocity, trying either a triangular or trapezoidal profile.
+    /// 
+    /// # Arguments
+    /// * `dev`: The absolute deviation on a singular axis as an `I32F32`
+    ///
+    /// # Returns
+    /// A tuple containing:
+    ///   - The maximum velocity change
+    ///   - The number of seconds to hold that velocity 
     fn compute_vmax_and_hold_time(dev: I32F32) -> (I32F32, u64) {
         // Try triangular profile first (no cruising)
         let dv_triang = dev.signum() * (Self::ACC_CONST * dev.abs()).sqrt();
@@ -765,6 +843,10 @@ impl FlightComputer {
         }
     }
 
+    /// A helper method used to stop an ongoing velocity change.
+    /// 
+    /// # Arguments
+    /// * `self_lock`: A shared `RwLock` containing the [`FlightComputer`] instance
     pub async fn stop_ongoing_burn(self_lock: Arc<RwLock<Self>>) {
         let (vel, state) = {
             let f_cont = self_lock.read().await;
@@ -775,6 +857,12 @@ impl FlightComputer {
         }
     }
 
+    /// Executes a sequence of velocity changes to accelerate towards a secondary target for a multi-target zoned objective.
+    /// 
+    /// # Arguments
+    /// * `self_lock`: A shared `RwLock` containing the [`FlightComputer`] instance
+    /// * `target`: The target position as a `Vec2D<I32F32>`
+    /// * `deadline`: The deadline as a `DateTime<Utc>`
     pub async fn turn_for_2nd_target(
         self_lock: Arc<RwLock<Self>>,
         target: Vec2D<I32F32>,
@@ -828,6 +916,17 @@ impl FlightComputer {
         }
     }
 
+    /// Executes a sequence of velocity changes minimizing the deviation between an expected impact point and a target point.
+    /// 
+    /// # Arguments
+    /// * `self_lock`: A shared `RwLock` containing the [`FlightComputer`] instance
+    /// * `target`: The target position as a `Vec2D<I32F32>`
+    /// * `lens`: The planned `CameraAngle` to derive the maximum absolute speed
+    /// 
+    /// # Returns
+    /// A tuple containing:
+    ///   - A `DateTime<Utc>` when the target will be hit
+    ///   - A `Vec2D<I32F32>` containing the wrapped target position, if wrapping occured  
     pub async fn detumble_to(
         self_lock: Arc<RwLock<Self>>,
         mut target: Vec2D<I32F32>,
@@ -898,12 +997,19 @@ impl FlightComputer {
         }
     }
 
+    /// Random weight to counter numeric local minima
+    /// 
+    /// Returns
+    /// A `I32F32` representing a random weight in the range \[0.0, 10.0\]
     fn rand_weight() -> I32F32 {
         let mut rng = rand::rng();
         I32F32::from_num(rng.random_range(0.0..10.0))
     }
 
     /// Updates the satellite's internal fields with the latest observation data.
+    /// 
+    /// # Arguments
+    /// * A mutable reference to the `FlightComputer` instance
     pub async fn update_observation(&mut self) {
         if let Ok(obs) = (ObservationRequest {}.send_request(&self.request_client).await) {
             self.current_pos =
@@ -996,6 +1102,13 @@ impl FlightComputer {
         now.new_from_future_pos(pos, t)
     }
 
+    /// Helper method predicting the battery level after a specified time interval.
+    /// 
+    /// # Arguments
+    /// - `time_delta`: The time interval for prediction.
+    ///
+    /// # Returns
+    /// - An `I32F32` representing the satellite’s predicted battery level
     pub fn batt_in_dt(&self, dt: TimeDelta) -> I32F32 {
         self.current_battery
             + (self.current_state.get_charge_rate() * I32F32::from_num(dt.num_seconds()))

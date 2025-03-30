@@ -1,12 +1,12 @@
+use super::{global_mode::GlobalMode, orbit_return_mode::OrbitReturnMode};
 use crate::flight_control::{
+    camera_controller::CameraController,
     common::vec2d::Vec2D,
     flight_computer::FlightComputer,
-    flight_state::{FlightState, TRANS_DEL},
+    flight_state::FlightState,
     objective::known_img_objective::KnownImgObjective,
     task::base_task::{BaseTask, Task},
-    camera_controller::CameraController
 };
-use super::{global_mode::GlobalMode, orbit_return_mode::OrbitReturnMode};
 use crate::mode_control::{
     mode_context::ModeContext,
     signal::{ExecExitSignal, OpExitSignal, OptOpExitSignal, WaitExitSignal},
@@ -106,15 +106,28 @@ impl ZORetrievalMode {
     /// * `second_target` – Optional second target for multi-point objectives.
     /// * `context` – Shared context.
     /// * `c_tok` – Cancellation token for task coordination.
-    async fn exec_img_task(target: KnownImgObjective,  unwrapped_target: Vec2D<I32F32>, second_target: Option<Vec2D<I32F32>>, context: Arc<ModeContext>, c_tok: CancellationToken) {
+    async fn exec_img_task(
+        target: KnownImgObjective,
+        unwrapped_target: Vec2D<I32F32>,
+        second_target: Option<Vec2D<I32F32>>,
+        context: Arc<ModeContext>,
+        c_tok: CancellationToken,
+    ) {
         let offset = Vec2D::new(target.zone()[0], target.zone()[1]).to_unsigned();
         let dim = Vec2D::new(target.width(), target.height()).to_unsigned();
 
         let c_cont = context.k().c_cont();
-        let (deadline, add_fut) = Self::get_img_fut(second_target, unwrapped_target, &context).await;
+        let (deadline, add_fut) =
+            Self::get_img_fut(second_target, unwrapped_target, &context).await;
         let f_cont = context.k().f_cont();
         let mut zoned_objective_image_buffer = None;
-        let img_fut = c_cont.execute_zo_target_cycle(f_cont, deadline,&mut zoned_objective_image_buffer, offset, dim);
+        let img_fut = c_cont.execute_zo_target_cycle(
+            f_cont,
+            deadline,
+            &mut zoned_objective_image_buffer,
+            offset,
+            dim,
+        );
         tokio::pin!(add_fut);
         tokio::select! {
             () = img_fut => FlightComputer::stop_ongoing_burn(context.k().f_cont()).await,
@@ -127,11 +140,18 @@ impl ZORetrievalMode {
         let c_cont = context.k().c_cont();
         let id = target.id();
         let img_path = Some(CameraController::generate_zo_img_path(id));
-        c_cont.export_and_upload_objective_png(id, offset, dim, img_path, zoned_objective_image_buffer.as_ref()).await.unwrap_or_else(
-            |e| {
+        c_cont
+            .export_and_upload_objective_png(
+                id,
+                offset,
+                dim,
+                img_path,
+                zoned_objective_image_buffer.as_ref(),
+            )
+            .await
+            .unwrap_or_else(|e| {
                 error!("Error exporting and uploading objective image: {e}");
-            },
-        );
+            });
     }
 }
 
@@ -229,7 +249,14 @@ impl GlobalMode for ZORetrievalMode {
                 let unwrapped_target = *self.unwrapped_pos.lock().await;
                 let target = self.target.clone();
                 let img_handle = tokio::spawn(async move {
-                    Self::exec_img_task(target, unwrapped_target, second_target, context_clone, c_tok_clone).await;
+                    Self::exec_img_task(
+                        target,
+                        unwrapped_target,
+                        second_target,
+                        context_clone,
+                        c_tok_clone,
+                    )
+                    .await;
                 });
                 tokio::pin!(img_handle);
                 tokio::select! {
@@ -284,9 +311,8 @@ impl GlobalMode for ZORetrievalMode {
                 if state == FlightState::Acquisition {
                     to_target.abs() > I32F32::lit("10.0") * angle
                 } else {
-                    let transition = I32F32::from_num(
-                        TRANS_DEL.get(&(state, FlightState::Acquisition)).unwrap().as_secs(),
-                    );
+                    let transition =
+                        I32F32::from_num(state.dt_to(FlightState::Acquisition).as_secs());
                     to_target.abs() > I32F32::lit("10.0") * angle + transition
                 }
             };

@@ -1,12 +1,9 @@
-use crate::flight_control::camera_controller::CameraController;
-use crate::flight_control::objective::beacon_objective::BeaconObjective;
-use crate::flight_control::{
-    flight_computer::FlightComputer, flight_state::FlightState,
-    objective::known_img_objective::KnownImgObjective,
+use super::{
+    flight_computer::FlightComputer, flight_state::FlightState, camera_controller::CameraController,
+    objective::{known_img_objective::KnownImgObjective, beacon_objective::BeaconObjective},
 };
-use crate::http_handler::ImageObjective;
 use crate::http_handler::{
-    ZoneType,
+    ZoneType, ImageObjective,
     http_request::{
         objective_list_get::ObjectiveListRequest, request_common::NoBodyHTTPRequestType,
     },
@@ -21,12 +18,25 @@ use tokio::{
     time::Instant,
 };
 
-pub struct Supervisor {
+/// The [`Supervisor`] is responsible for high-level management of active operations,
+/// including observation tracking, secret objective handling, daily map uploads,
+/// safe-mode monitoring, and real-time event listening.
+///
+/// It acts as coordinator between observation, event streams, and
+/// objective scheduling, while ensuring asynchronous notifications and channel-based
+/// communication between system components.
+pub(crate) struct Supervisor {
+    /// Lock-protected reference to the [`FlightComputer`], used for updating the global observation.
     f_cont_lock: Arc<RwLock<FlightComputer>>,
+    /// Notifier that signals when a safe-mode transition is detected.
     safe_mon: Arc<Notify>,
+    /// Channel for sending newly discovered zoned objectives to the main scheduling system.
     zo_mon: mpsc::Sender<KnownImgObjective>,
+    /// Channel for sending active beacon objectives to the main scheduling system.
     bo_mon: mpsc::Sender<BeaconObjective>,
+    /// Broadcast channel for relaying real-time mission announcements or telemetry updates.
     event_hub: broadcast::Sender<(DateTime<Utc>, String)>,
+    /// In-memory buffer of currently known secret imaging objectives that await triggering.
     current_secret_objectives: RwLock<Vec<ImageObjective>>,
 }
 
@@ -37,11 +47,18 @@ impl Supervisor {
     const OBJ_UPDATE_INTERVAL: TimeDelta = TimeDelta::seconds(15);
     /// Constant minimum time delta to the objective start for sending the objective to `main`
     const B_O_MIN_DT: TimeDelta = TimeDelta::minutes(20);
-
+    /// Environment variable used to skip known objectives by ID (comma-separated).
     const ENV_SKIP_OBJ: &'static str = "SKIP_OBJ";
 
-    /// Creates a new instance of `Supervisor`
-    pub fn new(
+    /// Creates a new [`Supervisor`] instance and returns associated receivers
+    /// for zoned and beacon objectives.
+    ///
+    /// # Arguments
+    /// * `f_cont_lock` – Shared lock to the flight computer state.
+    ///
+    /// # Returns
+    /// Tuple of ([`Supervisor`], `zo_receiver`, `bo_receiver`)
+    pub(crate) fn new(
         f_cont_lock: Arc<RwLock<FlightComputer>>,
     ) -> (
         Supervisor,
@@ -65,13 +82,18 @@ impl Supervisor {
         )
     }
 
-    pub fn safe_mon(&self) -> Arc<Notify> { Arc::clone(&self.safe_mon) }
+    /// Returns a clone of the safe-mode notifier.
+    pub(crate) fn safe_mon(&self) -> Arc<Notify> { Arc::clone(&self.safe_mon) }
 
-    pub fn subscribe_event_hub(&self) -> broadcast::Receiver<(DateTime<Utc>, String)> {
+    /// Subscribes to the event hub to receive mission announcement broadcasts.
+    pub(crate) fn subscribe_event_hub(&self) -> broadcast::Receiver<(DateTime<Utc>, String)> {
         self.event_hub.subscribe()
     }
 
-    pub async fn run_announcement_hub(&self) {
+    /// Listens to the `/announcements` Event Source endpoint and broadcasts messages to subscribers.
+    ///
+    /// Automatically closes on error and logs termination as fatal.
+    pub(crate) async fn run_announcement_hub(&self) {
         let url = {
             let client = self.f_cont_lock.read().await.client();
             client.url().to_string()
@@ -95,7 +117,13 @@ impl Supervisor {
         fatal!("EventSource disconnected!");
     }
 
-    pub async fn run_daily_map_uploader(&self, c_cont: Arc<CameraController>) {
+    /// Triggers daily full map export and upload at 22:55 UTC.
+    ///
+    /// This repeats daily and logs errors upon failure.
+    ///
+    /// # Arguments
+    /// * `c_cont` – Shared reference to the `CameraController`.
+    pub(crate) async fn run_daily_map_uploader(&self, c_cont: Arc<CameraController>) {
         let now = Utc::now();
         let end_of_day = NaiveTime::from_hms_opt(22, 55, 0).unwrap();
         let upload_t = now.date_naive().and_time(end_of_day);
@@ -114,7 +142,15 @@ impl Supervisor {
         }
     }
 
-    pub async fn schedule_secret_objective(&self, id: usize, zone: [i32; 4]) {
+    /// Receive and schedule a secret objective `id` and assigns coordinates to it if valid.
+    /// This is called by the user console when assigning a zone to a secret objective.
+    ///
+    /// Only triggers if the objective is currently active and not expired.
+    ///
+    /// # Arguments
+    /// * `id` – Unique identifier of the objective.
+    /// * `zone` – Assigned coordinates `[x_1, y_1, x_2, y_2]`.
+    pub(crate) async fn schedule_secret_objective(&self, id: usize, zone: [i32; 4]) {
         let mut secret_obj = self.current_secret_objectives.write().await;
         if let Some(pos) =
             secret_obj.iter().position(|obj| obj.id() == id && obj.end() > Utc::now() && obj.start() < Utc::now() + TimeDelta::hours(4))
@@ -125,10 +161,14 @@ impl Supervisor {
         }
     }
 
-    /// Starts the supervisor loop to periodically call `update_observation`
-    /// and monitor position & state deviations.
+    /// Main observation loop that:
+    /// - Monitors for safe-mode transitions.
+    /// - Periodically polls objectives from the backend.
+    /// - Filters and sends active objectives to downstream systems.
+    ///
+    /// Includes ID caching, secret filtering, and fail-safe alerts.
     #[allow(clippy::cast_precision_loss, clippy::too_many_lines)]
-    pub async fn run_obs_obj_mon(&self) {
+    pub(crate) async fn run_obs_obj_mon(&self) {
         let mut last_objective_check = Utc::now() - Self::OBJ_UPDATE_INTERVAL;
         let mut id_list: HashSet<usize> = HashSet::new();
         Self::prefill_id_list(&mut id_list);
@@ -157,7 +197,7 @@ impl Supervisor {
                 let objective_list = ObjectiveListRequest {}.send_request(&handle).await.unwrap();
                 let mut send_img_objs = vec![];
                 let mut send_beac_objs = vec![];
-                
+
                 let mut secret_list = self.current_secret_objectives.write().await;
                 for img_obj in objective_list.img_objectives() {
                     let obj_on = img_obj.start() < Utc::now() && img_obj.end() > Utc::now();
@@ -196,7 +236,13 @@ impl Supervisor {
         }
     }
 
-    pub fn prefill_id_list(id_list: &mut HashSet<usize>) {
+    /// Reads the environment variable `SKIP_OBJ` and adds valid IDs to the internal filter list.
+    ///
+    /// Used to prevent repeat processing of already completed or irrelevant objectives.
+    ///
+    /// # Arguments
+    /// * `id_list` – A mutable reference to the set of objective IDs.
+    fn prefill_id_list(id_list: &mut HashSet<usize>) {
         let done_ids: Vec<Option<usize>> = env::var(Self::ENV_SKIP_OBJ)
             .unwrap_or_default()
             .split(',')

@@ -5,7 +5,7 @@ use super::{
 };
 use crate::flight_control::{
     flight_computer::FlightComputer,
-    flight_state::{FlightState, TRANS_DEL},
+    flight_state::FlightState,
     objective::known_img_objective::KnownImgObjective,
     orbit::{BurnSequence, ExitBurnResult},
     task::{
@@ -188,10 +188,9 @@ impl ZOPrepMode {
         }
         let burn_start = burn.start_i().t();
         let worst_case_first_comms_end = {
-            let to_dt = FlightComputer::get_to_comms_dt_est(c.k().f_cont()).await;
-            let state_change = (FlightState::Comms, FlightState::Acquisition);
-            let from_dt = TimeDelta::from_std(TRANS_DEL[&state_change]).unwrap_or(DT_0);
-            to_dt + TimeDelta::seconds(TaskController::IN_COMMS_SCHED_SECS as i64) + from_dt
+            let to_dt = FlightComputer::get_to_comms_t_est(c.k().f_cont()).await;
+            let state_change = FlightState::Comms.td_dt_to(FlightState::Acquisition);
+            to_dt + TimeDelta::seconds(TaskController::IN_COMMS_SCHED_SECS as i64) + state_change
         };
         if worst_case_first_comms_end + TimeDelta::seconds(5) > burn_start {
             let t = worst_case_first_comms_end.format("%d %H:%M:%S").to_string();
