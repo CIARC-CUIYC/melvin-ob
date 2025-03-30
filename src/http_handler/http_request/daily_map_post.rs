@@ -5,23 +5,30 @@ use super::request_common::{
 use std::{io, path::Path};
 use std::path::PathBuf;
 
+/// Request type for the /dailyMap endpoint.
 #[derive(Debug)]
-pub struct DailyMapRequest {
+pub(crate) struct DailyMapRequest {
+    /// File path to the current daily map png image file.
     image_path: PathBuf,
 }
 
 impl MultipartBodyHTTPRequestType for DailyMapRequest {
+    /// returns the path for the multipart image file.
     fn image_path(&self) -> &PathBuf { &self.image_path }
 }
 
 impl HTTPRequestType for DailyMapRequest {
+    /// Type of the expected response.
     type Response = DailyMapResponse;
+    /// `str` object representing the specific endpoint.
     fn endpoint(&self) -> &'static str { "/dailyMap" }
+    /// The corresponding HTTP Request Method.
     fn request_method(&self) -> HTTPRequestMethod { HTTPRequestMethod::Post }
 }
 
 impl DailyMapRequest {
-    pub fn new<P: AsRef<Path>>(image_path: P) -> Result<Self, io::Error> {
+    /// Constructs a new `DailyMapRequest` from an image path to the full snapshot.
+    pub(crate) fn new<P: AsRef<Path>>(image_path: P) -> Result<Self, io::Error> {
         let path = image_path.as_ref();
         if !path.exists() {
             return Err(io::Error::new(

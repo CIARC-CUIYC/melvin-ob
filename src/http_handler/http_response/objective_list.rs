@@ -3,16 +3,21 @@ use crate::http_handler::{
     http_response::response_common::SerdeJSONBodyHTTPResponseType,
 };
 
+/// Response type for the /objective endpoint -> GET
 #[derive(serde::Deserialize, Debug)]
-pub struct ObjectiveListResponse {
+pub(crate) struct ObjectiveListResponse {
+    /// `Vec` of zoned objectives, or here `ImageObjectives`
     #[serde(rename = "zoned_objectives")]
     img_objectives: Vec<ImageObjective>,
+    /// `Vec` of `BeaconObjectives`
     beacon_objectives: Vec<BeaconObjective>,
 }
 
 impl SerdeJSONBodyHTTPResponseType for ObjectiveListResponse {}
 
 impl ObjectiveListResponse {
-    pub fn img_objectives(&self) -> &Vec<ImageObjective> { &self.img_objectives }
-    pub fn beacon_objectives(&self) -> &Vec<BeaconObjective> { &self.beacon_objectives }
+    /// Returns the list of imaging objectives
+    pub(crate) fn img_objectives(&self) -> &Vec<ImageObjective> { &self.img_objectives }
+    /// Returns the list of beacon objectives
+    pub(crate) fn beacon_objectives(&self) -> &Vec<BeaconObjective> { &self.beacon_objectives }
 }
