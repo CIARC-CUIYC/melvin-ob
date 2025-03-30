@@ -1,42 +1,63 @@
-use crate::flight_control::flight_computer::FlightComputer;
-use crate::flight_control::objective::beacon_objective::{BeaconMeas, BeaconObjective};
-use crate::flight_control::objective::beacon_objective_done::BeaconObjectiveDone;
+use super::{
+    flight_computer::FlightComputer,
+    objective::{beacon_objective::{BeaconMeas, BeaconObjective}, beacon_objective_done::BeaconObjectiveDone}
+};
 use crate::http_handler::http_client::HTTPClient;
-use crate::{event, obj, warn};
+use crate::{event, obj, warn, logger::JsonDump};
 use chrono::{DateTime, TimeDelta, Utc};
 use regex::Regex;
-use std::collections::HashMap;
-use std::sync::{Arc, LazyLock};
-use std::time::Duration;
-use tokio::sync::mpsc::Receiver;
-use tokio::sync::{Mutex, RwLock, watch};
-use tokio::time::interval;
-use crate::logger::JsonDump;
+use std::{collections::HashMap, sync::{Arc, LazyLock}, time::Duration};
+use tokio::{time::interval, sync::{mpsc::Receiver, Mutex, RwLock, watch}};
 
+/// The [`BeaconController`] manages active and completed Beacon Objectives,
+/// handles beacon measurements received via communication messages,
+/// and submits results to the backend.
+///
+/// This controller supports:
+/// - Tracking currently active beacon objectives
+/// - Monitoring for objectives nearing their end
+/// - Handling and filtering incoming ping messages
+/// - Estimating distances from noisy measurements
+/// - Submitting completed objectives through the endpoint
 pub struct BeaconController {
+    /// Map of active beacon objectives indexed by ID.
     active_bo: RwLock<HashMap<usize, BeaconObjective>>,
+    /// Map of completed beacon objectives that were already submitted.
     done_bo: RwLock<HashMap<usize, BeaconObjectiveDone>>,
+    /// Receiver channel for newly announced beacon objectives.
     beacon_rx: Mutex<Receiver<BeaconObjective>>,
+    /// State broadcast channel for notifying listeners when beacon activity changes.
     state_rx: watch::Sender<BeaconControllerState>,
 }
 
+/// Enum representing whether any active beacon objectives are currently available.
 #[derive(Copy, Clone)]
 pub enum BeaconControllerState {
+    /// At least one active beacon objective is being tracked.
     ActiveBeacons,
+    /// No active beacon objectives are available.
     NoActiveBeacons,
 }
 
+/// Regular expression used to extract beacon ID and noisy distance value
+/// from a ping message received via telemetry (e.g. `"ID 17 DISTANCE 242.5"`).
 static BO_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)ID[_, ]?(\d+).*?DISTANCE[_, ]?(([0-9]*[.])?[0-9]+)").unwrap()
 });
 
 impl BeaconController {
+    /// Interval between automatic passive checks for near-expiring objectives.
     const TIME_TO_NEXT_PASSIVE_CHECK: Duration = Duration::from_secs(30);
-    const BEACON_OBJ_RETURN_WARNING: TimeDelta = TimeDelta::minutes(10);
-    const THRESHOLD_GUESSES_TO_DONE: usize = 15;
-    const BO_MSG_COMM_PROLONG: TimeDelta = TimeDelta::seconds(60);
+    /// Maximum number of guesses allowed before beacon is considered resolved.
     const MAX_ESTIMATE_GUESSES: usize = 5;
 
+    /// Creates a new [`BeaconController`] and associated state receiver.
+    ///
+    /// # Arguments
+    /// * `rx_beac` – A receiver channel to receive newly active beacon objectives.
+    ///
+    /// # Returns
+    /// A tuple `(BeaconController, watch::Receiver<BeaconControllerState>)`
     pub fn new(
         rx_beac: Receiver<BeaconObjective>,
     ) -> (Self, watch::Receiver<BeaconControllerState>) {
@@ -52,6 +73,14 @@ impl BeaconController {
         )
     }
 
+    /// Starts the main controller loop:
+    /// - Periodically checks for objectives nearing completion
+    /// - Reacts to newly received beacon objectives
+    ///
+    /// Should be spawned as a background task.
+    ///
+    /// # Arguments
+    /// * `handler` – A shared HTTP client for submitting finished objectives.
     pub async fn run(self: Arc<Self>, handler: Arc<HTTPClient>) {
         let mut approaching_end_interval = interval(Self::TIME_TO_NEXT_PASSIVE_CHECK);
         let mut beac_rx_locked = self.beacon_rx.lock().await;
@@ -67,10 +96,21 @@ impl BeaconController {
         }
     }
 
+    /// Returns the latest end timestamp of all currently active beacon objectives.
+    ///
+    /// # Returns
+    /// * `Some(DateTime)` if at least one active objective exists, `None` otherwise.
     pub async fn last_active_beac_end(&self) -> Option<DateTime<Utc>> {
         self.active_bo.read().await.values().map(BeaconObjective::end).max()
     }
 
+    /// Attempts to extract a beacon ID and noisy distance from a telemetry message.
+    ///
+    /// # Arguments
+    /// * `input` – The string message from the beacon communication system.
+    ///
+    /// # Returns
+    /// * `Some((id, distance))` if parsing succeeds, `None` otherwise.
     fn extract_id_and_d(input: &str) -> Option<(usize, f64)> {
         // Match the input string
         if let Some(captures) = BO_REGEX.captures(input) {
@@ -84,6 +124,13 @@ impl BeaconController {
         None // Return None if values cannot be extracted
     }
 
+    /// Processes a received ping message during comms window.
+    ///
+    /// If the ID matches an active beacon, updates it with a new noisy measurement.
+    ///
+    /// # Arguments
+    /// * `msg` – Tuple of timestamp and message string.
+    /// * `f_cont` – Lock to the flight computer for obtaining position.
     pub async fn handle_poss_bo_ping(
         &self,
         msg: (DateTime<Utc>, String),
@@ -109,6 +156,12 @@ impl BeaconController {
         }
     }
 
+    /// Registers a newly received beacon objective into the active tracking list.
+    ///
+    /// Notifies downstream listeners if this is the first active beacon.
+    ///
+    /// # Arguments
+    /// * `obj` – The received `BeaconObjective`.
     async fn add_beacon(&self, obj: BeaconObjective) {
         obj!(
             "The Beacon {}-'{}' is lit! Gondor calls for Aid! Available Timeframe {} - {}.",
@@ -124,10 +177,12 @@ impl BeaconController {
         }
     }
 
-    pub async fn latest_active_beac_end(&self) -> DateTime<Utc> {
-        self.active_bo.read().await.values().map(BeaconObjective::end).max().unwrap_or(Utc::now())
-    }
-
+    /// Moves finished objectives from `active_bo` to `done_bo`.
+    ///
+    /// Also logs and stores submission results.
+    ///
+    /// # Arguments
+    /// * `finished` – Map of completed objectives to move.
     async fn move_to_done(&self, finished: HashMap<usize, BeaconObjective>) {
         let mut done_bo = self.done_bo.write().await;
         for (id, beacon) in finished {
@@ -139,6 +194,14 @@ impl BeaconController {
         }
     }
 
+    /// Checks for objectives that are:
+    /// - About to end within [`TIME_TO_NEXT_PASSIVE_CHECK`]
+    /// - Have enough guesses already
+    ///
+    /// Submits them and updates internal state.
+    ///
+    /// # Arguments
+    /// * `handler` – Shared HTTP client for submission.
     async fn check_approaching_end(&self, handler: &Arc<HTTPClient>) {
         let mut finished = HashMap::new();
         let deadline = Utc::now() + Self::TIME_TO_NEXT_PASSIVE_CHECK - TimeDelta::seconds(10);
@@ -171,6 +234,12 @@ impl BeaconController {
         self.handle_beacon_submission(handler).await;
     }
 
+    /// Handles submission of all completed (done) beacon objectives.
+    ///
+    /// Applies random guesses or estimates based on measurement data.
+    ///
+    /// # Arguments
+    /// * `handler` – Shared HTTP client used to send results.
     async fn handle_beacon_submission(&self, handler: &Arc<HTTPClient>) {
         let mut done_beacons = self.done_bo.write().await;
         for beacon in done_beacons.values_mut() {
