@@ -6,7 +6,6 @@ mod http_handler;
 mod keychain;
 mod logger;
 mod mode_control;
-mod examp;
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
