@@ -135,6 +135,10 @@ impl BurnSequence {
     pub fn min_fuel(&self) -> I32F32 { self.min_fuel }
 }
 
+/// Represents the result of a completed evaluation of a potential burn sequence.
+///
+/// This includes the final sequence, associated cost, primary and (optional) secondary targets,
+/// and target metadata for logging/export.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ExitBurnResult {
     sequence: BurnSequence,
@@ -146,8 +150,10 @@ pub struct ExitBurnResult {
 }
 
 impl JsonDump for ExitBurnResult {
+    /// Returns a unique filename based on the zoned objective target ID.
     fn file_name(&self) -> String {format!("zo_burn_{}", self.target_id)  }
 
+    /// Specifies the output directory for dumped zoned objective results.
     fn dir_name(&self) -> &'static str { "zoned_objectives"  }
 }
 
@@ -204,6 +210,7 @@ impl<'a> BurnSequenceEvaluator<'a> {
     /// Weight assigned to additional target angle deviation.
     const ADD_ANGLE_DEV_W: I32F32 = I32F32::lit("3.0");
 
+    /// Constructs a new `BurnSequenceEvaluator` object
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         i: IndexedOrbitPosition,
@@ -243,6 +250,15 @@ impl<'a> BurnSequenceEvaluator<'a> {
         }
     }
 
+    /// Evaluates whether a burn sequence at a specific `dt` is viable and better than existing sequences.
+    ///
+    /// # Parameters
+    /// - `dt`: Time offset in seconds from current position.
+    /// - `max_needed_batt`: Upper bound for acceptable battery consumption.
+    ///
+    /// # Behavior
+    /// Builds and scores a candidate burn. Updates `best_burn` if it's better
+    /// and satisfies fuel/charge constraints.
     #[allow(clippy::cast_possible_wrap)]
     pub fn process_dt(&mut self, dt: usize, max_needed_batt: I32F32) {
         let pos = (self.i.pos() + self.vel * I32F32::from_num(dt)).wrap_around_map().round();
@@ -285,6 +301,17 @@ impl<'a> BurnSequenceEvaluator<'a> {
 
     pub fn get_best_burn(self) -> Option<ExitBurnResult> { self.best_burn }
 
+    /// Attempts to build a complete burn sequence using directional turns and
+    /// evaluating if the final orientation and arrival meet objective constraints.
+    ///
+    /// # Parameters
+    /// - `burn_i`: Starting orbit index for this sequence.
+    /// - `turns_in_dir`: Precomputed valid turn maneuvers in chosen direction.
+    /// - `break_cond`: Whether to break based on clockwise/anticlockwise matching.
+    /// - `best_target`: Target location and secondary offset.
+    ///
+    /// # Returns
+    /// A viable `BurnSequence` if one exists, otherwise `None`.
     #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss, clippy::cast_possible_truncation)]
     fn build_burn_sequence(
         &self,
@@ -362,6 +389,14 @@ impl<'a> BurnSequenceEvaluator<'a> {
         None
     }
 
+    /// Calculates the additional cost for a secondary target
+    ///
+    /// # Arguments
+    /// `bs`: corresponding burn sequence
+    /// `target`: A tuple of the primary and secondary target position
+    ///
+    /// # Returns
+    /// `I32F32` additional target cost factor
     fn get_add_target_cost(bs: &BurnSequence, target: &(Vec2D<I32F32>, Vec2D<I32F32>)) -> I32F32 {
         let last_pos = bs.sequence_pos().last().unwrap();
         let last_to_target = last_pos.unwrapped_to(&target.0);
@@ -374,6 +409,13 @@ impl<'a> BurnSequenceEvaluator<'a> {
         add_angle_dev * Self::ADD_ANGLE_DEV_W
     }
 
+    /// Calculates the normalized cost factor for a burn sequence
+    ///
+    /// # Arguments
+    /// * `bs`: the burn sequence to be evaluated
+    ///
+    /// # Returns
+    /// The `I32F32`-cost factor.
     fn get_bs_cost(&self, bs: &BurnSequence) -> I32F32 {
         let max_add_dt = self.turns.0.len().max(self.turns.1.len());
         // Normalize the factors contributing to burn sequence cost

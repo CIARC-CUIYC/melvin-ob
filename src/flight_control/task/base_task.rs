@@ -1,7 +1,7 @@
 use super::{
     image_task::ImageTask,
     switch_state_task::SwitchStateTask,
-    vel_change_task::{VelocityChangeTask, VelocityChangeTaskRationale},
+    vel_change_task::VelocityChangeTask,
 };
 use crate::fatal;
 use crate::flight_control::{
@@ -104,10 +104,9 @@ impl Task {
     /// - A new `Task` instance representing the velocity change task.
     pub fn vel_change_task(
         burn: BurnSequence,
-        rationale: VelocityChangeTaskRationale,
         t: DateTime<Utc>,
     ) -> Self {
-        Self { task_type: BaseTask::ChangeVelocity(VelocityChangeTask::new(burn, rationale)), t }
+        Self { task_type: BaseTask::ChangeVelocity(VelocityChangeTask::new(burn)), t }
     }
     /// Returns an immutable reference to the task's time delay.
     ///

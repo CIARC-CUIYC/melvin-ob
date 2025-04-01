@@ -12,7 +12,6 @@ use crate::flight_control::{
         TaskController,
         base_task::{BaseTask, Task},
         end_condition::EndCondition,
-        vel_change_task::VelocityChangeTaskRationale::OrbitEscape,
     },
 };
 use crate::mode_control::{
@@ -241,7 +240,7 @@ impl GlobalMode for ZOPrepMode {
         tokio::select!(
             _ = &mut sched_handle => {
                 info!("Additionally scheduling Orbit Escape Burn Sequence!");
-                context.k().t_cont().schedule_vel_change(self.exit_burn.sequence().clone(), OrbitEscape).await;
+                context.k().t_cont().schedule_vel_change(self.exit_burn.sequence().clone()).await;
                 context.k().con().send_tasklist().await;
             },
             () = safe_mon.notified() => {

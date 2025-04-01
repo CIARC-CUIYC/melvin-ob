@@ -12,6 +12,7 @@ pub struct ScoreGrid {
 }
 
 impl ScoreGrid {
+    /// The minimum score used to initialize unwanted final states
     pub const MIN_SCORE: i32 = i32::MIN + 2;
     /// Creates a new [`ScoreGrid`] with specified dimensions, initializing all values to `0`.
     ///

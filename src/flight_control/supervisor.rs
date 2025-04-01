@@ -202,7 +202,7 @@ impl Supervisor {
                 for img_obj in objective_list.img_objectives() {
                     let obj_on = img_obj.start() < Utc::now() && img_obj.end() > Utc::now();
                     let is_secret = matches!(img_obj.zone_type(), ZoneType::SecretZone(_));
-                    let is_future = img_obj.start() > Utc::now() + TimeDelta::hours(3);
+                    let is_future = img_obj.start() > Utc::now();
                     let is_future_short = img_obj.end() < Utc::now() + TimeDelta::hours(5);
                     if !id_list.contains(&img_obj.id()) {
                         if is_secret {

@@ -4,8 +4,7 @@ use crate::flight_control::{
     common::vec2d::{Vec2D, VecAxis},
 };
 use crate::{fatal, warn};
-use bincode::config::{Configuration, Fixint, LittleEndian};
-use bincode::error::EncodeError;
+use bincode::{error::EncodeError, config::{Configuration, Fixint, LittleEndian}};
 use bitvec::{
     bitbox,
     order::Lsb0,
@@ -15,21 +14,30 @@ use fixed::types::I32F32;
 use std::env;
 use strum_macros::Display;
 
+/// Represents a single segment of the orbit path between two points.
+/// Used to model transitions across map boundaries and detect deviations from the orbit.
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub(super) struct OrbitSegment {
+    /// Starting position of the orbit segment.
     start: Vec2D<I32F32>,
+    /// Ending position of the orbit segment.
     end: Vec2D<I32F32>,
+    /// Delta vector from start to end.
     delta: Vec2D<I32F32>,
 }
 
 impl OrbitSegment {
+    /// Creates a new orbit segment from two positions.
     fn new(start: Vec2D<I32F32>, end: Vec2D<I32F32>) -> Self {
         let delta = end - start;
         Self { start, end, delta }
     }
-    pub(crate) fn start(&self) -> &Vec2D<I32F32> { &self.start }
-    pub(crate) fn end(&self) -> &Vec2D<I32F32> { &self.end }
 
+    /// Returns the start point of the segment.
+    pub(crate) fn start(&self) -> &Vec2D<I32F32> { &self.start }
+    /// Returns the end point of the segment.
+    pub(crate) fn end(&self) -> &Vec2D<I32F32> { &self.end }
+    /// Computes the absolute vector distance from a point to the segment midpoint.
     fn get_proj_dist(&self, pos: &Vec2D<I32F32>) -> (VecAxis, I32F32) {
         let (t_x, t_y) = self.tx_tys(pos);
 
@@ -49,7 +57,7 @@ impl OrbitSegment {
             (VecAxis::Y, deviation_y)
         }
     }
-
+    /// Returns the projected deviation along the dominant axis from a given position to the segment.
     fn tx_tys(&self, pos: &Vec2D<I32F32>) -> (I32F32, I32F32) {
         let t_x = if self.delta.x().abs() > I32F32::DELTA {
             (pos.x() - self.start.x()) / self.delta.x()
@@ -87,7 +95,7 @@ pub struct ClosedOrbit {
     max_image_dt: I32F32,
     /// A bitvector indicating the completion status of orbit segments.
     done: BitBox<usize, Lsb0>,
-
+    /// A vector containing all of the orbits segments.
     segments: Vec<OrbitSegment>,
 }
 
@@ -101,8 +109,11 @@ pub enum OrbitUsabilityError {
 }
 
 impl ClosedOrbit {
+    /// ENV Var marking that the orbit configuration should be exported
     const EXPORT_ORBIT_ENV: &'static str = "EXPORT_ORBIT";
+    /// ENV Var marking that it should be tried to import the orbit configuration
     const TRY_IMPORT_ENV: &'static str = "TRY_IMPORT_ORBIT";
+    /// File were the orbit should be serialized to/deserialized from
     const DEF_FILEPATH: &'static str = "orbit.bin";
     /// Creates a new [`ClosedOrbit`] instance using a given [`OrbitBase`] and [`CameraAngle`].
     ///
@@ -127,11 +138,13 @@ impl ClosedOrbit {
             },
         }
     }
-    
+
+    /// Clears all completion tracking for the orbit.
     pub fn clear_done(&mut self) {
         self.done.fill(false);
     }
 
+    /// Tries to import a previously serialized orbit if environment variable `TRY_IMPORT_ORBIT=1`.
     pub fn try_from_env() -> Option<Self> {
         if env::var(Self::TRY_IMPORT_ENV).is_ok_and(|s| s == "1") {
             Self::import_from(Self::DEF_FILEPATH).ok()
@@ -140,6 +153,7 @@ impl ClosedOrbit {
         }        
     }
 
+    /// Tries to export the current orbit to disk if `EXPORT_ORBIT=1` is set in the environment.
     pub fn try_export_default(&self) {
         if env::var(Self::EXPORT_ORBIT_ENV).is_ok_and(|s| s == "1") {
             self.export_to(Self::DEF_FILEPATH).unwrap_or_else(|e| {
@@ -147,14 +161,16 @@ impl ClosedOrbit {
             });
         }
     }
-    
+
+    /// Deserializes a saved orbit from disk.
     fn import_from(filename: &'static str) -> Result<Self, std::io::Error> {
         let mut file = std::fs::OpenOptions::new().read(true).open(filename)?;
         bincode::serde::decode_from_std_read(&mut file, Self::get_serde_config()).map_err(|e| {
             fatal!("Failed to import orbit from {}: {}", filename, e);
         })
     }
-    
+
+    /// Serializes the orbit to a given file path using fixed-size encoding.
     fn export_to(&self, filename: &'static str) -> Result<(), EncodeError> {
         let mut file = std::fs::OpenOptions::new()
             .create(true)
@@ -166,10 +182,12 @@ impl ClosedOrbit {
         Ok(())
     }
 
+    /// Returns a `bincode` serialization config with little-endian fixed-width layout.
     fn get_serde_config() -> Configuration<LittleEndian, Fixint> {
         bincode::config::standard().with_little_endian().with_fixed_int_encoding()
     }
 
+    /// Computes all forward-wrapped orbit segments.
     fn compute_segments(base_point: &Vec2D<I32F32>, vel: &Vec2D<I32F32>) -> Vec<OrbitSegment> {
         let mut segments = Vec::new();
 
@@ -309,8 +327,10 @@ impl ClosedOrbit {
         None
     }
 
+    /// Returns a reference to all orbit segments.
     pub(super) fn segments(&self) -> &Vec<OrbitSegment> { &self.segments }
     
+    /// Calculates the coverage from the done - bitmap
     pub fn get_coverage(&self) -> I32F32 {
         let zeros = I32F32::from_num(self.done.count_zeros());
         let length = I32F32::from_num(self.done.len());

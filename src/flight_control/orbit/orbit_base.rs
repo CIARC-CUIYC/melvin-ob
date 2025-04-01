@@ -41,6 +41,7 @@ impl OrbitBase {
         }
     }
     
+    /// Test initialize an orbit base
     #[cfg(test)]
     pub fn test(pos: Vec2D<I32F32>, vel: Vec2D<I32F32>) -> Self {
         Self {
@@ -127,6 +128,8 @@ impl OrbitBase {
         }
     }
 
+    /// Returns the footpoint of the orbit base
     pub fn fp(&self) -> &Vec2D<I32F32> { &self.fp }
+    /// Returns the constant velocity of the orbit base
     pub fn vel(&self) -> &Vec2D<I32F32> { &self.vel }
 }

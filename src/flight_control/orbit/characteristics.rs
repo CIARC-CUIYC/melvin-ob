@@ -15,7 +15,7 @@ pub struct OrbitCharacteristics {
     orbit_full_period: usize,
     /// The entry position of the orbit indexed in time and position.
     i_entry: IndexedOrbitPosition,
-
+    /// The already performed number of fsm mode switches
     mode_switches: usize,
 }
 
@@ -51,8 +51,9 @@ impl OrbitCharacteristics {
     /// Retrieves the indexed entry position of the current orbit entry.
     pub fn i_entry(&self) -> IndexedOrbitPosition { self.i_entry }
 
+    /// Returns the number of mode switches already performed
     pub fn mode_switches(&self) -> usize { self.mode_switches }
-    /// Marks the end of an orbital task schedule and updates the entry position.
+    /// Marks the end of an orbital mode and updates the entry position.
     ///
     /// # Arguments
     /// - `now`: The new `IndexedOrbitPosition` representing the current state.
@@ -65,7 +66,12 @@ impl OrbitCharacteristics {
         self.i_entry = now;
         self.mode_switches += 1;
     }
-    
+
+    /// Marks the end of an orbital mode after re-entering the orbit.
+    ///
+    /// # Arguments
+    /// * `now_pos`: The current position
+    /// * `index`: The return index where re-entering was performed 
     pub fn finish_entry(&mut self, now_pos: Vec2D<I32F32>, index: usize) {
         let now = IndexedOrbitPosition::new(index, self.orbit_full_period, now_pos);
         info!(

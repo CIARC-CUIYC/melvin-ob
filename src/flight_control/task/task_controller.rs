@@ -1,15 +1,16 @@
 use super::{
     atomic_decision::AtomicDecision, atomic_decision_cube::AtomicDecisionCube, base_task::Task,
-    score_grid::ScoreGrid, vel_change_task::VelocityChangeTaskRationale,
+    score_grid::ScoreGrid,
 };
-use crate::flight_control::camera_state::CameraAngle;
-use crate::flight_control::orbit::{BurnSequenceEvaluator, ExitBurnResult};
-use crate::flight_control::task::end_condition::EndCondition;
 use crate::flight_control::{
+    camera_state::CameraAngle,
     common::{linked_box::LinkedBox, vec2d::Vec2D},
     flight_computer::FlightComputer,
     flight_state::FlightState,
-    orbit::{BurnSequence, ClosedOrbit, IndexedOrbitPosition},
+    orbit::{
+        BurnSequence, BurnSequenceEvaluator, ClosedOrbit, ExitBurnResult, IndexedOrbitPosition,
+    },
+    task::end_condition::EndCondition,
 };
 use crate::{error, info, log};
 use bitvec::prelude::BitRef;
@@ -20,20 +21,17 @@ use std::{collections::VecDeque, fmt::Debug, sync::Arc};
 use tokio::sync::RwLock;
 
 /// [`TaskController`] manages and schedules tasks for MELVIN.
-/// It leverages a thread-safe task queue and notifies waiting threads when
-/// new tasks are added or processed.
+/// It leverages a thread-safe task queue and powerful scheduling algorithms.
 ///
 /// # Fields
 /// - `image_schedule`: A shared Reference to a [`VecDeque`] holding [`Task`].
-/// - `next_image_notify`: A shared Reference to a [`Condvar`] indicating changes to the first element
-///   in `image_schedule`
 #[derive(Debug)]
 pub struct TaskController {
-    /// Schedule for the next images, represented by image tasks.
+    /// Schedule for the next task, e.g. state switches, burn sequences, ...
     task_schedule: Arc<RwLock<VecDeque<Task>>>,
 }
 
-/// Struct holding the result of the optimal orbit dynamic program
+/// Helper Struct holding the result of the optimal orbit dynamic program
 struct OptimalOrbitResult {
     /// Flattened 3D-Array holding decisions in time, energy, state dimension
     pub decisions: AtomicDecisionCube,
@@ -44,42 +42,36 @@ struct OptimalOrbitResult {
 impl TaskController {
     /// The maximum number of seconds for orbit prediction calculations.
     const MAX_ORBIT_PREDICTION_SECS: u32 = 80000;
-
     /// The resolution for battery levels used in calculations, expressed in fixed-point format.
     const BATTERY_RESOLUTION: I32F32 = I32F32::lit("0.1");
 
+    /// The minimum batter threshold for all scheduling operations
     pub const MIN_BATTERY_THRESHOLD: I32F32 = I32F32::lit("10.00");
+    /// The maximum battery treshold for all scheduling operations
     pub const MAX_BATTERY_THRESHOLD: I32F32 = I32F32::lit("90.00");
-
     /// The resolution for time duration calculations, expressed in fixed-point format.
     const TIME_RESOLUTION: I32F32 = I32F32::lit("1.0");
-
     /// The minimum delta time for scheduling objectives, in seconds.
     const OBJECTIVE_SCHEDULE_MIN_DT: usize = 1000;
-
     /// The minimum tolerance for retrieving scheduled objectives.
     const OBJECTIVE_MIN_RETRIEVAL_TOL: usize = 100;
-
     /// The initial battery threshold for performing a maneuver.
     const MANEUVER_INIT_BATT_TOL: I32F32 = I32F32::lit("10.0");
-
     /// The minimum delta time required for detumble maneuvers, in seconds.
-    pub(crate) const MANEUVER_MIN_DETUMBLE_DT: usize = 100;
-
-    /// Default maximum time duration for burn sequences, in seconds.
-    const DEF_MAX_BURN_SEQUENCE_TIME: i64 = 1_000_000_000;
-
+    pub(crate) const MANEUVER_MIN_DETUMBLE_DT: usize = 20;
+    /// The Delay for imaging objectives when the first image should be shot
     pub const ZO_IMAGE_FIRST_DEL: TimeDelta = TimeDelta::seconds(5);
-
-    /// Maximum allowable absolute deviation after a correction burn.
-    const MAX_AFTER_CB_DEV: I32F32 = I32F32::lit("5.0");
-
+    /// The number of seconds that are planned per acquisition cycle
     pub const IN_COMMS_SCHED_SECS: usize = 1100;
+    /// The period (number of seconds) after which another comms sequence should be scheduled.
     const COMMS_SCHED_PERIOD: usize = 800;
+    /// The usable `TimeDelta` between communication state switches
     #[allow(clippy::cast_possible_wrap)]
     const COMMS_SCHED_USABLE_TIME: TimeDelta =
         TimeDelta::seconds((Self::COMMS_SCHED_PERIOD - 2 * 180) as i64);
+    /// The charge usage per strictly timed communication cycle
     pub const COMMS_CHARGE_USAGE: I32F32 = I32F32::lit("9.00");
+    /// The minimum charge needed to enter communication state
     pub const MIN_COMMS_START_CHARGE: I32F32 = I32F32::lit("20.0");
 
     /// Creates a new instance of the `TaskController` struct.
@@ -88,7 +80,6 @@ impl TaskController {
     /// - A new `TaskController` with an empty task schedule.
     pub fn new() -> Self { Self { task_schedule: Arc::new(RwLock::new(VecDeque::new())) } }
 
-    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
     /// Initializes the optimal orbit schedule calculation.
     ///
     /// This method sets up the required data structures and parameters necessary for determining
@@ -102,6 +93,7 @@ impl TaskController {
     ///
     /// # Returns
     /// * `OptimalOrbitResult` - The final result containing calculated decisions and coverage slice used in the optimization.
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
     fn init_sched_dp(
         orbit: &ClosedOrbit,
         p_t_shift: usize,
@@ -154,7 +146,6 @@ impl TaskController {
         )
     }
 
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
     /// Calculates the optimal orbit schedule based on predicted states and actions.
     ///
     /// This function iterates backward over a prediction window (`pred_dt`) to compute the best decisions
@@ -170,6 +161,7 @@ impl TaskController {
     ///
     /// # Returns
     /// - `OptimalOrbitResult`: Contains the final decision cube and the score grid linked box.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
     fn calculate_optimal_orbit_schedule<'a>(
         pred_dt: usize,
         mut p_t_it: impl Iterator<Item = BitRef<'a>>,
@@ -221,6 +213,19 @@ impl TaskController {
         OptimalOrbitResult { decisions: dec_cube, coverage_slice: score_cube }
     }
 
+    /// Finds the last possible time offset (`dt`) at which a burn can still start to reach a target.
+    ///
+    /// The method simulates forward motion and calculates how long a burn can be delayed while
+    /// still ensuring that MELVIN can traverse the remaining distance in time.
+    ///
+    /// # Arguments
+    /// - `i`: The current orbit index position.
+    /// - `vel`: Current velocity vector.
+    /// - `targets`: Target positions and additional target direction vector.
+    /// - `max_dt`: Upper bound for time offset.
+    ///
+    /// # Returns
+    /// - `dt`: The latest viable starting offset in seconds.
     fn find_last_possible_dt(
         i: &IndexedOrbitPosition,
         vel: &Vec2D<I32F32>,
@@ -230,7 +235,8 @@ impl TaskController {
         let orbit_vel_abs = vel.abs();
 
         for dt in (Self::OBJECTIVE_SCHEDULE_MIN_DT..max_dt).rev() {
-            let pos_i96: Vec2D<I96F32> = i.pos().to_num::<I96F32>() + (*vel).to_num::<I96F32>() * I96F32::from_num(dt);
+            let pos_i96: Vec2D<I96F32> =
+                i.pos().to_num::<I96F32>() + (*vel).to_num::<I96F32>() * I96F32::from_num(dt);
             let pos = pos_i96.to_num::<I32F32>().wrap_around_map();
             let mut min_dt = usize::MAX;
 
@@ -274,13 +280,6 @@ impl TaskController {
     ///
     /// # Panics
     /// Panics if no valid burn sequence is found or the target is unreachable.
-    #[allow(
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss,
-        clippy::cast_precision_loss,
-        clippy::cast_possible_wrap,
-        clippy::too_many_lines
-    )]
     pub fn calculate_single_target_burn_sequence(
         curr_i: IndexedOrbitPosition,
         curr_vel: Vec2D<I32F32>,
@@ -298,12 +297,7 @@ impl TaskController {
         // Spawn a task to compute possible turns asynchronously
         let turns = FlightComputer::compute_possible_turns(curr_vel);
 
-        let last_possible_dt = Self::find_last_possible_dt(
-            &curr_i,
-            &curr_vel,
-            &target,
-            max_dt,
-        );
+        let last_possible_dt = Self::find_last_possible_dt(&curr_i, &curr_vel, &target, max_dt);
 
         // Define range for evaluation and initialize best burn sequence tracker
         let remaining_range = Self::OBJECTIVE_SCHEDULE_MIN_DT..=last_possible_dt;
@@ -318,7 +312,7 @@ impl TaskController {
             max_off_orbit_dt,
             turns,
             fuel_left,
-            target_id
+            target_id,
         );
 
         for dt in remaining_range.rev() {
@@ -328,13 +322,19 @@ impl TaskController {
         evaluator.get_best_burn()
     }
 
-    #[allow(
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss,
-        clippy::cast_precision_loss,
-        clippy::cast_possible_wrap,
-        clippy::too_many_lines
-    )]
+    /// Calculates an optimal burn sequence targeting multiple positions within a time window.
+    ///
+    /// # Arguments
+    /// - `curr_i`: Current indexed orbit position.
+    /// - `curr_vel`: Current velocity vector.
+    /// - `entries`: Array of target positions with uncertainties.
+    /// - `target_start_time`: When acquisition window starts.
+    /// - `target_end_time`: Deadline to acquire.
+    /// - `fuel_left`: Remaining propellant budget.
+    /// - `target_id`: ID of the image objective.
+    ///
+    /// # Returns
+    /// `Some(ExitBurnResult)` on success, or `None` if no valid burn sequence was found.
     pub fn calculate_multi_target_burn_sequence(
         curr_i: IndexedOrbitPosition,
         curr_vel: Vec2D<I32F32>,
@@ -350,9 +350,8 @@ impl TaskController {
 
         // Spawn a task to compute possible turns asynchronously
         let turns = FlightComputer::compute_possible_turns(curr_vel);
-        
-        let last_possible_dt =
-            Self::find_last_possible_dt(&curr_i, &curr_vel, &entries, max_dt);
+
+        let last_possible_dt = Self::find_last_possible_dt(&curr_i, &curr_vel, &entries, max_dt);
 
         // Define range for evaluation and initialize best burn sequence tracker
         let remaining_range = Self::OBJECTIVE_SCHEDULE_MIN_DT..=last_possible_dt;
@@ -367,7 +366,7 @@ impl TaskController {
             max_off_orbit_dt,
             turns,
             fuel_left,
-            target_id
+            target_id,
         );
 
         for dt in remaining_range.rev() {
@@ -377,7 +376,22 @@ impl TaskController {
         evaluator.get_best_burn()
     }
 
-    fn get_min_max_dt(start_time: DateTime<Utc>, end_time: DateTime<Utc>, curr: DateTime<Utc>) -> (usize, usize) {
+    /// Determines the earliest and latest time offsets (in seconds) for a given target interval.
+    ///
+    /// # Arguments
+    /// - `start_time`: UTC time when the target becomes valid.
+    /// - `end_time`: UTC time by which the target must be acquired.
+    /// - `curr`: The current UTC time.
+    ///
+    /// # Returns
+    /// A tuple of `(min_dt, max_dt)`:
+    /// - `min_dt`: The earliest time offset from `curr` to consider.
+    /// - `max_dt`: The latest time offset from `curr` before the target deadline.
+    fn get_min_max_dt(
+        start_time: DateTime<Utc>,
+        end_time: DateTime<Utc>,
+        curr: DateTime<Utc>,
+    ) -> (usize, usize) {
         // Calculate maximum allowed time delta for the maneuver, clamp to a maximum of 8 hours
         let time_left = (end_time - curr).clamp(TimeDelta::zero(), TimeDelta::hours(8));
         let max_dt = {
@@ -385,7 +399,7 @@ impl TaskController {
             max - Self::OBJECTIVE_MIN_RETRIEVAL_TOL
         };
 
-        let time_to_start = (start_time - curr).clamp(TimeDelta::zero(), TimeDelta::hours(3));
+        let time_to_start = (start_time - curr).max(TimeDelta::zero());
         let min_dt = {
             if time_to_start.num_seconds() > 0 {
                 let min = usize::try_from(time_to_start.num_seconds()).unwrap_or(0);
@@ -397,6 +411,30 @@ impl TaskController {
         (min_dt, max_dt)
     }
 
+    /// Schedules a single communication cycle within an orbit plan.
+    ///
+    /// This function is responsible for planning a charge-acquire-comm cycle based on
+    /// the given start time and constraints. It ensures sufficient battery and time are
+    /// available to enter communication mode, and either schedules the cycle or short-circuits
+    /// if the window is too small.
+    ///
+    /// # Arguments
+    /// - `c_end`: A tuple of the form `(DateTime<Utc>, I32F32)` representing the end time of the
+    ///   previous communication cycle and the remaining battery charge.
+    /// - `sched_start`: A tuple `(DateTime<Utc>, usize)` indicating the start time and the
+    ///   orbit index for scheduling.
+    /// - `orbit`: A reference to the [`ClosedOrbit`] used for orbit-based scheduling decisions.
+    /// - `strict_end`: A tuple `(DateTime<Utc>, usize)` specifying the hard cutoff for scheduling.
+    ///
+    /// # Returns
+    /// - `Some((DateTime<Utc>, I32F32))` with the projected end time and battery after the
+    ///   next comms cycle, if another cycle can be scheduled.
+    /// - `None` if the scheduling window is too short and no comms cycle can be inserted.
+    ///
+    /// # Notes
+    /// - This method ensures each comms cycle starts with sufficient charge.
+    /// - Uses [`COMMS_SCHED_USABLE_TIME`] and [`COMMS_CHARGE_USAGE`] constants to
+    ///   define time and battery requirements.
     #[allow(clippy::cast_possible_wrap)]
     async fn sched_single_comms_cycle(
         &self,
@@ -437,12 +475,20 @@ impl TaskController {
         }
     }
 
-    #[allow(
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss,
-        clippy::cast_precision_loss,
-        clippy::cast_possible_wrap
-    )]
+    /// Computes and schedules tasks that balance imaging and communication passes.
+    ///
+    /// This scheduling method handles alternating communication slots interleaved with optimized orbit
+    /// operation schedules. It tries to maximize productivity while periodically entering comms mode.
+    ///
+    /// # Arguments
+    /// - `self`: Shared reference to this `TaskController`.
+    /// - `orbit_lock`: Reference to the current orbital model.
+    /// - `f_cont_lock`: Reference to the flight controller state.
+    /// - `scheduling_start_i`: Position to start scheduling from.
+    /// - `last_bo_end_t`: Deadline after which comms mode must stop.
+    /// - `first_comms_end`: Initial estimate of when the first comms cycle ends.
+    /// - `end_cond`: Optional condition that defines the final desired state and battery level.
+    #[allow(clippy::cast_possible_wrap, clippy::cast_precision_loss)]
     pub async fn sched_opt_orbit_w_comms(
         self: Arc<TaskController>,
         orbit_lock: Arc<RwLock<ClosedOrbit>>,
@@ -454,7 +500,6 @@ impl TaskController {
     ) {
         log!("Calculating/Scheduling optimal orbit with passive beacon scanning.");
         let computation_start = Utc::now();
-        // TODO: later maybe this shouldnt be cleared here anymore
         self.clear_schedule().await;
         let t_time = FlightState::Charge.td_dt_to(FlightState::Comms);
         let strict_end = (last_bo_end_t, scheduling_start_i.index_then(last_bo_end_t));
@@ -511,11 +556,7 @@ impl TaskController {
                     .get_max_s(Self::map_e_to_dp(next_start_e));
                 (next_start_e, st)
             };
-            self.schedule_switch(
-                FlightState::from_dp_usize(target.1),
-                next_start.0 - t_time,
-            )
-            .await;
+            self.schedule_switch(FlightState::from_dp_usize(target.1), next_start.0 - t_time).await;
             self.sched_opt_orbit_res(next_start.0, result, 0, false, target).await;
         }
 
@@ -534,21 +575,8 @@ impl TaskController {
     /// - `orbit_lock`: An `Arc<RwLock<ClosedOrbit>>` containing the shared closed orbit data.
     /// - `f_cont_lock`: An `Arc<RwLock<FlightComputer>>` containing the flight control state.
     /// - `scheduling_start_i`: The starting orbital position as an `IndexedOrbitPosition`.
-    ///
-    /// # Behavior
-    /// - Reads the closed orbit data and calculates the optimal orbit path.
-    /// - Determines the time shifts required for optimal scheduling.
-    /// - Schedules the resulting tasks with the `FlightComputer` state and logs their details.
-    ///
-    /// # Logs
-    /// - Outputs detailed timing information about the calculation.
-    /// - Logs the number of tasks generated during scheduling.
-    #[allow(
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss,
-        clippy::cast_precision_loss,
-        clippy::cast_possible_wrap
-    )]
+    /// - `end`: An optional `EndCondition` indicating the desired final status of MELVIN
+    #[allow(clippy::cast_precision_loss, clippy::cast_possible_wrap, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     pub async fn sched_opt_orbit(
         self: Arc<TaskController>,
         orbit_lock: Arc<RwLock<ClosedOrbit>>,
@@ -590,6 +618,15 @@ impl TaskController {
         info!("Tasks after scheduling: {n_tasks}. Calculation and processing took {dt_tot:.2}s.");
     }
 
+    /// Retrieves the current battery level and flight state index from the [`FlightComputer`].
+    ///
+    /// # Arguments
+    /// - `f_cont_lock`: A shared reference to the flight computer's `RwLock` wrapper.
+    ///
+    /// # Returns
+    /// - A tuple containing:
+    ///   - `I32F32`: The current battery level.
+    ///   - `usize`: The current flight state encoded as a decision-programming (DP) index.
     async fn get_batt_and_state(f_cont_lock: &Arc<RwLock<FlightComputer>>) -> (I32F32, usize) {
         // Retrieve the current battery level and satellite state
         let f_cont = f_cont_lock.read().await;
@@ -597,6 +634,13 @@ impl TaskController {
         (batt, f_cont.state().to_dp_usize())
     }
 
+    /// Maps a battery level (`I32F32`) to a discrete DP index for scheduling purposes.
+    ///
+    /// # Arguments
+    /// - `e`: The current battery level to convert.
+    ///
+    /// # Returns
+    /// - `usize`: The index used in dynamic programming grids to represent energy.
     fn map_e_to_dp(e: I32F32) -> usize {
         let e_clamp = e.clamp(Self::MIN_BATTERY_THRESHOLD, Self::MAX_BATTERY_THRESHOLD);
 
@@ -605,6 +649,13 @@ impl TaskController {
             .to_num::<usize>()
     }
 
+    /// Maps a DP battery index (`usize`) back to a continuous `I32F32` battery level.
+    ///
+    /// # Arguments
+    /// - `dp`: The index representing the discrete battery level.
+    ///
+    /// # Returns
+    /// - `I32F32`: The real-valued battery charge corresponding to the DP index.
     fn map_dp_to_e(dp: usize) -> I32F32 {
         (Self::MIN_BATTERY_THRESHOLD + (I32F32::from_num(dp) * Self::BATTERY_RESOLUTION))
             .min(Self::MAX_BATTERY_THRESHOLD)
@@ -622,14 +673,6 @@ impl TaskController {
     ///
     /// # Returns
     /// - The total number of tasks added to the task schedule.
-    ///
-    /// # Behavior
-    /// - Reads the current battery level and flight state from the flight computer.
-    /// - Maps the battery level to a normalized range using defined thresholds.
-    /// - Iterates over the predicted decisions in the optimal orbit result to schedule tasks.
-    /// - Tasks are dynamically scheduled based on the required transitions and predicted durations.
-    /// - Adjusts the state and battery level during simulation.
-    /// - Handles transitions between charging and acquisition states with proper time delays.
     async fn sched_opt_orbit_res(
         &self,
         base_t: DateTime<Utc>,
@@ -707,19 +750,34 @@ impl TaskController {
     /// # Arguments
     /// - `target`: The target flight state to switch to.
     /// - `sched_t`: The scheduled time for the state change as a `DateTime`.
-    ///
-    /// # Behavior
-    /// - If the task schedule is empty, the task is enqueued, and all waiting threads are notified.
-    /// - Otherwise, the task is simply enqueued without sending notifications.
     async fn schedule_switch(&self, target: FlightState, sched_t: DateTime<Utc>) {
         self.enqueue_task(Task::switch_target(target, sched_t)).await;
     }
 
+    /// Schedules a task to capture an image at a specific time and position using the given camera lens.
+    ///
+    /// This method creates and enqueues a [`Task::TakeImage`] operation, wrapping the target
+    /// position to `u32` dimensions and assigning the provided lens type.
+    ///
+    /// # Arguments
+    /// - `t`: The scheduled time to capture the image.
+    /// - `pos`: The unwrapped 2D map position of the target.
+    /// - `lens`: The [`CameraAngle`] specifying which lens to use.
     async fn schedule_zo_image(&self, t: DateTime<Utc>, pos: Vec2D<I32F32>, lens: CameraAngle) {
         let pos_u32 = Vec2D::new(pos.x().to_num::<u32>(), pos.y().to_num::<u32>());
         self.enqueue_task(Task::image_task(pos_u32, lens, t)).await;
     }
 
+    /// Prepares and schedules the full sequence for capturing a Zoned Objective (ZO) image.
+    ///
+    /// This includes scheduling a transition from the current flight state to [`FlightState::Charge`],
+    /// then back to [`FlightState::Acquisition`] if feasible just before the first image capture, and finally
+    /// scheduling the actual image task.
+    ///
+    /// # Arguments
+    /// - `t`: The nominal time at which the image should be taken.
+    /// - `pos`: The target position on the map for the ZO image.
+    /// - `lens`: The lens configuration to use for capturing the image.
     pub async fn schedule_retrieval_phase(
         &self,
         t: DateTime<Utc>,
@@ -733,7 +791,7 @@ impl TaskController {
             let last_charge_leave = t_first - trans_time;
             self.schedule_switch(FlightState::Acquisition, last_charge_leave).await;
         }
-        self.schedule_zo_image(t_first, pos, lens).await;        
+        self.schedule_zo_image(t_first, pos, lens).await;
     }
 
     /// Schedules a velocity change task for a given burn sequence.
@@ -743,27 +801,16 @@ impl TaskController {
     ///
     /// # Returns
     /// - The total number of tasks in the schedule after adding the velocity change task.
-    ///
-    /// # Behavior
-    /// - If the task schedule is empty before scheduling, all waiting threads are notified.
-    pub async fn schedule_vel_change(
-        self: Arc<TaskController>,
-        burn: BurnSequence,
-        rationale: VelocityChangeTaskRationale,
-    ) -> usize {
+    pub async fn schedule_vel_change(self: Arc<TaskController>, burn: BurnSequence) -> usize {
         let due = burn.start_i().t();
-        self.enqueue_task(Task::vel_change_task(burn, rationale, due)).await;
+        self.enqueue_task(Task::vel_change_task(burn, due)).await;
         self.task_schedule.read().await.len()
     }
 
     /// Clears tasks scheduled after a specified delay.
     ///
     /// # Arguments
-    /// - `dt`: The `PinnedTimeDelay` representing the cutoff time for retaining tasks.
-    ///
-    /// # Behavior
-    /// - Removes all tasks occurring after the specified delay.
-    /// - Does nothing if the task schedule is empty.
+    /// - `dt`: The `DateTime<Utc>` representing the cutoff time for retaining tasks.
     pub async fn clear_after_dt(&self, dt: DateTime<Utc>) {
         let schedule_lock = &*self.task_schedule;
         if !schedule_lock.read().await.is_empty() {
@@ -785,15 +832,9 @@ impl TaskController {
     ///
     /// # Arguments
     /// - `task`: The `Task` to be added to the task schedule.
-    ///
-    /// # Behavior
-    /// - Appends the given task to the task schedule.
     async fn enqueue_task(&self, task: Task) { self.task_schedule.write().await.push_back(task); }
 
     /// Clears all pending tasks in the schedule.
-    ///
-    /// # Side Effects
-    /// - Notifies all waiting threads if the schedule is cleared.
     pub async fn clear_schedule(&self) {
         let schedule = &*self.task_schedule;
         log!("Clearing task schedule...");

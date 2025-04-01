@@ -3,7 +3,7 @@ use crate::flight_control::{
     camera_state::CameraAngle,
     common::vec2d::Vec2D,
     flight_state::FlightState,
-    task::{base_task::BaseTask, image_task::ImageTaskStatus, vel_change_task::VelocityChangeTaskRationale, TaskController},
+    task::{base_task::BaseTask, image_task::ImageTaskStatus, TaskController},
 };
 use crate::info;
 use crate::{
@@ -243,17 +243,7 @@ impl ConsoleMessenger {
                     }
                     BaseTask::ChangeVelocity(velocity_change_task) => {
                         melvin_messages::TaskType::VelocityChange(melvin_messages::BurnSequence {
-                            rational: match velocity_change_task.rationale() {
-                                VelocityChangeTaskRationale::Correctional => {
-                                    melvin_messages::VelocityChangeTaskRationale::Correctional
-                                }
-                                VelocityChangeTaskRationale::OrbitEscape => {
-                                    melvin_messages::VelocityChangeTaskRationale::OrbitEscape
-                                }
-                                VelocityChangeTaskRationale::OrbitEnter => {
-                                    melvin_messages::VelocityChangeTaskRationale::OrbitEnter
-                                }
-                            } as i32,
+                            rational:  melvin_messages::VelocityChangeTaskRationale::OrbitEscape as i32,
                             target_x: 0,
                             target_y: 0,
                             add_target_x: None,
