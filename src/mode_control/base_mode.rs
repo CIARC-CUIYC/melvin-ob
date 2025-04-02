@@ -1,14 +1,13 @@
-use crate::flight_control::{
-    camera_state::CameraAngle,
-    flight_computer::FlightComputer,
-    flight_state::FlightState,
-    orbit::IndexedOrbitPosition,
-    task::{TaskController, switch_state_task::SwitchStateTask, end_condition::EndCondition},
-    beacon_controller::BeaconControllerState
-};
-use crate::{error, fatal, info, log, DT_0_STD};
-use super::signal::{PeriodicImagingEndSignal, TaskEndSignal::{self, Join, Timestamp}};
 use super::mode_context::ModeContext;
+use super::signal::{
+    PeriodicImagingEndSignal,
+    TaskEndSignal::{self, Join, Timestamp},
+};
+use crate::flight_control::{FlightComputer, FlightState, orbit::IndexedOrbitPosition};
+use crate::imaging::CameraAngle;
+use crate::objective::BeaconControllerState;
+use crate::scheduling::{EndCondition, TaskController, task::SwitchStateTask};
+use crate::{DT_0_STD, error, fatal, info, log};
 use chrono::{DateTime, TimeDelta, Utc};
 use std::{future::Future, pin::Pin, sync::Arc};
 use strum_macros::Display;
@@ -34,7 +33,7 @@ impl BaseMode {
     /// This function initializes an image acquisition cycle using the default mapping camera angle
     /// and coordinates between the camera controller and various signal channels.
     /// It finalizes by marking orbit coverage and exporting updated coverage data.
-    /// 
+    ///
     /// # Arguments
     /// - `context`: A shared reference to a [`ModeContext`] object.
     /// - `end`: A [`TaskEndSignal`]-enum type indicating how the task end condition should be defined.
@@ -117,15 +116,18 @@ impl BaseMode {
                 c_orbit.mark_done(*start, *end);
             }
         }
-        log!("Current discrete Orbit Coverage is {}%.", c_orbit.get_coverage() * 100);
+        log!(
+            "Current discrete Orbit Coverage is {}%.",
+            c_orbit.get_coverage() * 100
+        );
         c_orbit.try_export_default();
     }
-    
+
     /// Listens for Beacon Objective communication pings until a timeout or cancellation.
     ///
     /// Uses an event-based listener to process incoming beacon messages.
     /// Automatically terminates based on task completion or shutdown signals.
-    /// 
+    ///
     /// # Arguments
     /// - `context`: A shared reference to a `ModeContext` object.
     /// - `end`: A `TaskEndSignal`-enum type indicating how the task end condition should be defined.
@@ -169,10 +171,13 @@ impl BaseMode {
     ///
     /// # Arguments
     /// - `context`: A shared reference to a `ModeContext` object.
-    /// 
+    ///
     /// # Returns
     /// A `DateTime<Utc>` indicating the time when scheduled tasks should start.
-    pub(super) async fn handle_sched_preconditions(&self, context: Arc<ModeContext>) -> DateTime<Utc> {
+    pub(super) async fn handle_sched_preconditions(
+        &self,
+        context: Arc<ModeContext>,
+    ) -> DateTime<Utc> {
         match self {
             BaseMode::MappingMode => FlightComputer::escape_if_comms(context.k().f_cont()).await,
             BaseMode::BeaconObjectiveScanningMode => {
@@ -186,15 +191,15 @@ impl BaseMode {
     /// - For `MappingMode`, a standard optimal orbit scheduler is used.
     /// - For `BeaconObjectiveScanningMode`, a communications-aware scheduler is launched.
     ///
-    /// Depending on the current flight state, this will also launch a mapping or 
+    /// Depending on the current flight state, this will also launch a mapping or
     /// beacon listening task to run concurrently.
-    /// 
+    ///
     /// # Arguments
     /// - `context`: A shared reference to a `ModeContext` object.
     /// - `c_tok`: A `CancellationToken` that is able to cancel this task with proper cleanup.
     /// - `comms_end`: A `DateTime<Utc>` indicating the end of the current comms cycle when in `BeaconObjectiveScanningMode`.
     /// - `end`: An optional `EndCondition` type if i.e. a burn sequence follows to this task list.
-    /// 
+    ///
     /// # Returns
     /// A `JoinHandle<()` to join with the scheduling task
     #[must_use]

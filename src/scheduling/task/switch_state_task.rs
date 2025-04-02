@@ -1,4 +1,4 @@
-use crate::flight_control::flight_state::FlightState;
+use crate::flight_control::FlightState;
 
 /// Represents a task to switch to a target flight state.
 ///

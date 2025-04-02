@@ -1,9 +1,9 @@
 use crate::flight_control::{
-    beacon_controller::{BeaconController, BeaconControllerState},
-    objective::known_img_objective::KnownImgObjective, orbit::OrbitCharacteristics,
-    supervisor::Supervisor,
+    orbit::OrbitCharacteristics,
+    Supervisor,
 };
-use crate::keychain::KeychainWithOrbit;
+use crate::objective::{BeaconController, BeaconControllerState, KnownImgObjective};
+use crate::util::KeychainWithOrbit;
 use std::{collections::BinaryHeap, sync::Arc};
 use tokio::sync::{Mutex, RwLock, mpsc::Receiver, watch};
 

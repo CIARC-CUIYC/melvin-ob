@@ -1,4 +1,4 @@
-use crate::flight_control::camera_state::CameraAngle;
+use crate::imaging::CameraAngle;
 use chrono::{DateTime, Utc};
 
 /// Represents an objective focused on capturing a secret image.

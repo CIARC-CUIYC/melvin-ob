@@ -1,7 +1,6 @@
-use crate::flight_control::{
-    beacon_controller::BeaconControllerState, flight_computer::FlightComputer,
-    objective::known_img_objective::KnownImgObjective, task::{TaskController, base_task::Task}
-};
+use crate::flight_control::FlightComputer;
+use crate::objective::{BeaconControllerState, KnownImgObjective};
+use crate::scheduling::{TaskController, task::Task};
 use super::{global_mode::GlobalMode, in_orbit_mode::InOrbitMode, zo_prep_mode::ZOPrepMode};
 use crate::mode_control::{
     base_mode::BaseMode,

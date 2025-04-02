@@ -1,4 +1,4 @@
-use crate::flight_control::common::vec2d::Vec2D;
+use crate::util::Vec2D;
 use chrono::{DateTime, Utc};
 use fixed::types::I32F32;
 

@@ -1,6 +1,6 @@
 use super::task_controller::TaskController;
-use crate::flight_control::camera_state::CameraAngle;
-use crate::flight_control::common::vec2d::Vec2D;
+use crate::imaging::CameraAngle;
+use crate::util::Vec2D;
 use crate::flight_control::orbit::IndexedOrbitPosition;
 use crate::{STATIC_ORBIT_VEL, fatal, info, log};
 use chrono::{DateTime, TimeDelta, Utc};

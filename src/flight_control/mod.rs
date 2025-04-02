@@ -1,11 +1,8 @@
-pub mod beacon_controller;
-pub mod camera_controller;
-pub mod camera_state;
-pub mod common;
-pub mod flight_computer;
-pub mod flight_state;
-pub(super) mod imaging;
-pub mod objective;
-pub mod orbit;
-pub mod supervisor;
-pub mod task;
+mod flight_computer;
+mod flight_state;
+pub(crate) mod orbit;
+mod supervisor;
+
+pub use flight_computer::FlightComputer;
+pub use flight_state::FlightState;
+pub use supervisor::Supervisor;

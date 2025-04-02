@@ -1,7 +1,7 @@
 use image::{GenericImage, GenericImageView};
 use std::ops::{Deref, DerefMut};
 
-use crate::flight_control::common::vec2d::Vec2D;
+use crate::util::Vec2D;
 
 /// A sub-region of an image, represented as a buffer with bounds.
 /// This struct allows for accessing and modifying a subsection of the image efficiently.

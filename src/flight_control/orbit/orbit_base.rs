@@ -1,11 +1,6 @@
-use crate::flight_control::{
-    camera_state::CameraAngle,
-    common::{
-        math::{MAX_DEC, gcd_fixed64, lcm_fixed64},
-        vec2d::{MapSize, Vec2D},
-    },
-    flight_computer::FlightComputer,
-};
+use crate::flight_control::FlightComputer;
+use crate::imaging::CameraAngle;
+use crate::util::{helpers::*, Vec2D, MapSize};
 use chrono::{DateTime, Utc};
 use fixed::types::I32F32;
 

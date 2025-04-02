@@ -1,5 +1,5 @@
 use super::{file_based_buffer::FileBackedBuffer, sub_buffer::SubBuffer};
-use crate::flight_control::common::vec2d::{MapSize, Vec2D};
+use crate::util::{MapSize, Vec2D};
 use image::{
     DynamicImage, EncodableLayout, GenericImage, GenericImageView, ImageBuffer, Pixel,
     PixelWithColorType, Rgb, RgbImage,
@@ -546,9 +546,8 @@ impl ThumbnailMapImage {
 
 #[cfg(test)]
 mod tests {
-    use crate::flight_control::camera_state::CameraAngle;
-
     use super::*;
+    use crate::imaging::CameraAngle;
 
     #[test]
     fn test_overflow() {

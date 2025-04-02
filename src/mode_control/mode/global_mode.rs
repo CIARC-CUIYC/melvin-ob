@@ -1,8 +1,5 @@
-use crate::flight_control::{
-    beacon_controller::BeaconControllerState,
-    objective::known_img_objective::KnownImgObjective,
-    task::base_task::Task
-};
+use crate::objective::{BeaconControllerState, KnownImgObjective};
+use crate::scheduling::task::Task;
 use crate::mode_control::{
     base_mode::BaseMode,
     mode_context::ModeContext,

@@ -1,8 +1,6 @@
 use super::orbit_base::OrbitBase;
-use crate::flight_control::{
-    camera_state::CameraAngle,
-    common::vec2d::{Vec2D, VecAxis},
-};
+use crate::util::{Vec2D, VecAxis};
+use crate::imaging::CameraAngle;
 use crate::{fatal, warn};
 use bincode::{error::EncodeError, config::{Configuration, Fixint, LittleEndian}};
 use bitvec::{

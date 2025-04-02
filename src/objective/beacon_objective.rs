@@ -1,6 +1,6 @@
 use crate::STATIC_ORBIT_VEL;
-use crate::flight_control::common::{bayesian_set::BayesianSet, vec2d::Vec2D};
-use crate::logger::JsonDump;
+use crate::util::{Vec2D, logger::JsonDump};
+use super::BayesianSet;
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 use std::cmp::Ordering;
@@ -24,7 +24,7 @@ impl BeaconMeas {
     /// # Arguments
     /// * `id` - Unique identifier of the beacon.
     /// * `pos` - Position of MELVIN as a 2D vector.
-    /// * `rssi` - RSSI (d_noisy) value of the beacon.
+    /// * `rssi` - RSSI (`d_noisy`) value of the beacon.
     /// * `delay` - Time delay for the beacon.
     pub fn new(id: usize, pos: Vec2D<I32F32>, rssi: f64, delay: TimeDelta) -> Self {
         Self { id, pos, rssi, delay }

@@ -1,16 +1,13 @@
 use super::{global_mode::GlobalMode, orbit_return_mode::OrbitReturnMode};
-use crate::flight_control::{
-    camera_controller::CameraController,
-    common::vec2d::Vec2D,
-    flight_computer::FlightComputer,
-    flight_state::FlightState,
-    objective::known_img_objective::KnownImgObjective,
-    task::base_task::{BaseTask, Task},
-};
+use crate::flight_control::{FlightComputer, FlightState};
+use crate::imaging::CameraController;
 use crate::mode_control::{
     mode_context::ModeContext,
     signal::{ExecExitSignal, OpExitSignal, OptOpExitSignal, WaitExitSignal},
 };
+use crate::objective::KnownImgObjective;
+use crate::scheduling::task::{BaseTask, Task};
+use crate::util::Vec2D;
 use crate::{DT_0_STD, error, fatal, log, warn};
 use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};

@@ -1,8 +1,6 @@
-use crate::flight_control::{
-    flight_computer::FlightComputer,
-    objective::known_img_objective::KnownImgObjective,
-    task::base_task::{BaseTask, Task},
-};
+use crate::scheduling::task::{BaseTask, Task};
+use crate::objective::KnownImgObjective;
+use crate::flight_control::FlightComputer;
 use super::{zo_prep_mode::ZOPrepMode, global_mode::{GlobalMode, OrbitalMode}};
 use crate::mode_control::{
     base_mode::BaseMode,

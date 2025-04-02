@@ -1,17 +1,11 @@
-use super::{
-    atomic_decision::AtomicDecision, atomic_decision_cube::AtomicDecisionCube, base_task::Task,
-    score_grid::ScoreGrid,
-};
-use crate::flight_control::{
-    camera_state::CameraAngle,
-    common::{linked_box::LinkedBox, vec2d::Vec2D},
-    flight_computer::FlightComputer,
-    flight_state::FlightState,
+use super::{AtomicDecision, AtomicDecisionCube, EndCondition, LinkedBox, ScoreGrid, task::Task};
+use crate::imaging::CameraAngle;
+use crate::flight_control::{FlightComputer, FlightState,
     orbit::{
         BurnSequence, BurnSequenceEvaluator, ClosedOrbit, ExitBurnResult, IndexedOrbitPosition,
     },
-    task::end_condition::EndCondition,
 };
+use crate::util::Vec2D;
 use crate::{error, info, log};
 use bitvec::prelude::BitRef;
 use chrono::{DateTime, TimeDelta, Utc};
@@ -575,7 +569,12 @@ impl TaskController {
     /// - `f_cont_lock`: An `Arc<RwLock<FlightComputer>>` containing the flight control state.
     /// - `scheduling_start_i`: The starting orbital position as an `IndexedOrbitPosition`.
     /// - `end`: An optional `EndCondition` indicating the desired final status of MELVIN
-    #[allow(clippy::cast_precision_loss, clippy::cast_possible_wrap, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_wrap,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
     pub async fn sched_opt_orbit(
         self: Arc<TaskController>,
         orbit_lock: Arc<RwLock<ClosedOrbit>>,

@@ -1,13 +1,6 @@
 use super::{
-    camera_state::CameraAngle,
-    common::{math::MAX_DEC, vec2d::Vec2D},
     flight_state::FlightState,
-};
-use crate::flight_control::common::vec2d::WrapDirection;
-use crate::flight_control::orbit::ClosedOrbit;
-use crate::flight_control::{
-    orbit::{BurnSequence, IndexedOrbitPosition},
-    task::TaskController,
+    orbit::{BurnSequence, ClosedOrbit, IndexedOrbitPosition},
 };
 use crate::http_handler::{
     http_client,
@@ -18,7 +11,10 @@ use crate::http_handler::{
         reset_get::ResetRequest,
     },
 };
-use crate::{STATIC_ORBIT_VEL, error, fatal, info, log, warn, log_burn};
+use crate::imaging::CameraAngle;
+use crate::util::{Vec2D, WrapDirection, helpers::MAX_DEC};
+use crate::{STATIC_ORBIT_VEL, error, fatal, info, log, log_burn, warn};
+use crate::scheduling::TaskController;
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::{I32F32, I64F64};
 use num::{ToPrimitive, Zero};
@@ -176,12 +172,12 @@ impl FlightComputer {
         let dev_y = (I64F64::from_num(vel.y()) * factor_f64).frac() / factor_f64;
         (Vec2D::new(trunc_x, trunc_y), Vec2D::new(dev_x, dev_y))
     }
-    
+
     /// Rounds velocity by multiplying with `10^Self::VEL_BE_MAX_DECIMAL` and rounding afterward
-    /// 
+    ///
     /// # Arguments
     /// * vel: A `Vec2D<I32F32>` representing the velocity to be rounded
-    /// 
+    ///
     /// # Returns
     /// * A `Vec2D<I32F32>` representing the rounded, expanded velocity
     pub fn round_vel_expand(vel: Vec2D<I32F32>) -> Vec2D<I32F32> {
@@ -347,7 +343,10 @@ impl FlightComputer {
     /// # Panics
     /// - If the reset request fails, this method will panic with an error message.
     pub async fn reset(&mut self) {
-        ResetRequest {}.send_request(&self.request_client).await.unwrap_or_else(|_| fatal!("Failed to reset"));
+        ResetRequest {}
+            .send_request(&self.request_client)
+            .await
+            .unwrap_or_else(|_| fatal!("Failed to reset"));
         Self::wait_for_duration(Duration::from_secs(4), false).await;
         self.target_state = None;
         log!("Reset request complete.");
@@ -422,9 +421,9 @@ impl FlightComputer {
         }
     }
 
-    /// This method is used to escape a safe mode event by first waiting for the minimum charge 
+    /// This method is used to escape a safe mode event by first waiting for the minimum charge
     /// and then transitioning back to an operational state.
-    /// 
+    ///
     /// # Arguments
     /// * `self_lock`: A shared `RwLock` containing the `FlightComputer` instance
     /// * `force_charge`: A variable indicating whether the `FlightState` after escaping should be forced to `FlightState::Charge`
@@ -467,7 +466,7 @@ impl FlightComputer {
     }
 
     /// A small helper method which waits for the current transition phase to end.
-    /// 
+    ///
     /// # Arguments
     /// * `self_lock`: A shared `RwLock` containing the `FlightComputer` instance
     pub async fn avoid_transition(self_lock: &Arc<RwLock<Self>>) {
@@ -488,7 +487,7 @@ impl FlightComputer {
     }
 
     /// A helper method which transitions state-aware to [`FlightState::Comms`].
-    /// 
+    ///
     /// # Arguments
     /// * `self_lock`: A shared `RwLock` containing the [`FlightComputer`] instance
     #[allow(clippy::cast_possible_wrap)]
@@ -516,7 +515,7 @@ impl FlightComputer {
     }
 
     /// A helper method used to get out of [`FlightState::Comms`] and back to an operational [`FlightState`].
-    /// 
+    ///
     /// # Arguments
     /// * `self_lock`: A shared `RwLock` containing the [`FlightComputer`] instance
     #[allow(clippy::cast_possible_wrap)]
@@ -539,7 +538,7 @@ impl FlightComputer {
     }
 
     /// A helper method estimating the `DateTime<Utc>` when a transition to [`FlightState::Comms`] could be finished.
-    /// 
+    ///
     /// # Arguments
     /// * `self_lock`: A shared `RwLock` containing the [`FlightComputer`] instance
     #[allow(clippy::cast_possible_wrap)]
@@ -561,7 +560,7 @@ impl FlightComputer {
     }
 
     /// A helper method used to perform an acceleration maneuver to get to `STATIC_ORBIT_VEL`.
-    /// 
+    ///
     /// # Arguments
     /// * `self_lock`: A shared `RwLock` containing the [`FlightComputer`] instance
     pub async fn get_to_static_orbit_vel(self_lock: &Arc<RwLock<Self>>) {
@@ -594,12 +593,12 @@ impl FlightComputer {
     }
 
     /// A helper method calculating the charge difference for a transition to `FlightState::Comms`.
-    /// 
+    ///
     /// # Arguments
     /// * `self_lock`: A shared `RwLock` containing the [`FlightComputer`] instance
-    /// 
+    ///
     /// # Returns
-    /// A `u64` resembling the necessary number of charging seconds 
+    /// A `u64` resembling the necessary number of charging seconds
     async fn get_charge_dt_comms(self_lock: &Arc<RwLock<Self>>) -> u64 {
         let batt_diff = (self_lock.read().await.current_battery()
             - TaskController::MIN_COMMS_START_CHARGE)
@@ -608,7 +607,7 @@ impl FlightComputer {
     }
 
     /// A helper method used to charge to the maximum battery threshold.
-    /// 
+    ///
     /// # Arguments
     /// * `self_lock`: A shared `RwLock` containing the [`FlightComputer`] instance
     pub async fn charge_full_wait(self_lock: &Arc<RwLock<Self>>) {
@@ -617,7 +616,7 @@ impl FlightComputer {
     }
 
     /// A helper method used to charge to a given threshold.
-    /// 
+    ///
     /// # Arguments
     /// * `self_lock`: A shared `RwLock` containing the [`FlightComputer`] instance
     /// * `target_batt`: An `I32F32` resembling the desired target battery level
@@ -658,7 +657,7 @@ impl FlightComputer {
         self_lock.read().await.set_state(new_state).await;
 
         let transition_t = init_state.dt_to(new_state);
-        
+
         Self::wait_for_duration(transition_t, false).await;
         let cond = (
             |cont: &FlightComputer| cont.state() == new_state,
@@ -772,7 +771,7 @@ impl FlightComputer {
     }
 
     /// Executes an orbit return maneuver in a loop until the current position is recognized and assigned an orbit index.
-    /// 
+    ///
     /// # Arguments
     /// * `self_lock`: A shared `RwLock` containing the [`FlightComputer`] instance
     /// * `c_o`: A shared `RwLock` containing the [`ClosedOrbit`] instance
@@ -809,9 +808,9 @@ impl FlightComputer {
     }
 
     /// Helper method calculating the maximum charge needed for an orbit return maneuver.
-    /// 
+    ///
     /// # Returns
-    /// * An `I32F32`, the maximum battery level 
+    /// * An `I32F32`, the maximum battery level
     pub fn max_or_maneuver_charge() -> I32F32 {
         let acq_db = FlightState::Acquisition.get_charge_rate();
         let acq_acc_db = acq_db + FlightState::ACQ_ACC_ADDITION;
@@ -819,14 +818,14 @@ impl FlightComputer {
     }
 
     /// Helper method computing the maximum orbit return maneuver velocity, trying either a triangular or trapezoidal profile.
-    /// 
+    ///
     /// # Arguments
     /// * `dev`: The absolute deviation on a singular axis as an `I32F32`
     ///
     /// # Returns
     /// A tuple containing:
     ///   - The maximum velocity change
-    ///   - The number of seconds to hold that velocity 
+    ///   - The number of seconds to hold that velocity
     fn compute_vmax_and_hold_time(dev: I32F32) -> (I32F32, u64) {
         // Try triangular profile first (no cruising)
         let dv_triang = dev.signum() * (Self::ACC_CONST * dev.abs()).sqrt();
@@ -844,7 +843,7 @@ impl FlightComputer {
     }
 
     /// A helper method used to stop an ongoing velocity change.
-    /// 
+    ///
     /// # Arguments
     /// * `self_lock`: A shared `RwLock` containing the [`FlightComputer`] instance
     pub async fn stop_ongoing_burn(self_lock: Arc<RwLock<Self>>) {
@@ -858,7 +857,7 @@ impl FlightComputer {
     }
 
     /// Executes a sequence of velocity changes to accelerate towards a secondary target for a multi-target zoned objective.
-    /// 
+    ///
     /// # Arguments
     /// * `self_lock`: A shared `RwLock` containing the [`FlightComputer`] instance
     /// * `target`: The target position as a `Vec2D<I32F32>`
@@ -906,9 +905,7 @@ impl FlightComputer {
             }
             if Utc::now() > deadline {
                 let turn_dt = (Utc::now() - start).num_seconds();
-                log!(
-                    "Turning timeout after {turn_dt}s with remaining DX: {dx:.2} and dt {dt:2}s"
-                );
+                log!("Turning timeout after {turn_dt}s with remaining DX: {dx:.2} and dt {dt:2}s");
                 FlightComputer::stop_ongoing_burn(Arc::clone(&self_lock)).await;
             }
             self_lock.write().await.set_vel(new_vel, true).await;
@@ -917,12 +914,12 @@ impl FlightComputer {
     }
 
     /// Executes a sequence of velocity changes minimizing the deviation between an expected impact point and a target point.
-    /// 
+    ///
     /// # Arguments
     /// * `self_lock`: A shared `RwLock` containing the [`FlightComputer`] instance
     /// * `target`: The target position as a `Vec2D<I32F32>`
     /// * `lens`: The planned `CameraAngle` to derive the maximum absolute speed
-    /// 
+    ///
     /// # Returns
     /// A tuple containing:
     ///   - A `DateTime<Utc>` when the target will be hit
@@ -998,7 +995,7 @@ impl FlightComputer {
     }
 
     /// Random weight to counter numeric local minima
-    /// 
+    ///
     /// Returns
     /// A `I32F32` representing a random weight in the range \[0.0, 10.0\]
     fn rand_weight() -> I32F32 {
@@ -1007,7 +1004,7 @@ impl FlightComputer {
     }
 
     /// Updates the satellite's internal fields with the latest observation data.
-    /// 
+    ///
     /// # Arguments
     /// * A mutable reference to the `FlightComputer` instance
     pub async fn update_observation(&mut self) {
@@ -1064,7 +1061,7 @@ impl FlightComputer {
             if !mute {
                 info!("Velocity change commanded to [{}, {}]", vel.x(), vel.y());
             }
-        }else {
+        } else {
             error!("Unnoticed HTTP Error in set_state()");
         }
     }
@@ -1083,7 +1080,7 @@ impl FlightComputer {
 
         if req.send_request(&self.request_client).await.is_ok() {
             info!("Angle change commanded to {new_angle}");
-        }else {
+        } else {
             error!("Unnoticed HTTP Error in set_state()");
         }
     }
@@ -1103,7 +1100,7 @@ impl FlightComputer {
     }
 
     /// Helper method predicting the battery level after a specified time interval.
-    /// 
+    ///
     /// # Arguments
     /// - `time_delta`: The time interval for prediction.
     ///

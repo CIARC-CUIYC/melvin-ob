@@ -1,12 +1,6 @@
-use super::imaging::{
-    cycle_state::CycleState,
-    map_image::{
-        EncodedImageExtract, FullsizeMapImage, MapImage, OffsetZonedObjectiveImage,
-        ThumbnailMapImage,
-    },
-};
-use super::{camera_state::CameraAngle, common::vec2d::Vec2D, flight_computer::FlightComputer};
+use super::{CameraAngle, cycle_state::CycleState, map_image::*};
 use crate::console_communication::ConsoleMessenger;
+use crate::flight_control::FlightComputer;
 use crate::http_handler::{
     http_client::HTTPClient,
     http_request::{
@@ -17,6 +11,7 @@ use crate::http_handler::{
     },
 };
 use crate::mode_control::PeriodicImagingEndSignal::{self, KillLastImage, KillNow};
+use crate::util::Vec2D;
 use crate::{DT_0_STD, error, fatal, info, log, obj};
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
@@ -577,11 +572,11 @@ impl CameraController {
     }
 
     /// Helper method returning the timestamp of the next image
-    /// 
+    ///
     /// # Arguments
     /// * `img_max_dt`: An `I32F32` resembling the maximum number of seconds between consecutive images in mapping.
     /// * `end_time`: The deadline as a `DateTime<Utc>`
-    /// 
+    ///
     /// # Returns
     /// The next image timestamp as an `DateTime<Utc>`
     fn get_next_map_img(img_max_dt: I32F32, end_time: DateTime<Utc>) -> DateTime<Utc> {
@@ -590,12 +585,12 @@ impl CameraController {
     }
 
     /// Captures a single image during mapping operation.
-    /// 
+    ///
     /// # Arguments
     /// * `f_cont_lock` - Lock-protected flight computer controlling the acquisition cycle.
     /// * `p_c` - A shared, locked reference to the number of pictures in the current cycle.
     /// * `lens` - The desired `CameraAngle` for this picture
-    /// 
+    ///
     /// # Returns
     /// A tuple containing:
     ///   - The UTC timestamp when the image was taken

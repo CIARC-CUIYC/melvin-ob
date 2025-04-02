@@ -1,5 +1,6 @@
 use super::{closed_orbit::ClosedOrbit, index::IndexedOrbitPosition};
-use crate::flight_control::{common::vec2d::Vec2D, flight_computer::FlightComputer};
+use crate::util::Vec2D;
+use crate::flight_control::FlightComputer;
 use crate::info;
 use fixed::types::I32F32;
 use tokio::sync::RwLock;

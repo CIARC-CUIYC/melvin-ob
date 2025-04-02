@@ -1,7 +1,7 @@
 use crate::STATIC_ORBIT_VEL;
-use crate::flight_control::camera_state::CameraAngle;
-use crate::flight_control::common::vec2d::{MapSize, Vec2D};
-use crate::flight_control::orbit::{ClosedOrbit, OrbitBase};
+use crate::imaging::CameraAngle;
+use crate::util::{MapSize, Vec2D};
+use super::{ClosedOrbit, OrbitBase};
 use fixed::types::I32F32;
 use itertools::Itertools;
 use num::Zero;

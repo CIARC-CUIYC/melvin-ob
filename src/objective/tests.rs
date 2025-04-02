@@ -1,11 +1,10 @@
-use super::{bayesian_set::BayesianSet, vec2d::Vec2D};
+use super::{bayesian_set::BayesianSet, BeaconMeas};
+use crate::util::{Vec2D, MapSize};
 use crate::STATIC_ORBIT_VEL;
-use crate::flight_control::objective::beacon_objective::BeaconMeas;
 use chrono::TimeDelta;
 use fixed::types::I32F32;
 use num::traits::FloatConst;
 use rand::{Rng, rng};
-use crate::flight_control::common::vec2d::MapSize;
 
 const MAX_MEASURE_POINTS: usize = 6;
 const MEASURE_PERIOD: I32F32 = I32F32::lit("60");

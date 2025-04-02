@@ -4,9 +4,9 @@ use super::{
     vel_change_task::VelocityChangeTask,
 };
 use crate::fatal;
-use crate::flight_control::{
-    camera_state::CameraAngle, common::vec2d::Vec2D, flight_state::FlightState, orbit::BurnSequence,
-};
+use crate::imaging::CameraAngle;
+use crate::util::Vec2D;
+use crate::flight_control::{FlightState, orbit::BurnSequence};
 use chrono::{DateTime, Utc};
 use std::fmt::{Display, Formatter};
 use strum_macros::Display;

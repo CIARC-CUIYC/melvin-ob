@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use tokio::task::JoinHandle;
-use crate::flight_control::objective::known_img_objective::KnownImgObjective;
-use super::mode::global_mode::GlobalMode;
+use crate::objective::KnownImgObjective;
+use super::mode::GlobalMode;
 
 pub(super) enum TaskEndSignal {
     Timestamp(DateTime<Utc>),

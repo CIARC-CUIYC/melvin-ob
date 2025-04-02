@@ -1,5 +1,5 @@
-use super::beacon_objective::BeaconObjective;
-use crate::flight_control::common::vec2d::Vec2D;
+use super::BeaconObjective;
+use crate::util::Vec2D;
 use crate::http_handler::{
     http_client::HTTPClient,
     http_request::{

@@ -1,4 +1,4 @@
-use crate::flight_control::imaging::map_image::EncodedImageExtract;
+use crate::imaging::map_image::EncodedImageExtract;
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Upstream {

@@ -3,9 +3,11 @@
 mod console_communication;
 mod flight_control;
 mod http_handler;
-mod keychain;
-mod logger;
+mod imaging;
 mod mode_control;
+mod objective;
+mod scheduling;
+mod util;
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
@@ -15,14 +17,16 @@ use tikv_jemallocator::Jemalloc;
 static GLOBAL: Jemalloc = Jemalloc;
 
 use crate::flight_control::{
-    beacon_controller::BeaconController,
-    camera_state::CameraAngle,
-    flight_computer::FlightComputer,
-    flight_state::FlightState,
+    FlightComputer, FlightState,
     orbit::{ClosedOrbit, OrbitBase, OrbitCharacteristics, OrbitUsabilityError},
 };
-use crate::keychain::{Keychain, KeychainWithOrbit};
-use crate::mode_control::{mode::{GlobalMode, OrbitReturnMode}, ModeContext, OpExitSignal, };
+use crate::imaging::CameraAngle;
+use crate::mode_control::{
+    ModeContext, OpExitSignal,
+    mode::{GlobalMode, OrbitReturnMode},
+};
+use crate::objective::BeaconController;
+use crate::util::{Keychain, KeychainWithOrbit};
 use chrono::TimeDelta;
 use fixed::types::I32F32;
 use std::{env, sync::Arc, time::Duration};

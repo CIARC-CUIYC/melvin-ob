@@ -1,4 +1,5 @@
-use crate::flight_control::{camera_state::CameraAngle, common::vec2d::Vec2D};
+use crate::imaging::CameraAngle;
+use crate::util::Vec2D;
 use crate::http_handler::{ImageObjective, ZoneType};
 use chrono::{DateTime, Utc};
 use fixed::types::I32F32;

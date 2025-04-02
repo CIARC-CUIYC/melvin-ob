@@ -1,4 +1,5 @@
-use crate::flight_control::{camera_state::CameraAngle, common::vec2d::Vec2D};
+use crate::imaging::CameraAngle;
+use crate::util::Vec2D;
 use fixed::types::I64F64;
 
 /// Represents the status of an image capture task.

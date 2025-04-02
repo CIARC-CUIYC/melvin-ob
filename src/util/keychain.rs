@@ -1,18 +1,16 @@
 use crate::console_communication::ConsoleMessenger;
-use crate::flight_control::{
-    supervisor::Supervisor,
-    objective::{beacon_objective::BeaconObjective, known_img_objective::KnownImgObjective},
-    camera_controller::CameraController, flight_computer::FlightComputer, orbit::ClosedOrbit,
-    task::TaskController,
-};
+use crate::flight_control::{FlightComputer, Supervisor, orbit::ClosedOrbit};
 use crate::http_handler::http_client::HTTPClient;
+use crate::imaging::CameraController;
+use crate::scheduling::TaskController;
+use crate::objective::{BeaconObjective, KnownImgObjective};
 use std::sync::Arc;
-use tokio::sync::{mpsc::Receiver, RwLock};
+use tokio::sync::{RwLock, mpsc::Receiver};
 
 /// Struct representing the key components of the application, providing access
 /// to various subsystems such as the HTTP client, camera controller, flight computer,
 /// task controller, and console messenger.
-/// 
+///
 /// # Fields
 /// - `client`: The http client connected with the DRS API endpoint.
 /// - `supervisor`: The supervisor running the observation/objective updater.
@@ -44,18 +42,14 @@ impl Keychain {
     ///
     /// # Returns
     /// A new instance of `Keychain` containing initialized subsystems.
-    pub async fn new(url: &str) -> (
-        Self,
-        Receiver<KnownImgObjective>,
-        Receiver<BeaconObjective>,
-    ) {
+    pub async fn new(url: &str) -> (Self, Receiver<KnownImgObjective>, Receiver<BeaconObjective>) {
         let client = Arc::new(HTTPClient::new(url));
         let c_cont = Arc::new(CameraController::start(
             "./".to_string(),
             Arc::clone(&client),
         ));
         let t_cont = Arc::new(TaskController::new());
-        
+
         let f_cont = Arc::new(RwLock::new(FlightComputer::new(Arc::clone(&client)).await));
         let (supervisor, obj_rx, beac_rx) = {
             let (sv, rx_obj, rx_beac) = Supervisor::new(Arc::clone(&f_cont));
@@ -64,16 +58,20 @@ impl Keychain {
         let con = Arc::new(ConsoleMessenger::start(
             Arc::clone(&c_cont),
             Arc::clone(&t_cont),
-            Arc::clone(&supervisor)
+            Arc::clone(&supervisor),
         ));
-        (Self { client, supervisor, con, f_cont, t_cont, c_cont }, obj_rx, beac_rx)
+        (
+            Self { client, supervisor, con, f_cont, t_cont, c_cont },
+            obj_rx,
+            beac_rx,
+        )
     }
 
     /// Provides a cloned reference to the HTTP client.
     pub fn client(&self) -> Arc<HTTPClient> { Arc::clone(&self.client) }
 
     /// Provides a cloned reference to the supervisor
-    pub fn supervisor(&self) -> Arc<Supervisor> { Arc::clone(&self.supervisor)}
+    pub fn supervisor(&self) -> Arc<Supervisor> { Arc::clone(&self.supervisor) }
 
     /// Provides a cloned reference to the flight computer.
     pub fn f_cont(&self) -> Arc<RwLock<FlightComputer>> { Arc::clone(&self.f_cont) }
@@ -91,7 +89,7 @@ impl Keychain {
 /// Struct representing an enhanced `Keychain` that includes a `ClosedOrbit`.
 /// This struct offers access to various subsystems in addition to holding the orbit
 /// and its related operations.
-/// 
+///
 /// # Fields
 /// - `client`: The http client connected with the DRS API endpoint.
 /// - `con`: The console messenger communicating with the user console.

@@ -1,17 +1,12 @@
-use crate::flight_control::{
-    camera_controller::CameraController,
-    camera_state::CameraAngle,
-    common::vec2d::Vec2D,
-    flight_state::FlightState,
-    task::{base_task::BaseTask, image_task::ImageTaskStatus, TaskController},
-};
+use crate::flight_control::{FlightState, Supervisor};
+use crate::scheduling::TaskController;
+use crate::scheduling::task::{BaseTask, ImageTaskStatus};
+use crate::imaging::{CameraAngle, CameraController};
+use crate::util::Vec2D;
 use crate::info;
-use crate::{
-    console_communication::{
-        console_endpoint::{ConsoleEndpoint, ConsoleEvent},
-        melvin_messages,
-    },
-    flight_control::supervisor::Supervisor,
+use super::{
+    console_endpoint::{ConsoleEndpoint, ConsoleEvent},
+    melvin_messages,
 };
 
 use std::sync::Arc;
@@ -97,8 +92,8 @@ impl ConsoleMessenger {
                         Self::send_tasklist_from_endpoint(&endpoint_local, &t_cont_local).await;
                     }
                     ConsoleEvent::Message(melvin_messages::UpstreamContent::SubmitObjective(
-                        submit_objective,
-                    )) => {
+                                              submit_objective,
+                                          )) => {
                         let c_cont_lock_local_clone = camera_controller_local.clone();
                         let endpoint_local_clone = endpoint_local.clone();
                         tokio::spawn(async move {
@@ -193,7 +188,7 @@ impl ConsoleMessenger {
     ///
     /// If the console is not connected, this method does nothing.
     pub(crate) async fn send_tasklist(&self) {
-        ConsoleMessenger::send_tasklist_from_endpoint(&self.endpoint, &self.task_controller).await
+        ConsoleMessenger::send_tasklist_from_endpoint(&self.endpoint, &self.task_controller).await;
     }
 
     /// Sends the task list to the operator console.
@@ -243,7 +238,7 @@ impl ConsoleMessenger {
                     }
                     BaseTask::ChangeVelocity(velocity_change_task) => {
                         melvin_messages::TaskType::VelocityChange(melvin_messages::BurnSequence {
-                            rational:  melvin_messages::VelocityChangeTaskRationale::OrbitEscape as i32,
+                            rational: melvin_messages::VelocityChangeTaskRationale::OrbitEscape as i32,
                             target_x: 0,
                             target_y: 0,
                             add_target_x: None,

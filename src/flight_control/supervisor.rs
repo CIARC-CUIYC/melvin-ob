@@ -1,7 +1,6 @@
-use super::{
-    flight_computer::FlightComputer, flight_state::FlightState, camera_controller::CameraController,
-    objective::{known_img_objective::KnownImgObjective, beacon_objective::BeaconObjective},
-};
+use super::{FlightComputer, FlightState};
+use crate::imaging::CameraController;
+use crate::objective::{BeaconObjective, KnownImgObjective};
 use crate::http_handler::{
     ZoneType, ImageObjective,
     http_request::{
@@ -25,7 +24,7 @@ use tokio::{
 /// It acts as coordinator between observation, event streams, and
 /// objective scheduling, while ensuring asynchronous notifications and channel-based
 /// communication between system components.
-pub(crate) struct Supervisor {
+pub struct Supervisor {
     /// Lock-protected reference to the [`FlightComputer`], used for updating the global observation.
     f_cont_lock: Arc<RwLock<FlightComputer>>,
     /// Notifier that signals when a safe-mode transition is detected.

@@ -1,4 +1,4 @@
-use crate::flight_control::{flight_state::FlightState, orbit::BurnSequence};
+use crate::flight_control::{FlightState, orbit::BurnSequence};
 use chrono::{DateTime, TimeDelta, Utc};
 use fixed::types::I32F32;
 

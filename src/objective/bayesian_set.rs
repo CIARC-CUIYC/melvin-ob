@@ -1,5 +1,5 @@
-use super::vec2d::Vec2D;
-use crate::flight_control::objective::beacon_objective::BeaconMeas;
+use crate::util::Vec2D;
+use super::BeaconMeas;
 use fixed::types::I32F32;
 use kiddo::{ImmutableKdTree, SquaredEuclidean};
 use num::traits::FloatConst;

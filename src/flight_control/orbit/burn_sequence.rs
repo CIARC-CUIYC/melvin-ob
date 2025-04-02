@@ -1,14 +1,13 @@
 use super::index::IndexedOrbitPosition;
-use crate::flight_control::{
-    common::{math, vec2d::Vec2D},
-    flight_computer::{FlightComputer, TurnsClockCClockTup},
-    flight_state::FlightState,
-    task::TaskController,
+use crate::util::{Vec2D, helpers};
+use crate::flight_control::{FlightComputer,
+    flight_computer::TurnsClockCClockTup, FlightState,
 };
+use crate::scheduling::TaskController;
 use chrono::{TimeDelta, Utc};
 use fixed::types::I32F32;
 use num::Zero;
-use crate::logger::JsonDump;
+use crate::util::logger::JsonDump;
 
 /// Represents a sequence of corrective burns for orbital adjustments.
 ///
@@ -282,7 +281,7 @@ impl<'a> BurnSequenceEvaluator<'a> {
             let vel_perp = vel.perp_unit(true) * FlightComputer::ACC_CONST;
             vel.angle_to(&vel_perp).abs()
         };
-        let dynamic_fuel_w = math::interpolate(
+        let dynamic_fuel_w = helpers::interpolate(
             FlightComputer::MIN_0,
             FlightComputer::MAX_100,
             Self::MIN_FUEL_W,
@@ -409,7 +408,7 @@ impl<'a> BurnSequenceEvaluator<'a> {
                     let last_angle_deviation = -last_vel.angle_to(&last_to_target);
                     let this_angle_deviation = next_vel.angle_to(&next_to_target);
 
-                    let corr_burn_perc = math::interpolate(
+                    let corr_burn_perc = helpers::interpolate(
                         last_angle_deviation,
                         this_angle_deviation,
                         I32F32::zero(),
@@ -461,7 +460,7 @@ impl<'a> BurnSequenceEvaluator<'a> {
         let angle_deviation = target.1.angle_to(&last_to_target);
 
         let add_angle_dev =
-            math::normalize_fixed32(angle_deviation, I32F32::zero(), Self::NINETY_DEG)
+            helpers::normalize_fixed32(angle_deviation, I32F32::zero(), Self::NINETY_DEG)
                 .unwrap_or(I32F32::zero());
         add_angle_dev * Self::ADD_ANGLE_DEV_W
     }
@@ -476,14 +475,14 @@ impl<'a> BurnSequenceEvaluator<'a> {
     fn get_bs_cost(&self, bs: &BurnSequence) -> I32F32 {
         let max_add_dt = self.turns.0.len().max(self.turns.1.len());
         // Normalize the factors contributing to burn sequence cost
-        let norm_fuel = math::normalize_fixed32(
+        let norm_fuel = helpers::normalize_fixed32(
             I32F32::from_num(bs.acc_dt()) * FlightComputer::FUEL_CONST,
             I32F32::zero(),
             I32F32::from_num(max_add_dt) * FlightComputer::FUEL_CONST,
         )
         .unwrap_or(I32F32::zero());
 
-        let norm_off_orbit_dt = math::normalize_fixed32(
+        let norm_off_orbit_dt = helpers::normalize_fixed32(
             I32F32::from_num(bs.acc_dt() + bs.detumble_dt()),
             I32F32::zero(),
             I32F32::from_num(self.max_off_orbit_dt),
@@ -491,7 +490,7 @@ impl<'a> BurnSequenceEvaluator<'a> {
         .unwrap_or(I32F32::zero());
 
         let norm_angle_dev =
-            math::normalize_fixed32(bs.rem_angle_dev().abs(), I32F32::zero(), self.max_angle_dev)
+            helpers::normalize_fixed32(bs.rem_angle_dev().abs(), I32F32::zero(), self.max_angle_dev)
                 .unwrap_or(I32F32::zero());
 
         // Compute the total cost of the burn sequence
