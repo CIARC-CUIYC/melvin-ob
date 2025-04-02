@@ -57,6 +57,5 @@ impl ImageTask {
         let px_dev_rel = I64F64::from_num(px_dev / (square_side * square_side));
         let new_status = ImageTaskStatus::Done { actual_pos, px_dev_rel };
         self.image_status = new_status;
-        // TODO: maybe we could also perform a check here which redundant pixels where photographed and which pixels were "lost", we would need to pass a camera_controller reference for that maybe?
     }
 }

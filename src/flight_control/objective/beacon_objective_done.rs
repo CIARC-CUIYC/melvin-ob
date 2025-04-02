@@ -13,28 +13,54 @@ use rand::Rng;
 use std::io::{Error, ErrorKind};
 use std::sync::Arc;
 
+/// Represents a completed beacon objective.
+///
+/// Stores relevant details such as the objective's ID, name, start and end time,
+/// and additional metadata like guesses and submission status.
 #[derive(Clone)]
 pub struct BeaconObjectiveDone {
+    /// The unique identifier of the objective.
     id: usize,
+    /// The name of the objective.
     name: String,
+    /// The start time of the objective.
     start: DateTime<Utc>,
+    /// The end time of the objective.
     end: DateTime<Utc>,
+    /// A collection of guesses made for the beacon position.
     guesses: Vec<Vec2D<I32F32>>,
+    /// Status indicating whether the guesses have been submitted.
     submitted: bool,
 }
 
 impl BeaconObjectiveDone {
+    /// The allowed range for map width values.
     const MAP_WIDTH_RANGE: std::ops::Range<u32> = 0..21600;
+    /// The allowed range for map height values.
     const MAP_HEIGHT_RANGE: std::ops::Range<u32> = 0..10800;
+    /// The minimum allowable distance between random guesses.
     const MIN_DISTANCE_RAND_GUESSES: f32 = 75.0;
+
+    /// Returns the ID of the beacon objective.
     pub fn id(&self) -> usize { self.id }
+    /// Returns the name of the beacon objective.
     pub fn name(&self) -> &str { &self.name }
+    /// Returns the start time of the beacon objective.
     pub fn start(&self) -> DateTime<Utc> { self.start }
+    /// Returns the end time of the beacon objective.
     pub fn end(&self) -> DateTime<Utc> { self.end }
+    /// Returns a reference to the guesses for the beacon objective.
     pub fn guesses(&self) -> &Vec<Vec2D<I32F32>> { &self.guesses }
+    /// Returns whether the guesses have been submitted.
     pub fn submitted(&self) -> bool { self.submitted }
+    /// Sets the submission status of the guesses to true.
     pub fn set_submitted(&mut self) { self.submitted = true }
 
+    /// Sends all guesses for the beacon to the DRS.
+    ///
+    /// # Arguments
+    ///
+    /// * `client` - HTTP client used to send requests.
     #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
     pub async fn guess_max(&self, client: Arc<HTTPClient>) {
         obj!(
@@ -55,6 +81,11 @@ impl BeaconObjectiveDone {
         }
     }
 
+    /// Randomizes guesses for the beacon if none are provided and submits them.
+    ///
+    /// # Arguments
+    ///
+    /// * `client` - HTTP client used to send requests.
     #[allow(clippy::cast_possible_truncation)]
     pub async fn randomize_no_meas_guesses(&self, client: Arc<HTTPClient>) {
         if !self.guesses.is_empty() {
@@ -80,6 +111,20 @@ impl BeaconObjectiveDone {
         }
     }
 
+    /// Submits a single guess to the server.
+    ///
+    /// # Arguments
+    ///
+    /// * `req` - The request containing the guess information.
+    /// * `client` - HTTP client used to send the request.
+    /// * `guess` - The guessed position.
+    /// * `guess_num` - The number of the guess to provide contextual information.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(()))` if the guess is successful.
+    /// * `Ok(None)` if the guess fails but the process is not over.
+    /// * `Err` if an error occurs or all attempts are exhausted.
     async fn submit_guess(
         &self,
         req: BeaconPositionRequest,
@@ -120,6 +165,12 @@ impl BeaconObjectiveDone {
         Err(Error::new(ErrorKind::Other, "HTTP Error!"))
     }
 
+    /// Generates a vector of random guesses, ensuring each guess
+    /// is sufficiently spaced apart from the others.
+    ///
+    /// # Returns
+    ///
+    /// A vector of random beacon position guesses.
     fn generate_random_guesses() -> Vec<Vec2D<I32F32>> {
         let mut rng = rand::rng();
         let mut random_guesses = Vec::new();
@@ -147,6 +198,11 @@ impl BeaconObjectiveDone {
 }
 
 impl From<BeaconObjective> for BeaconObjectiveDone {
+    /// Converts a `BeaconObjective` into a `BeaconObjectiveDone`.
+    ///
+    /// # Arguments
+    ///
+    /// * `obj` - The original objective to be converted.
     fn from(obj: BeaconObjective) -> Self {
         let guesses =
             if let Some(meas) = obj.measurements() { meas.pack_perfect_circles() } else { vec![] };

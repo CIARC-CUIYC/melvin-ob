@@ -37,6 +37,7 @@ pub struct BurnSequence {
 impl BurnSequence {
     /// Additional approximate detumble + return fuel need per exit maneuver
     const ADD_FUEL_CONST: I32F32 = I32F32::lit("10.0");
+    /// Additional approximate fuel cost for secondary maneuvers
     const ADD_SECOND_MANEUVER_FUEL_CONST: I32F32 = I32F32::lit("5.0");
 
     /// Creates a new `BurnSequence` with the provided parameters.
@@ -49,6 +50,9 @@ impl BurnSequence {
     /// * `detumble_dt` - Detumbling time duration, in seconds.
     /// * `cost_factor` - The predetermined cost factor for the sequence.
     /// * `rem_angle_dev` - The remaining angular deviation
+    /// 
+    /// # Returns
+    /// A newly constructed [`BurnSequence`]
     pub fn new(
         start_i: IndexedOrbitPosition,
         sequence_pos: Box<[Vec2D<I32F32>]>,
@@ -88,12 +92,12 @@ impl BurnSequence {
         let min_acq_batt = (I32F32::from_num(acq_time) * acq_db).abs();
         let mut add_acq_secs =
             2 * usize::try_from(TaskController::ZO_IMAGE_FIRST_DEL.num_seconds()).unwrap_or(0);
-        
+
         if second_target_add_dt > 0 {
             add_acq_secs += second_target_add_dt;
             min_fuel += Self::ADD_SECOND_MANEUVER_FUEL_CONST;
         }
-        
+
         let second_need = (I32F32::from_num(add_acq_secs) * acq_acc_db).abs();
         let add_charge = (second_need - poss_charge).max(I32F32::zero());
         let min_charge = TaskController::MIN_BATTERY_THRESHOLD + min_acc_acq_batt + min_acq_batt + add_charge;
@@ -110,7 +114,7 @@ impl BurnSequence {
         }
     }
 
-    /// Returns the starting orbital position as `IndexedOrbitPosition` for the sequence.
+    /// Returns the starting orbital position as [`IndexedOrbitPosition`] for the sequence.
     pub fn start_i(&self) -> IndexedOrbitPosition { self.start_i }
 
     /// Returns the sequence of positional corrections.
@@ -158,12 +162,23 @@ impl JsonDump for ExitBurnResult {
 }
 
 impl ExitBurnResult {
+    /// Creates a new `ExitBurnResult` with the given parameters.
+    ///
+    /// # Parameters
+    /// * `sequence` - The completed [`BurnSequence`] for this burn.
+    /// * `target` - A tuple where the first element is the primary target position and the second is the secondary offset vector.
+    /// * `unwrapped_target` - The unwrapped target position in the orbital map.
+    /// * `cost` - The total cost of the burn sequence.
+    /// * `target_id` - An identifier for the target.
+    ///
+    /// # Returns
+    /// A new instance of [`ExitBurnResult`].
     pub fn new(
         sequence: BurnSequence,
         target: (Vec2D<I32F32>, Vec2D<I32F32>),
         unwrapped_target: Vec2D<I32F32>,
         cost: I32F32,
-        target_id: usize
+        target_id: usize,
     ) -> Self {
         let target_pos = target.0;
         let add_target = if target.1 == Vec2D::zero() {
@@ -174,25 +189,65 @@ impl ExitBurnResult {
         Self { sequence, cost, target_pos, add_target, unwrapped_target, target_id }
     }
 
+    /// Returns the total cost of the burn sequence.
     pub fn cost(&self) -> I32F32 { self.cost }
+
+    /// Returns a reference to the `BurnSequence` associated with this result.
     pub fn sequence(&self) -> &BurnSequence { &self.sequence }
+
+    /// Returns the position of the primary target.
     pub fn target_pos(&self) -> &Vec2D<I32F32> { &self.target_pos }
+
+    /// Returns the additional target position, if it exists.
     pub fn add_target(&self) -> Option<Vec2D<I32F32>> { self.add_target }
+
+    /// Returns the unwrapped target position.
     pub fn unwrapped_target(&self) -> &Vec2D<I32F32> { &self.unwrapped_target }
 }
 
+/// A struct responsible for evaluating potential burn sequences for an orbit.
+///
+/// [`BurnSequenceEvaluator`] processes orbital positions, velocities, and 
+/// target data to determine optimal burn sequences based on constraints such
+/// as time, fuel, and battery consumption.
+///
+/// # Fields
+/// * `i` - The current [`IndexedOrbitPosition`].
+/// * `vel` - The current velocity vector in 2D space.
+/// * `targets` - A slice of target positions and their secondary offsets.
+/// * `max_dt` - The maximum allowable delta time for a burn sequence.
+/// * `min_dt` - The minimum allowable delta time for a burn sequence.
+/// * `max_off_orbit_dt` - The maximum allowable time spent off-orbit during a sequence.
+/// * `max_angle_dev` - The maximum angular deviation for the burn sequence.
+/// * `turns` - Precomputed tuples of clockwise and counterclockwise turns for the sequence.
+/// * `best_burn` - The current best computed burn result, if one exists.
+/// * `fuel_left` - The available fuel for the evaluator to use.
+/// * `dynamic_fuel_w` - The dynamic weight assigned to fuel usage during scoring.
+/// * `target_id` - The identifier for the current target being evaluated.
 pub struct BurnSequenceEvaluator<'a> {
+    /// The current indexed orbital position.
     i: IndexedOrbitPosition,
+    /// The current velocity vector in 2D space.
     vel: Vec2D<I32F32>,
+    /// A slice of target positions and their secondary offsets.
     targets: &'a [(Vec2D<I32F32>, Vec2D<I32F32>)],
+    /// The maximum allowable delta time for a burn sequence.
     max_dt: usize,
+    /// The minimum allowable delta time for a burn sequence.
     min_dt: usize,
+    /// The maximum allowable time spent off-orbit during a sequence.
     max_off_orbit_dt: usize,
+    /// The maximum angular deviation for the burn sequence.
     max_angle_dev: I32F32,
+    /// Precomputed tuples of clockwise and counterclockwise turns for the sequence.
     turns: TurnsClockCClockTup,
+    /// The current best computed burn result, if one exists.
     best_burn: Option<ExitBurnResult>,
+    /// The available fuel for the evaluator to use.
     fuel_left: I32F32,
+    /// The dynamic weight assigned to fuel usage during scoring.
     dynamic_fuel_w: I32F32,
+    /// The identifier for the current target being evaluated.
     target_id: usize,
 }
 
@@ -291,6 +346,7 @@ impl<'a> BurnSequenceEvaluator<'a> {
         }
     }
 
+    /// Returns the unwrapped target position
     pub fn get_unwrapped_target(b: &BurnSequence, tar: &Vec2D<I32F32>) -> Vec2D<I32F32> {
         let impact_pos = *b.sequence_pos().last().unwrap()
             + *b.sequence_vel().last().unwrap() * I32F32::from_num(b.detumble_dt());
@@ -299,6 +355,7 @@ impl<'a> BurnSequenceEvaluator<'a> {
         impact_pos + offset
     }
 
+    /// Returns the (heuristically) optimal [`ExitBurnResult`] if present
     pub fn get_best_burn(self) -> Option<ExitBurnResult> { self.best_burn }
 
     /// Attempts to build a complete burn sequence using directional turns and
@@ -338,7 +395,7 @@ impl<'a> BurnSequenceEvaluator<'a> {
             add_dt += 1;
             let obj_finish_dt = min_dt + dt + add_dt + min_add_target_dt;
             let obj_arrival_dt = min_dt + dt + add_dt;
-            if obj_finish_dt > self.max_dt || obj_arrival_dt < self.min_dt || min_dt < TaskController::MANEUVER_MIN_DETUMBLE_DT 
+            if obj_finish_dt > self.max_dt || obj_arrival_dt < self.min_dt || min_dt < TaskController::MANEUVER_MIN_DETUMBLE_DT
             {
                 return None;
             }

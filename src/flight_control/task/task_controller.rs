@@ -44,7 +44,6 @@ impl TaskController {
     const MAX_ORBIT_PREDICTION_SECS: u32 = 80000;
     /// The resolution for battery levels used in calculations, expressed in fixed-point format.
     const BATTERY_RESOLUTION: I32F32 = I32F32::lit("0.1");
-
     /// The minimum batter threshold for all scheduling operations
     pub const MIN_BATTERY_THRESHOLD: I32F32 = I32F32::lit("10.00");
     /// The maximum battery treshold for all scheduling operations

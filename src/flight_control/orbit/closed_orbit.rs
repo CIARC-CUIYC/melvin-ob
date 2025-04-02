@@ -73,6 +73,7 @@ impl OrbitSegment {
         (t_x, t_y)
     }
 
+    /// Returns the shortest distance to the [`OrbitSegment`]
     fn get_abs_dist(&self, pos: &Vec2D<I32F32>) -> Vec2D<I32F32> {
         let (t_x, t_y) = self.tx_tys(pos);
         let t_x_pos = *self.start() + self.delta * t_x;
@@ -304,6 +305,7 @@ impl ClosedOrbit {
             < I32F32::lit("1.0")
     }
 
+    /// Returns the done-vector index corresponding to the current position, if on the orbit.
     pub fn get_i(&self, pos: Vec2D<I32F32>) -> Option<usize> {
         if self.will_visit(pos) {
             let step = *self.base_orbit.vel();

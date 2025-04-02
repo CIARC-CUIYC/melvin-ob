@@ -93,6 +93,8 @@ static CAMERA_SCALE_LOOKUP: LazyLock<HashMap<CameraAngle, u16>> = LazyLock::new(
     lookup
 });
 
+/// A pre-computed lookup table mapping `CameraAngle` variants to their
+/// associated maximum speed limit (in pixels/s).
 static CAMERA_MAX_SPEED_LOOKUP: LazyLock<HashMap<CameraAngle, I32F32>> = LazyLock::new(|| {
     let mut lookup = HashMap::new();
     let transition_widths = vec![

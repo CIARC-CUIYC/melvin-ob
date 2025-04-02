@@ -16,8 +16,11 @@ use fixed::types::I32F32;
 /// - `charge`: The required battery level as a fixed-point number.
 /// - `state`: The required spacecraft flight state at `time`.
 pub struct EndCondition {
+    /// The desired scheduling terminal charge
     charge: I32F32,
+    /// The desired scheduling terminal [`FlightState`]
     state: FlightState,
+    /// The desired end of scheduling
     time: DateTime<Utc>,
 }
 
