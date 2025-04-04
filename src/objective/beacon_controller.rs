@@ -203,7 +203,7 @@ impl BeaconController {
     /// * `handler` – Shared HTTP client for submission.
     async fn check_approaching_end(&self, handler: &Arc<HTTPClient>) {
         let mut finished = HashMap::new();
-        let deadline = Utc::now() + Self::TIME_TO_NEXT_PASSIVE_CHECK - TimeDelta::seconds(10);
+        let deadline = Utc::now() + Self::TIME_TO_NEXT_PASSIVE_CHECK + TimeDelta::seconds(10);
         let no_more_beacons = {
             let mut active_beacon_tasks = self.active_bo.write().await;
             active_beacon_tasks.retain(|id, beacon: &mut BeaconObjective| {
