@@ -9,7 +9,7 @@ permissions:
 
 concurrency:
   group: "pages"
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   deploy:
@@ -33,11 +33,11 @@ jobs:
           echo '<!DOCTYPE html>
           <html>
             <head>
-              <meta http-equiv="refresh" content="0; url=./my_crate/">
+              <meta http-equiv="refresh" content="0; url=./melvin-ob/">
               <title>Redirecting...</title>
             </head>
             <body>
-              Redirecting to <a href="./my_crate/">./my_crate/</a>
+              Redirecting to <a href="./melvin-ob/">./melvin-ob/</a>
             </body>
           </html>' > target/doc/index.html
 
