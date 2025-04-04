@@ -145,7 +145,7 @@ impl BeaconController {
             obj!("Received BO measurement at {pos} for ID {id} with distance {d_noisy}.");
             let mut active_lock = self.active_bo.write().await;
             if let Some(obj) = active_lock.get_mut(&id) {
-                obj!("Updating BO {id} and prolonging!");
+                obj!("Updating BO {id} measurement list!");
                 obj.append_measurement(meas);
             } else {
                 warn!("Unknown BO ID {id}. Ignoring!");
