@@ -11,7 +11,8 @@ concurrency:
   cancel-in-progress: true
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: cuiyc-melvin-ob
+  ORG_NAME: CUIYC
+  IMAGE_NAME: melvin-ob
 jobs:
   publish-docker:
     name: "Build docker and publish"
@@ -41,7 +42,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{env.ORG_NAME}}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
 
       - name: Build and push Docker image
         id: build-and-push
