@@ -12,7 +12,7 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   ORG_NAME: ciarc-cuiyc
-  IMAGE_NAME: melvin-ob
+  IMAGE_NAME: cuiyc.melvin-ob
 jobs:
   publish-docker:
     name: "Build docker and publish"
