@@ -1,4 +1,8 @@
-![Build Binary](https://github.com/CIARC-CUIYC/melvin-ob/actions/workflows/build_binary.yaml/badge.svg) ![Deploy Docs](https://github.com/CIARC-CUIYC/melvin-ob/actions/workflows/build_pages.yaml/badge.svg) ![Docker](https://github.com/CIARC-CUIYC/melvin-ob/actions/workflows/build_docker.yaml/badge.svg)
+[![Docs](https://img.shields.io/badge/Docs-blue)](https://github.com/CIARC-CUIYC/melvin-ob)
+![Build](https://github.com/CIARC-CUIYC/melvin-ob/actions/workflows/build_binary.yaml/badge.svg) 
+![Deploy Docs](https://github.com/CIARC-CUIYC/melvin-ob/actions/workflows/build_pages.yaml/badge.svg) 
+![Docker](https://github.com/CIARC-CUIYC/melvin-ob/actions/workflows/build_docker.yaml/badge.svg)
+
 # 🛰 MELVIN-OB
 Welcome to the onboard software for **Team 03 — "Cache us if you can"** competing in the **2024/2025 ESA Computer in a Room Challenge**. 
 This repository contains the embedded code running on the simulated MELVIN onboard computer, responsible 
