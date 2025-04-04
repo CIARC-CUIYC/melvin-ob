@@ -1,3 +1,7 @@
+//! This module defines various objectives and their handling system.
+//! It includes algorithms for managing and interacting with beacon objectives, as well as zoned and secret objectives.
+//! Also this module contains the whole logic for beacon measurements and their filtering.
+
 mod beacon_objective;
 mod beacon_objective_done;
 mod known_img_objective;

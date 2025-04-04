@@ -82,7 +82,7 @@ impl FileBackedBuffer {
 }
 
 impl Drop for FileBackedBuffer {
-    /// Cleans up the memory-mapped region when the `FileBackedBuffer` is dropped.
+    /// Cleans up the memory-mapped region when the [`FileBackedBuffer`] is dropped.
     fn drop(&mut self) {
         unsafe {
             libc::munmap(self.ptr.cast::<c_void>(), self.length);

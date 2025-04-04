@@ -194,7 +194,7 @@ impl BeaconController {
     }
 
     /// Checks for objectives that are:
-    /// - About to end within [`TIME_TO_NEXT_PASSIVE_CHECK`]
+    /// - About to end within `TIME_TO_NEXT_PASSIVE_CHECK`
     /// - Have enough guesses already
     ///
     /// Submits them and updates internal state.

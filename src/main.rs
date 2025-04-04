@@ -35,14 +35,16 @@ use chrono::TimeDelta;
 use fixed::types::I32F32;
 use std::{env, sync::Arc, time::Duration};
 
-const DT_MIN: TimeDelta = TimeDelta::seconds(5);
+/// Shared 0-length timedelta in chrono units
 const DT_0: TimeDelta = TimeDelta::seconds(0);
+/// Shared 0-length timedelta in std time units
 const DT_0_STD: Duration = Duration::from_secs(0);
-const DETUMBLE_TOL: TimeDelta = DT_MIN;
 
+/// Static orbit velocity for closed orbit
 const STATIC_ORBIT_VEL: (I32F32, I32F32) = (I32F32::lit("6.40"), I32F32::lit("7.40"));
-const CONST_ANGLE: CameraAngle = CameraAngle::Narrow;
+/// Environment variable holding the DRS url
 const ENV_BASE_URL: &str = "DRS_BASE_URL";
+/// Environment variable indicating whether to skip the initial reset or not
 const ENV_SKIP_RESET: &str = "SKIP_RESET";
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
@@ -112,7 +114,7 @@ async fn init(url: &str) -> (Arc<ModeContext>, Box<dyn GlobalMode>) {
         beac_cont_clone.run(handler).await;
     });
 
-    tokio::time::sleep(DT_MIN.to_std().unwrap()).await;
+    tokio::time::sleep(Duration::from_secs(5)).await;
 
     if let Some(c_orbit) = ClosedOrbit::try_from_env() {
         info!(
@@ -140,7 +142,7 @@ async fn init(url: &str) -> (Arc<ModeContext>, Box<dyn GlobalMode>) {
         let f_cont_lock = init_k.f_cont();
         FlightComputer::set_state_wait(init_k.f_cont(), FlightState::Acquisition).await;
         FlightComputer::set_vel_wait(init_k.f_cont(), STATIC_ORBIT_VEL.into(), false).await;
-        FlightComputer::set_angle_wait(init_k.f_cont(), CONST_ANGLE).await;
+        FlightComputer::set_angle_wait(init_k.f_cont(), CameraAngle::Narrow).await;
         let f_cont = f_cont_lock.read().await;
         ClosedOrbit::new(OrbitBase::new(&f_cont), CameraAngle::Wide).unwrap_or_else(|e| match e {
             OrbitUsabilityError::OrbitNotClosed => fatal!("Static orbit is not closed"),

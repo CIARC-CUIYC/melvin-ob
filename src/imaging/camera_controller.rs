@@ -55,7 +55,7 @@ impl CameraController {
     /// Constant `TimeDelta` between images when in zoned objective acquisition.
     const ZO_IMG_ACQ_DELAY: TimeDelta = TimeDelta::seconds(2);
 
-    /// Initializes the `CameraController` with the given base path and HTTP client.
+    /// Initializes the [`CameraController`] with the given base path and HTTP client.
     ///
     /// # Arguments
     ///
@@ -64,7 +64,7 @@ impl CameraController {
     ///
     /// # Returns
     ///
-    /// A new instance of `CameraController`.
+    /// A new instance of [`CameraController`].
     pub fn start(base_path: String, request_client: Arc<HTTPClient>) -> Self {
         let fullsize_map_image =
             FullsizeMapImage::open(Path::new(&base_path).join(MAP_BUFFER_PATH));

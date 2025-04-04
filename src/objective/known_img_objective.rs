@@ -130,7 +130,7 @@ impl TryFrom<ImageObjective> for KnownImgObjective {
 impl TryFrom<(ImageObjective, [i32; 4])> for KnownImgObjective {
     type Error = std::io::Error;
 
-    /// Attempts to convert a tuple of `(ImageObjective, zone)` into a `KnownImgObjective`.
+    /// Attempts to convert a tuple of `(ImageObjective, zone)` into a [`KnownImgObjective`].
     ///
     /// # Errors
     /// Returns an error if the `ImageObjective` is of type `KnownZone`.

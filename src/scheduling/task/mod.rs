@@ -1,3 +1,6 @@
+//! This module defines various task types and their implementations, 
+//! including tasks for image capturing, state switching, and velocity changes.
+
 mod base_task;
 mod image_task;
 mod switch_state_task;

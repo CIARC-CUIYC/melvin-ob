@@ -20,14 +20,14 @@ impl SquareSlice {
     /// The spacing factor used for hexagonal packing within the square slice.
     const HEX_PACK_SPACING_FACTOR: f32 = 0.93;
 
-    /// Creates a new `SquareSlice` given a position and maximum distance.
+    /// Creates a new [`SquareSlice`] given a position and maximum distance.
     ///
     /// # Arguments
     /// * `pos` - The position vector on the map.
     /// * `max_dist` - The maximum distance vector defining the slice size.
     ///
     /// # Returns
-    /// A new `SquareSlice` instance.
+    /// A new [`SquareSlice`] instance.
     pub fn new(pos: Vec2D<I32F32>, max_dist: Vec2D<I32F32>) -> Self {
         let offset = (pos - max_dist).wrap_around_map();
         Self { offset, side_length: max_dist * I32F32::from_num(2) }
@@ -47,7 +47,7 @@ impl SquareSlice {
     /// Calculates the intersection of the current slice with another slice.
     ///
     /// # Arguments
-    /// * `other` - The other `SquareSlice` to intersect with.
+    /// * `other` - The other [`SquareSlice`] to intersect with.
     ///
     /// # Returns
     /// An `Option` containing the resulting `SquareSlice` if an intersection exists, otherwise `None`.

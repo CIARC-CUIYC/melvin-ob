@@ -1,3 +1,7 @@
+//! This module provides request and implicit response handling for various HTTP endpoints
+//! related to simulation and satellite control. Each submodule corresponds to
+//! a specific endpoint, managing its request and response types along with
+//! associated logic.
 use super::http_response::{
     achievements, annoucements, available_slots, beacon_position, configure_simulation,
     control_satellite, create_backup, daily_map, delete_objective, modify_objective, modify_slot,

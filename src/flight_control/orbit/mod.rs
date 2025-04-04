@@ -1,3 +1,7 @@
+//! This module provides functionality for toroidal orbital mechanics
+//! and related computations, including support for closed orbits, burn sequences, 
+//! and indexed orbit positions. 
+
 mod burn_sequence;
 mod characteristics;
 mod closed_orbit;

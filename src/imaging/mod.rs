@@ -1,3 +1,6 @@
+//! This module provides various components and utilities for handling 
+//! camera control, map and objective image buffering in the system.
+
 pub(super) mod cycle_state;
 mod file_based_buffer;
 pub(crate) mod map_image;

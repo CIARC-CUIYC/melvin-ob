@@ -1,3 +1,7 @@
+//! This module provides the foundational components for mode control, including signal handling 
+//! and mode context management, which are essential for implementing and switching between 
+//! various operational modes in the implemented nested state machine.
+
 mod base_mode;
 pub(crate) mod mode;
 mod mode_context;

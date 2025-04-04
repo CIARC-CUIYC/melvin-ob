@@ -78,7 +78,7 @@ impl OrbitReturnMode {
     /// * `context` – Shared mode context.
     ///
     /// # Returns
-    /// * `BaseMode` – Either [`MappingMode`] or [`BeaconObjectiveScanningMode`].
+    /// * `BaseMode` – Either `MappingMode` or `BeaconObjectiveScanningMode`.
     async fn get_next_base_mode(context: &Arc<ModeContext>) -> BaseMode {
         let beacon_cont_state = {
             let mut bo_mon = context.bo_mon().write().await;

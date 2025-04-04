@@ -40,7 +40,7 @@ impl AtomicDecisionCube {
     /// * `s` - The index along the state dimension.
     ///
     /// # Returns
-    /// The `AtomicDecision` at the specified indices.
+    /// The [`AtomicDecision`] at the specified indices.
     pub fn get(&self, dt: usize, e: usize, s: usize) -> AtomicDecision {
         self.decisions[dt * self.e_len * self.s_len + e * self.s_len + s]
     }
@@ -51,7 +51,7 @@ impl AtomicDecisionCube {
     /// * `dt` - The index along the time dimension.
     /// * `e` - The index along the energy dimension.
     /// * `s` - The index along the state dimension.
-    /// * `decision` - The `AtomicDecision` to set at the specified indices.
+    /// * `decision` - The [`AtomicDecision`] to set at the specified indices.
     pub fn set(&mut self, dt: usize, e: usize, s: usize, decision: AtomicDecision) {
         self.decisions[dt * self.e_len * self.s_len + e * self.s_len + s] = decision;
     }

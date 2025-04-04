@@ -13,9 +13,9 @@ use chrono::{DateTime, Utc};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
-/// `InOrbitMode` is an implementation of [`GlobalMode`] and [`OrbitalMode`] that governs normal
+/// [`InOrbitMode`] is an implementation of [`GlobalMode`] and [`OrbitalMode`] that governs normal
 /// in-orbit operations such as transitioning between flight states, listening for event-driven
-/// interrupts (e.g., Safe Mode, ZO, BO), and executing scheduled task queues specific to the `InOrbitMode`.
+/// interrupts (e.g., Safe Mode, ZO, BO), and executing scheduled task queues specific to the [`InOrbitMode`].
 ///
 /// This mode represents the satellite operating in a stable orbital state, performing mapping or communication tasks.
 ///
@@ -33,7 +33,7 @@ impl InOrbitMode {
     /// Constructs a new [`InOrbitMode`] instance using the given [`BaseMode`].
     ///
     /// # Arguments
-    /// * `base` – The high-level operational context (e.g., [`MappingMode`]).
+    /// * `base` – The high-level operational context (e.g., `MappingMode`).
     ///
     /// # Returns
     /// * [`InOrbitMode`] – The initialized mode.
@@ -59,7 +59,7 @@ impl GlobalMode for InOrbitMode {
     /// * `context` – The shared execution context for the mode.
     ///
     /// # Returns
-    /// * `OpExitSignal` – Signal indicating if the mode should continue or reinitialize.
+    /// * [`OpExitSignal`] – Signal indicating if the mode should continue or reinitialize.
     async fn init_mode(&self, context: Arc<ModeContext>) -> OpExitSignal {
         let cancel_task = CancellationToken::new();
         let comms_end = self.base.handle_sched_preconditions(Arc::clone(&context)).await;

@@ -35,7 +35,7 @@ impl ScoreGrid {
     ///   and the minimum row (`end_min_e`) from which to initialize the scores.
     ///
     /// # Returns
-    /// A `ScoreGrid` with scores set to `i32::MIN` by default, and rows
+    /// A [`ScoreGrid`] with scores set to `i32::MIN` by default, and rows
     /// starting at `(end_min_e, end_s)` initialized to `0`.
     pub fn new_from_condition(
         e_len: usize,

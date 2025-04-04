@@ -306,11 +306,11 @@ impl BaseMode {
 
     /// Executes the corresponding primitive for task execution.
     ///
-    /// In `GlobalModes` with a corresponding `BaseMode` this handles the logic for `SwitchStateTasks`.
+    /// In [`GlobalMode`] with a corresponding [`BaseMode`] this handles the logic for [`SwitchStateTask`].
     ///
     /// # Arguments
-    /// - `context`: A shared reference to a `ModeContext` object.
-    /// - `task`: The corresponding `SwitchStateTask` object.
+    /// - `context`: A shared reference to a [`ModeContext`] object.
+    /// - `task`: The corresponding [`SwitchStateTask`] object.
     pub(super) async fn get_task(&self, context: Arc<ModeContext>, task: SwitchStateTask) {
         let f_cont = context.k().f_cont();
         match task.target_state() {

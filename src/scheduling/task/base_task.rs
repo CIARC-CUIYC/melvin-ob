@@ -67,7 +67,7 @@ impl Task {
     /// - `t`: The time delay associated with the task's execution.
     ///
     /// # Returns
-    /// - A new `Task` instance representing the state switch task.
+    /// - A new [`Task`] instance representing the state switch task.
     ///
     /// # Panics
     /// Panics if the provided `target_state` is invalid for switching.

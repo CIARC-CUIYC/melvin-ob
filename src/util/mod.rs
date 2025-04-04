@@ -1,3 +1,5 @@
+//! This module provides utilities and functionalities for mathematical operations,
+//! logging, and the controller keychain.
 mod keychain;
 pub mod logger;
 mod math;

@@ -19,7 +19,7 @@ pub struct BeaconMeas {
 }
 
 impl BeaconMeas {
-    /// Creates a new `BeaconMeas` instance.
+    /// Creates a new [`BeaconMeas`] instance.
     ///
     /// # Arguments
     /// * `id` - Unique identifier of the beacon.
@@ -75,7 +75,7 @@ impl JsonDump for BeaconObjective {
 }
 
 impl BeaconObjective {
-    /// Creates a new `BeaconObjective` instance.
+    /// Creates a new [`BeaconObjective`] instance.
     ///
     /// # Arguments
     /// * `id` - Unique identifier of the beacon objective.

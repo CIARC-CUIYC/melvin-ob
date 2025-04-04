@@ -21,7 +21,7 @@ pub struct SecretImgObjective {
 }
 
 impl SecretImgObjective {
-    /// Creates a new `SecretImgObjective`.
+    /// Creates a new [`SecretImgObjective`].
     ///
     /// # Parameters
     /// - `id`: The unique identifier for the objective.
@@ -32,7 +32,7 @@ impl SecretImgObjective {
     /// - `coverage_required`: The required coverage area for image processing.
     ///
     /// # Returns
-    /// A new `SecretImgObjective` instance.
+    /// A new [`SecretImgObjective`] instance.
     pub fn new(
         id: usize,
         name: String,

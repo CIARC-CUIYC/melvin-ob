@@ -17,7 +17,7 @@ use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 /// [`ZORetrievalMode`] is responsible for completing the final phase of a zoned objective
-/// after the spacecraft has exited its original orbit via a [`BurnSequence`]. In this mode,
+/// after the spacecraft has exited its original orbit. In this mode,
 /// the spacecraft aligns, captures imagery, and uploads results.
 ///
 /// The mode is considered time-sensitive, interruptible (e.g., safe mode), and does not allow

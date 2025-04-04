@@ -1,3 +1,7 @@
+//! This module defines and organizes all the submodules for handling various 
+//! HTTP endpoints and their corresponding responses. Each submodule represents
+//! an implementation related to a specific API endpoint, including its
+//! response handling and parsing logic.
 pub(super) mod achievements;
 pub(crate) mod annoucements;
 pub(super) mod available_slots;

@@ -18,7 +18,7 @@ use tokio::sync::RwLock;
 /// It leverages a thread-safe task queue and powerful scheduling algorithms.
 ///
 /// # Fields
-/// - `image_schedule`: A shared Reference to a [`VecDeque`] holding [`Task`].
+/// - `image_schedule`: A shared Reference to a `VecDeque` holding [`Task`].
 #[derive(Debug)]
 pub struct TaskController {
     /// Schedule for the next task, e.g. state switches, burn sequences, ...
@@ -29,7 +29,7 @@ pub struct TaskController {
 struct OptimalOrbitResult {
     /// Flattened 3D-Array holding decisions in time, energy, state dimension
     pub decisions: AtomicDecisionCube,
-    /// `LinkedBox` holding some of the last scores over the energy and the state dimension for the calculation
+    /// [`LinkedBox`] holding some of the last scores over the energy and the state dimension for the calculation
     pub coverage_slice: LinkedBox<ScoreGrid>,
 }
 
@@ -67,10 +67,10 @@ impl TaskController {
     /// The minimum charge needed to enter communication state
     pub const MIN_COMMS_START_CHARGE: I32F32 = I32F32::lit("20.0");
 
-    /// Creates a new instance of the `TaskController` struct.
+    /// Creates a new instance of the [`TaskController`] struct.
     ///
     /// # Returns
-    /// - A new `TaskController` with an empty task schedule.
+    /// - A new [`TaskController`] with an empty task schedule.
     pub fn new() -> Self { Self { task_schedule: Arc::new(RwLock::new(VecDeque::new())) } }
 
     /// Initializes the optimal orbit schedule calculation.
@@ -79,10 +79,10 @@ impl TaskController {
     /// the most efficient orbit path based on the given parameters.
     ///
     /// # Arguments
-    /// * `orbit` - Reference to the `ClosedOrbit` structure representing the current orbit configuration.
+    /// * `orbit` - Reference to the [`ClosedOrbit`] structure representing the current orbit configuration.
     /// * `p_t_shift` - The starting index used to shift and reorder the bitvector of the orbit.
     /// * `dt` - Optional maximum prediction duration in seconds. If `None`, defaults to the orbit period or the maximum prediction length.
-    /// * `end_status` - Optional tuple containing the end flight state (`FlightState`) and battery level (`I32F32`) constraints.
+    /// * `end_status` - Optional tuple containing the end flight state ([`FlightState`]) and battery level (`I32F32`) constraints.
     ///
     /// # Returns
     /// * `OptimalOrbitResult` - The final result containing calculated decisions and coverage slice used in the optimization.

@@ -258,13 +258,13 @@ pub(super) trait OrbitalMode: GlobalMode {
         }
     }
 
-    /// Continuously monitors the [`BeaconController`] state until it changes to the expected value.
+    /// Continuously monitors the [`BeaconControllerState`] until it changes to the expected value.
     ///
     /// Used to react to asynchronous events in which the beacon scanning mode (e.g., active or inactive)
     /// must trigger a response in the scheduler or mode transition logic.
     ///
     /// # Arguments
-    /// * `sig` – The [`BeaconController`] state to wait for.
+    /// * `sig` – The [`BeaconControllerState`] state to wait for.
     /// * `bo_mon` – A watch receiver providing asynchronous access to beacon state changes.
     async fn monitor_bo_mon_change(
         sig: BeaconControllerState,

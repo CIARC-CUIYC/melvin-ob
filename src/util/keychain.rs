@@ -35,13 +35,13 @@ pub struct Keychain {
 }
 
 impl Keychain {
-    /// Creates a new instance of `Keychain` asynchronously.
+    /// Creates a new instance of [`Keychain`] asynchronously.
     ///
     /// # Arguments
     /// - `url`: The base URL to initialize the HTTP client.
     ///
     /// # Returns
-    /// A new instance of `Keychain` containing initialized subsystems.
+    /// A new instance of [`Keychain`] containing initialized subsystems.
     pub async fn new(url: &str) -> (Self, Receiver<KnownImgObjective>, Receiver<BeaconObjective>) {
         let client = Arc::new(HTTPClient::new(url));
         let c_cont = Arc::new(CameraController::start(
@@ -86,7 +86,7 @@ impl Keychain {
     pub fn c_cont(&self) -> Arc<CameraController> { Arc::clone(&self.c_cont) }
 }
 
-/// Struct representing an enhanced `Keychain` that includes a `ClosedOrbit`.
+/// Struct representing an enhanced [`Keychain`] that includes a [`ClosedOrbit`].
 /// This struct offers access to various subsystems in addition to holding the orbit
 /// and its related operations.
 ///

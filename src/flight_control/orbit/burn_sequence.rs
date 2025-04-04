@@ -11,7 +11,7 @@ use crate::util::logger::JsonDump;
 
 /// Represents a sequence of corrective burns for orbital adjustments.
 ///
-/// The `BurnSequence` contains position and velocity sequences, along with
+/// The [`BurnSequence`] contains position and velocity sequences, along with
 /// timing and cost information, for controlling orbit behavior.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct BurnSequence {
@@ -39,7 +39,7 @@ impl BurnSequence {
     /// Additional approximate fuel cost for secondary maneuvers
     const ADD_SECOND_MANEUVER_FUEL_CONST: I32F32 = I32F32::lit("5.0");
 
-    /// Creates a new `BurnSequence` with the provided parameters.
+    /// Creates a new [`BurnSequence`] with the provided parameters.
     ///
     /// # Parameters
     /// * `start_i` - The initial orbital position for the sequence.
@@ -161,7 +161,7 @@ impl JsonDump for ExitBurnResult {
 }
 
 impl ExitBurnResult {
-    /// Creates a new `ExitBurnResult` with the given parameters.
+    /// Creates a new [`ExitBurnResult`] with the given parameters.
     ///
     /// # Parameters
     /// * `sequence` - The completed [`BurnSequence`] for this burn.

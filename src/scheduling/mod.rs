@@ -1,3 +1,5 @@
+//! This module provides the core components for managing tasks and decisions.
+
 mod atomic_decision;
 mod atomic_decision_cube;
 pub mod task;
