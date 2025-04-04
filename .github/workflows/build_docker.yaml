@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 env:
   REGISTRY: ghcr.io
-  ORG_NAME: CUIYC
+  ORG_NAME: ciarc-cuiyc
   IMAGE_NAME: melvin-ob
 jobs:
   publish-docker:
