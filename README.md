@@ -1,4 +1,4 @@
-[![Docs](https://img.shields.io/badge/Docs-blue)](https://github.com/CIARC-CUIYC/melvin-ob)
+[![Docs](https://img.shields.io/badge/Docs-blue)](https://ciarc-cuiyc.github.io/melvin-ob/)
 ![Build](https://github.com/CIARC-CUIYC/melvin-ob/actions/workflows/build_binary.yaml/badge.svg) 
 ![Deploy Docs](https://github.com/CIARC-CUIYC/melvin-ob/actions/workflows/build_pages.yaml/badge.svg) 
 ![Docker](https://github.com/CIARC-CUIYC/melvin-ob/actions/workflows/build_docker.yaml/badge.svg)
