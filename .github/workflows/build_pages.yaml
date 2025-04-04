@@ -33,11 +33,11 @@ jobs:
           echo '<!DOCTYPE html>
           <html>
             <head>
-              <meta http-equiv="refresh" content="0; url=./melvin-ob/">
+              <meta http-equiv="refresh" content="0; url=./melvin_ob/">
               <title>Redirecting...</title>
             </head>
             <body>
-              Redirecting to <a href="./melvin-ob/">./melvin-ob/</a>
+              Redirecting to <a href="./melvin_ob/">./melvin_ob/</a>
             </body>
           </html>' > target/doc/index.html
 

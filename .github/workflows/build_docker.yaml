@@ -9,12 +9,13 @@ permissions:
 concurrency:
   group: "docker"
   cancel-in-progress: true
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: cuiyc-melvin-ob
 jobs:
   publish-docker:
     name: "Build docker and publish"
     runs-on: ubuntu-latest
-
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
