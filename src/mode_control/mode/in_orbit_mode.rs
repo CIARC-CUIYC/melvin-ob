@@ -120,7 +120,7 @@ impl GlobalMode for InOrbitMode {
         ExecExitSignal::Continue
     }
 
-    /// Handles the transition into [`FlightState::Safe`], executing a fallback escape sequence 
+    /// Handles the transition into `FlightState::Safe`, executing a fallback escape sequence
     /// and finishing the orbit phase.
     ///
     /// # Arguments

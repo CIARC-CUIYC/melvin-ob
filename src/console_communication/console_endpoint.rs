@@ -28,25 +28,20 @@ pub enum ConsoleEvent {
 }
 
 /// The `ConsoleEndpoint` handles communication with MELVINs operator console.
-///
-/// # Fields
-/// - `downstream_sender`: Used to send downstream messages to connected consoles.
-/// - `upstream_event_sender`: Used to broadcast upstream events from consoles.
-/// - `close_oneshot_sender`: A channel sender to trigger endpoint shutdown.
 pub(crate) struct ConsoleEndpoint {
     /// Used to send downstream messages to connected consoles.
-    downstream_sender: broadcast::Sender<Option<Arc<Vec<u8>>>>,
+    downstream: broadcast::Sender<Option<Arc<Vec<u8>>>>,
     /// Used to broadcast upstream events from consoles.
-    upstream_event_sender: broadcast::Sender<ConsoleEvent>,
+    upstream_event: broadcast::Sender<ConsoleEvent>,
     /// A channel sender to trigger endpoint shutdown.
-    close_oneshot_sender: Option<oneshot::Sender<()>>,
+    close_oneshot: Option<oneshot::Sender<()>>,
 }
 
 impl ConsoleEndpoint {
     /// Handles incoming data from the connected console. It listens for messages
     /// and broadcasts them as upstream events.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `socket`: The reading end of the connection.
     /// - `upstream_event_sender`: The sender used to broadcast received upstream events.
     ///
@@ -74,7 +69,7 @@ impl ConsoleEndpoint {
     /// Handles sending downstream messages to the connected console. It listens to a receiver
     /// for messages and sends them to the console.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `socket`: The write end of the connection.
     /// - `downstream_receiver`: A receiver to get downstream messages.
     ///
@@ -105,9 +100,9 @@ impl ConsoleEndpoint {
         let upstream_event_sender = broadcast::Sender::new(5);
         let (close_oneshot_sender, mut close_oneshot_receiver) = oneshot::channel();
         let inst = Self {
-            downstream_sender: downstream_sender.clone(),
-            upstream_event_sender: upstream_event_sender.clone(),
-            close_oneshot_sender: Some(close_oneshot_sender),
+            downstream: downstream_sender.clone(),
+            upstream_event: upstream_event_sender.clone(),
+            close_oneshot: Some(close_oneshot_sender),
         };
         tokio::spawn(async move {
             info!("Started Console Endpoint");
@@ -158,10 +153,10 @@ impl ConsoleEndpoint {
 
     /// Sends a downstream message to the operator console.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `msg`: A `DownstreamContent` message to send.
     pub(crate) fn send_downstream(&self, msg: melvin_messages::DownstreamContent) {
-        let _ = self.downstream_sender.send(Some(Arc::new(
+        let _ = self.downstream.send(Some(Arc::new(
             melvin_messages::Downstream { content: Some(msg) }.encode_to_vec(),
         )));
     }
@@ -171,7 +166,7 @@ impl ConsoleEndpoint {
     /// # Returns
     /// `true` if at least one console is connected; otherwise, `false`.
     pub(crate) fn is_console_connected(&self) -> bool {
-        self.downstream_sender.receiver_count() > 0
+        self.downstream.receiver_count() > 0
     }
 
     /// Subscribes to upstream events from the connected console.
@@ -179,7 +174,7 @@ impl ConsoleEndpoint {
     /// # Returns
     /// A broadcast receiver to listen for upstream events.
     pub(crate) fn subscribe_upstream_events(&self) -> broadcast::Receiver<ConsoleEvent> {
-        self.upstream_event_sender.subscribe()
+        self.upstream_event.subscribe()
     }
 }
 
@@ -187,7 +182,7 @@ impl Drop for ConsoleEndpoint {
     /// Handles graceful shutdown of the `ConsoleEndpoint`. Signals the close channel
     /// and notifies all downstream subscribers of disconnection.
     fn drop(&mut self) {
-        self.close_oneshot_sender.take().unwrap().send(()).unwrap();
-        self.downstream_sender.send(None).unwrap();
+        self.close_oneshot.take().unwrap().send(()).unwrap();
+        self.downstream.send(None).unwrap();
     }
 }

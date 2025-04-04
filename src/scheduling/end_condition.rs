@@ -10,11 +10,6 @@ use fixed::types::I32F32;
 /// resources are met.
 ///
 /// Typically passed to the scheduler to guide the final phase of planning.
-///
-/// # Fields
-/// - `time`: The deadline timestamp by which the condition must be satisfied.
-/// - `charge`: The required battery level as a fixed-point number.
-/// - `state`: The required spacecraft flight state at `time`.
 pub struct EndCondition {
     /// The desired scheduling terminal charge
     charge: I32F32,
@@ -27,7 +22,7 @@ pub struct EndCondition {
 impl EndCondition {
     /// Creates an [`EndCondition`] from a given burn sequence.
     ///
-    /// The resulting condition requires being in [`Acquisition`] mode with
+    /// The resulting condition requires being in `Acquisition` mode with
     /// the burn's `min_charge()` at its start time.
     ///
     /// # Arguments

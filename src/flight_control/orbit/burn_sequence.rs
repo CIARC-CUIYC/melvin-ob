@@ -41,7 +41,7 @@ impl BurnSequence {
 
     /// Creates a new [`BurnSequence`] with the provided parameters.
     ///
-    /// # Parameters
+    /// # Arguments
     /// * `start_i` - The initial orbital position for the sequence.
     /// * `sequence_pos` - A boxed slice of positional corrections.
     /// * `sequence_vel` - A boxed slice of velocity corrections.
@@ -163,7 +163,7 @@ impl JsonDump for ExitBurnResult {
 impl ExitBurnResult {
     /// Creates a new [`ExitBurnResult`] with the given parameters.
     ///
-    /// # Parameters
+    /// # Arguments
     /// * `sequence` - The completed [`BurnSequence`] for this burn.
     /// * `target` - A tuple where the first element is the primary target position and the second is the secondary offset vector.
     /// * `unwrapped_target` - The unwrapped target position in the orbital map.
@@ -209,20 +209,6 @@ impl ExitBurnResult {
 /// [`BurnSequenceEvaluator`] processes orbital positions, velocities, and 
 /// target data to determine optimal burn sequences based on constraints such
 /// as time, fuel, and battery consumption.
-///
-/// # Fields
-/// * `i` - The current [`IndexedOrbitPosition`].
-/// * `vel` - The current velocity vector in 2D space.
-/// * `targets` - A slice of target positions and their secondary offsets.
-/// * `max_dt` - The maximum allowable delta time for a burn sequence.
-/// * `min_dt` - The minimum allowable delta time for a burn sequence.
-/// * `max_off_orbit_dt` - The maximum allowable time spent off-orbit during a sequence.
-/// * `max_angle_dev` - The maximum angular deviation for the burn sequence.
-/// * `turns` - Precomputed tuples of clockwise and counterclockwise turns for the sequence.
-/// * `best_burn` - The current best computed burn result, if one exists.
-/// * `fuel_left` - The available fuel for the evaluator to use.
-/// * `dynamic_fuel_w` - The dynamic weight assigned to fuel usage during scoring.
-/// * `target_id` - The identifier for the current target being evaluated.
 pub struct BurnSequenceEvaluator<'a> {
     /// The current indexed orbital position.
     i: IndexedOrbitPosition,
@@ -306,7 +292,7 @@ impl<'a> BurnSequenceEvaluator<'a> {
 
     /// Evaluates whether a burn sequence at a specific `dt` is viable and better than existing sequences.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `dt`: Time offset in seconds from current position.
     /// - `max_needed_batt`: Upper bound for acceptable battery consumption.
     ///
@@ -360,7 +346,7 @@ impl<'a> BurnSequenceEvaluator<'a> {
     /// Attempts to build a complete burn sequence using directional turns and
     /// evaluating if the final orientation and arrival meet objective constraints.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `burn_i`: Starting orbit index for this sequence.
     /// - `turns_in_dir`: Precomputed valid turn maneuvers in chosen direction.
     /// - `break_cond`: Whether to break based on clockwise/anticlockwise matching.

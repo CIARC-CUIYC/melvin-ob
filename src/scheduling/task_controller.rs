@@ -16,9 +16,6 @@ use tokio::sync::RwLock;
 
 /// [`TaskController`] manages and schedules tasks for MELVIN.
 /// It leverages a thread-safe task queue and powerful scheduling algorithms.
-///
-/// # Fields
-/// - `image_schedule`: A shared Reference to a `VecDeque` holding [`Task`].
 #[derive(Debug)]
 pub struct TaskController {
     /// Schedule for the next task, e.g. state switches, burn sequences, ...
@@ -426,7 +423,7 @@ impl TaskController {
     ///
     /// # Notes
     /// - This method ensures each comms cycle starts with sufficient charge.
-    /// - Uses [`COMMS_SCHED_USABLE_TIME`] and [`COMMS_CHARGE_USAGE`] constants to
+    /// - Uses `COMMS_SCHED_USABLE_TIME` and `COMMS_CHARGE_USAGE` constants to
     ///   define time and battery requirements.
     #[allow(clippy::cast_possible_wrap)]
     async fn sched_single_comms_cycle(
@@ -754,7 +751,7 @@ impl TaskController {
 
     /// Schedules a task to capture an image at a specific time and position using the given camera lens.
     ///
-    /// This method creates and enqueues a [`Task::TakeImage`] operation, wrapping the target
+    /// This method creates and enqueues a `Task::TakeImage` operation, wrapping the target
     /// position to `u32` dimensions and assigning the provided lens type.
     ///
     /// # Arguments

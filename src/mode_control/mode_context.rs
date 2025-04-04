@@ -7,22 +7,13 @@ use crate::util::KeychainWithOrbit;
 use std::{collections::BinaryHeap, sync::Arc};
 use tokio::sync::{Mutex, RwLock, mpsc::Receiver, watch};
 
-/// [`ModeContext`] is a central context container used by [`GlobalMode`] in the onboard software.
+/// [`ModeContext`] is a central context container used by `GlobalMode` in the onboard software.
 /// It provides shared access to key mission-critical resources such as orbit state,
 /// supervisory control, objective channels, and internal buffers.
 ///
 /// This structure enables modular FSM behavior by providing thread-safe, concurrent access
-/// to both live and buffered data, allowing [`GlobalMode`] to remain more or less stateless and focused
+/// to both live and buffered data, allowing `GlobalMode` to remain more or less stateless and focused
 /// solely on decision logic.
-/// 
-/// # Fields
-/// - `k`: A shared [`KeychainWithOrbit`] object providing access to the controllers and the orbit.
-/// - `o_ch`: A shared and locked [`OrbitCharacteristics`] object providing orbit related dynamic parameters.
-/// - `super_v`: Shared access to the [`Supervisor`] handling observation updates, ... 
-/// - `zo_mon`: Receiver for events regarding Zoned Objectives.
-/// - `bo_mon`: Watch Receiver broadcasting the current state of the [`BeaconController`].
-/// - `k_buffer`: A locked buffer containing additional [`KnownImgObjective`].
-/// - `beac_cont`: The beacon controller handling beacon related functionality.
 pub(crate) struct ModeContext {
     /// Shared keychain containing the various controllers and the orbit configuration.
     k: Arc<KeychainWithOrbit>,

@@ -306,7 +306,7 @@ impl BaseMode {
 
     /// Executes the corresponding primitive for task execution.
     ///
-    /// In [`GlobalMode`] with a corresponding [`BaseMode`] this handles the logic for [`SwitchStateTask`].
+    /// In `GlobalMode` with a corresponding [`BaseMode`] this handles the logic for [`SwitchStateTask`].
     ///
     /// # Arguments
     /// - `context`: A shared reference to a [`ModeContext`] object.

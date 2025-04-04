@@ -42,17 +42,6 @@ pub type TurnsClockCClockTup = (
 ///
 /// Key methods allow high-level control, including state transitions, camera angle
 /// adjustments, and battery-related tasks.
-///
-/// # Fields
-/// - `current_pos`: The current 2D position of the satellite.
-/// - `current_vel`: The current 2D velocity of the satellite.
-/// - `current_state`: Current operational state of the satellite based on the `FlightState` model.
-/// - `current_angle`: The active camera angle for the satellite’s imaging system.
-/// - `current_battery`: Indicates the current battery charge.
-/// - `max_battery`: Represents the maximum capacity of the satellite battery.
-/// - `fuel_left`: Represents the remaining satellite fuel for propulsion/other operations.
-/// - `last_observation_timestamp`: Indicates the time of the last system update.
-/// - `request_client`: A reference to the HTTP client to send flight control requests.
 #[derive(Debug)]
 pub struct FlightComputer {
     /// Current position of the satellite in 2D space.

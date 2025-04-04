@@ -18,7 +18,7 @@ pub struct IndexedOrbitPosition {
 impl IndexedOrbitPosition {
     /// Creates a new [`IndexedOrbitPosition`] instance.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `index`: The index in the orbit.
     /// - `period`: The period of the orbit.
     /// - `pos`: The 2D position vector for this point in the orbit.
@@ -43,7 +43,7 @@ impl IndexedOrbitPosition {
 
     /// Calculates the ranges from the current index to now, optionally applying a shift.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `shift`: An optional value to adjust the calculation of the current index.
     ///
     /// # Returns
@@ -65,7 +65,7 @@ impl IndexedOrbitPosition {
 
     /// Maps ranges of indices, ensuring they wrap around correctly for a maximum range.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `ranges`: A vector of tuples representing input ranges as `(start, end)`.
     /// - `max`: The maximum range for the indices.
     ///
@@ -89,7 +89,7 @@ impl IndexedOrbitPosition {
 
     /// Creates a new `IndexedOrbitPosition` with the given 2D position vector.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `pos`: The new 2D position vector.
     ///
     /// # Returns
@@ -100,7 +100,7 @@ impl IndexedOrbitPosition {
 
     /// Creates a new `IndexedOrbitPosition` with a future timestamp and given 2D position vector.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `pos`: The new 2D position vector.
     /// - `dt`: The time difference to calculate the future timestamp.
     ///
@@ -121,7 +121,7 @@ impl IndexedOrbitPosition {
 
     /// Calculates the index in the orbit for a given time offset.
     ///
-    /// # Parameters
+    /// # Arguments
     /// - `dt`: The time difference to calculate the future index.
     ///
     /// # Returns

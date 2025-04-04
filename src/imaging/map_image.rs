@@ -17,11 +17,6 @@ use tokio::{fs::File, io::AsyncReadExt};
 ///
 /// This struct contains information about the region of the image
 /// that was extracted, its dimensions, and the encoded image data.
-///
-/// # Fields
-/// * `offset` - The top-left corner of the extracted image region in the original image.
-/// * `size` - The dimensions (width and height) of the extracted region.
-/// * `data` - The encoded image data as a vector of bytes.
 pub(crate) struct EncodedImageExtract {
     /// The top-left corner of the extracted image region in the original image.
     pub(crate) offset: Vec2D<u32>,
@@ -176,10 +171,6 @@ pub(crate) trait MapImage {
 /// This struct manages the full-sized map image which includes
 /// a coverage bitmap and an image buffer backed by a memory-mapped file.
 /// It provides functionality to open and handle the image buffer efficiently.
-///
-/// # Fields
-/// * `coverage` - A `Bitmap` instance representing the coverage of the map image.
-/// * `image_buffer` - An `ImageBuffer` containing the RGB pixel data, backed by a `FileBackedBuffer`.
 pub(crate) struct FullsizeMapImage {
     /// The image buffer containing the pixel data, backed by a file.
     image_buffer: ImageBuffer<Rgb<u8>, FileBackedBuffer>,

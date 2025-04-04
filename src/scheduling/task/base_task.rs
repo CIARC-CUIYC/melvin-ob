@@ -23,8 +23,8 @@ pub struct Task {
 
 /// An enumeration representing different types of tasks.
 ///
-/// It includes tasks for image capturing ([`TakeImage`]),
-/// switching flight states (`SwitchState`), and velocity changes ([`ChangeVelocity`]).
+/// It includes tasks for image capturing (`TakeImage`),
+/// switching flight states (`SwitchState`), and velocity changes (`ChangeVelocity`).
 #[derive(Display, Debug)]
 pub enum BaseTask {
     /// Task to capture an image.
