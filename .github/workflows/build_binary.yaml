@@ -1,0 +1,44 @@
+name: "Build and Publish"
+on: [ push ]
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: cuiyc-melvin-ob
+jobs:
+  build:
+    name: "Build"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: "-C target-feature=+crt-static"
+          target: x86_64-unknown-linux-gnu
+      - name: Build
+        run: cargo build --release --target x86_64-unknown-linux-gnu --config target.x86_64-unknown-linux-gnu.linker=\"x86_64-linux-gnu-gcc\"
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: melvin-ob
+          path: ./target/x86_64-uknown-linux-gnu/release/melvin-ob
+
+    release:
+      if: ${{ github.ref == 'refs/heads/main' }}
+      name: "Release Binary"
+      runs-on: ubuntu-latest
+      needs: [build]
+      steps:
+        - name: Checkout code
+          uses: actions/checkout@v3
+
+        - name: Download binary artifact from build job
+          uses: actions/download-artifact@v4
+          with:
+            name: melvin-ob
+
+        - name: Upload binary to GitHub release
+          uses: softprops/action-gh-release@v1
+          with:
+            files: melvin-ob
+

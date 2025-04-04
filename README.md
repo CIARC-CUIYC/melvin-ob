@@ -5,10 +5,6 @@ This repository contains the embedded code running on the simulated MELVIN onboa
 for command execution, event detection, task scheduling and DRS communication during the mission.
 
 ## 📦 Project Overview
-MELVIN-OB is designed to:
-* Communicate with a RESTful API server (DRS).
-* Manage the challenges objectives and system state.
-* Support runtime configuration and semi-live patching.
 
 In this README you can find information regarding the building and deployment of this repository 
 as well as some insights into the runtime configuration for our implementation. 

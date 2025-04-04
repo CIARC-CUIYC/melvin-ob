@@ -1,5 +1,9 @@
 #![allow(dead_code, clippy::similar_names)]
 #![warn(clippy::shadow_reuse, clippy::shadow_same, clippy::builtin_type_shadow)]
+//! Welcome to the onboard software for **Team 03 — "Cache us if you can"** competing in the **2024/2025 ESA Computer in a Room Challenge**. 
+//! This repository contains the embedded code running on the simulated MELVIN onboard computer, responsible 
+//! for command execution, event detection, task scheduling and DRS communication during the mission.
+
 mod console_communication;
 mod flight_control;
 mod http_handler;
