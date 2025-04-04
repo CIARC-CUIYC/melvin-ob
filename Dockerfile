@@ -36,5 +36,5 @@ WORKDIR /app
 COPY --from=builder /usr/src/app/target/x86_64-unknown-linux-gnu/release/melvin-ob /app/melvin-bin
 
 CMD tmux new-session -d -s melvin_debug bash \
-    -c 'export TRACK_MELVIN_POS=1; export DRS_BASE_URL="http://sil-adapter:5000"; export EXPORT_ORBIT=1; exec bash' && \
+    -c 'export TRACK_MELVIN_POS=1; export DRS_BASE_URL="http://palantiri_container:5000"; export EXPORT_ORBIT=1; exec bash' && \
     tail -f /dev/null
