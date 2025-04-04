@@ -1,9 +1,7 @@
-name: Deploy Rustdoc to GitHub Pages
-
+name: "Build Documentation and Deploy"
 on:
   push:
     branches: ["main"]
-
 permissions:
   contents: read
   pages: write
@@ -26,9 +24,6 @@ jobs:
 
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          rustflags: "-C target-feature=+crt-static"
-          target: x86_64-unknown-linux-gnu
 
       - name: Build documentation
         run: cargo doc --no-deps --workspace
