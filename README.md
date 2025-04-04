@@ -4,14 +4,17 @@ Welcome to the onboard software for **Team 03 — "Cache us if you can"** compet
 This repository contains the embedded code running on the simulated MELVIN onboard computer, responsible 
 for command execution, event detection, task scheduling and DRS communication during the mission.
 
-## 📦 Project Overview
+---
 
+## 📦 Project Overview
 In this README you can find information regarding the building and deployment of this repository 
 as well as some insights into the runtime configuration for our implementation. 
 An alternative to building and running this codebase locally is our containerized integration 
 solution bundling this binary with our self-written Software-in-a-loop Testing framework 'Palantíri'. 
 You can find further instructions on the use of this compound Docker container
 [here](https://github.com/CIARC-CUIYC/cirdan).
+
+---
 
 ## 🔨 Building the Project
 ### ✅ Dependencies
@@ -47,6 +50,8 @@ cargo test -- --nocapture
 ```
 The compiled binary will be located at `target/release/melvin-ob`.
 
+---
+
 ## ⚙️ Runtime Configuration
 There are multiple configurable options that are settable via environment variables.
 ### ❗ Mandatory
@@ -63,6 +68,8 @@ There are multiple configurable options that are settable via environment variab
 | `TRY_IMPORT_ORBIT=1`  | Initially attempts to load a previous orbit state from `./orbit.bin`. |
 | `LOG_MELVIN_EVENTS=1` | Enables logging of all `/announcements` messages.                     |
 | `SKIP_OBJ=1,3,15`     | Comma-separated list of objective IDs to skip during execution.       |
+
+---
 
 ## 🐳 Containerized SIL Deployment
 To run MELVIN-OB inside the Cirdan container environment (with the SIL framework):
